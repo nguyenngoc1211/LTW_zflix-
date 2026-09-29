@@ -1,23 +1,23 @@
 # Tiến độ bảo mật Authentication & Authorization
 
-Ngày rà soát source và Git gần nhất: 2026-09-29  
+Ngày rà soát source và Git gần nhất: 2026-09-30
 Current branch: `Du`  
 Current latest security commit: `8988504`
 Mốc source hiện tại: `8988504 security: add auth logging and cleanup phase 6`
-Current latest documentation commit: `5424d74 update auth_sec_progess_ phase 6`
-Current uncommitted security phase: `None`
+Current latest documentation commit: `2156329 docs: reconcile auth security roadmap`
+Current uncommitted security phase: `Phase 7 audit documentation only`
 
 Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
 
 ## Current working tree expectation
 
-Phase 6 implementation và tài liệu hậu kiểm đã được commit. Baseline trước Phase 7 được kỳ vọng:
+Phase 6 implementation và tài liệu hậu kiểm đã được commit. Trước Phase 7, `git status` ngày 2026-09-30 xác nhận clean. Sau audit, chỉ file này thay đổi để ghi kết quả Phase 7; chưa commit.
 
 ```text
-git status -> clean
+git status -> docs/AUTH_SECURITY_PROGRESS.md modified only
 ```
 
-Nếu `git status` khác baseline này, phải kiểm tra và bảo toàn mọi thay đổi hiện hữu trước khi bắt đầu Phase 7. Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
+Nếu `git status` khác trạng thái ghi nhận trên, phải kiểm tra và bảo toàn mọi thay đổi hiện hữu trước khi làm việc tiếp. Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
 
 ## Kiến trúc hiện tại
 
@@ -140,6 +140,16 @@ Các checkpoint trên đều đã commit đến hết Phase 6. Working tree đư
 - **Run mode:** `npm run cleanup:auth` chạy thủ công, dùng transaction và chỉ in JSON count; chưa tự chạy ở startup. Production có thể schedule lệnh này bằng cron/container scheduler sau.
 - **Tests:** backend unit `14/14`; full auth/password/MFA integration live MySQL pass; cleanup integration xóa đúng 3 session cũ, 2 reset token, 2 MFA challenge, 1 used recovery code và giữ toàn bộ record active/recent; frontend lint/build và toàn bộ UI smoke pass. Integration cũng kiểm tra event bắt buộc và credential thực không xuất hiện trong log.
 - **Rủi ro vận hành còn lại:** chưa có external log transport/SIEM, alerting, scheduler deployment, refresh-token family/history để phân biệt replay với token ngẫu nhiên, hoặc chính sách archive/audit bất biến.
+
+### Phase 7 — final auth/security audit
+
+- **Trạng thái:** audit hoàn tất ngày 2026-09-30 trên branch `Du`, baseline clean tại `2156329`; không thay đổi source, không thêm feature và không commit.
+- **Phạm vi source thật:** login/lock/disabled, bcrypt/password, JWT và DB-backed role/status, refresh/session rotation/revocation, password lifecycle, MFA/TOTP/recovery, session ownership, route admin thật, CORS/Origin/cookie/Helmet, secrets/config, security logging, cleanup/retention, error handling, dependencies và regression hiện có. Source hiện tại khớp các kiểm soát chính được mô tả ở trên.
+- **Kết quả:** không phát hiện security bug rõ ràng trong phạm vi audit. Backend chỉ có auth routes, `GET /api/v1/admin/check` và health; hai Python service chỉ có health. Session list/revoke lấy identity từ `req.user.id`, revoke ràng buộc `id` và `user_id`. Backend role/status lấy từ DB; frontend guard chỉ phục vụ UX.
+- **Kiểm thử thực chạy:** backend unit `14/14` pass; live MySQL `npm run test:integration` pass cả auth, password lifecycle và MFA; `npm run test:cleanup` pass, xóa đúng 3 session cũ, 2 reset token, 2 MFA challenge, 1 used recovery code và giữ record hợp lệ; frontend lint/build pass; `test:ui`, `test:ui:mfa`, `test:ui:mfa-management`, `test:ui:sessions` đều pass; `npm audit --audit-level=low` cho backend/frontend báo 0 vulnerability; `git diff --check` pass. Vite báo warning chunk >500 kB, không phải finding bảo mật.
+- **Giới hạn bằng chứng:** test integration chạy trên MySQL dev trong Docker; audit không xác nhận cấu hình/deployment production, external log transport, scheduler hoặc email provider. Dependency check là npm advisory audit cho lockfile hiện tại, không phải scan container image.
+- **Not applicable hiện tại:** authorization/IDOR cho profile update, comments, favorites, history, ratings, watching party, premium/subscriptions và admin CRUD vì backend chưa có các API đó. Phải rà soát ownership, mass assignment, entitlement và admin policy khi API tương ứng xuất hiện.
+- **Kết luận:** auth module sẵn sàng đóng theo scope API hiện tại; deferred controls bên dưới vẫn deferred. Chỉ tài liệu audit Phase 7 là thay đổi chờ review/commit.
 
 ## Security controls hiện có
 
@@ -280,17 +290,9 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - Admin CRUD và community/content moderation authorization khi có API tương ứng
 - Email verification, OAuth, passkeys/WebAuthn và recovery nâng cao
 
-## Next recommended phase
+## Trạng thái sau Phase 7
 
-Next phase:
-
-**Phase 7 — Final Security Audit**
-
-Phase 7 là đợt audit cuối dựa trên source, Git, migration, route, cấu hình và bằng chứng test hiện có. Audit phải rà soát lại authentication, authorization, password lifecycle, MFA, session management, security logging, cleanup và các trust boundary thực tế; phân loại rõ finding đã xác minh, rủi ro được chấp nhận và hạng mục deferred.
-
-Phase 7 không tự động triển khai CAPTCHA/bot-abuse controls, production password-reset email delivery, refresh-token family/history, streaming-compatible CSP, centralized SIEM/log transport hoặc deployed cleanup scheduler. Các hạng mục đó thuộc **Deferred / Future hardening** và chỉ được triển khai khi có scope riêng được phê duyệt.
-
-Do not start automatically. Trước tiên phải xác nhận working tree, audit source hiện tại và chốt phạm vi audit; mọi remediation phát sinh cần được báo cáo trước khi sửa.
+Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạng mục **Deferred / Future hardening** không được triển khai trong audit này và vẫn cần scope riêng. Khi backend thêm business API thật, phải mở lại authorization review cho API đó; kết luận hiện tại không xác nhận an toàn cho API chưa tồn tại hoặc production deployment chưa kiểm thử.
 
 ## Hướng dẫn cho các phiên Codex sau
 
