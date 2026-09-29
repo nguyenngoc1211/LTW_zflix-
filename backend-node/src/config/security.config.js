@@ -46,6 +46,14 @@ export const securityConfig = Object.freeze({
     windowMs: positiveInteger(process.env.REFRESH_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
     max: positiveInteger(process.env.REFRESH_RATE_LIMIT_MAX, 120),
   }),
+  forgotPasswordRateLimit: Object.freeze({
+    windowMs: positiveInteger(process.env.FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+    max: positiveInteger(process.env.FORGOT_PASSWORD_RATE_LIMIT_MAX, 5),
+  }),
+  resetPasswordRateLimit: Object.freeze({
+    windowMs: positiveInteger(process.env.RESET_PASSWORD_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+    max: positiveInteger(process.env.RESET_PASSWORD_RATE_LIMIT_MAX, 10),
+  }),
   accountLock: Object.freeze({
     maxFailedAttempts: positiveInteger(process.env.AUTH_MAX_FAILED_ATTEMPTS, 5),
     minutes: positiveInteger(process.env.AUTH_LOCK_MINUTES, 5),
@@ -56,5 +64,8 @@ export const securityConfig = Object.freeze({
       7,
     ),
     absoluteTtlDays: positiveInteger(process.env.REFRESH_ABSOLUTE_TTL_DAYS, 30),
+  }),
+  passwordReset: Object.freeze({
+    tokenTtlMinutes: positiveInteger(process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES, 30),
   }),
 });

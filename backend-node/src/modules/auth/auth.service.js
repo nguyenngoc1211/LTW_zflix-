@@ -3,12 +3,18 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../../core/database/pool.js";
+import {
+  deliverPasswordReset,
+  passwordResetDeliveryAvailable,
+} from "./password-reset-delivery.js";
 
 export const REFRESH_COOKIE = "refreshToken";
 
 const accessTokenTtl = process.env.ACCESS_TOKEN_TTL || "15m";
+const bcryptCost = 12;
 const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 const newRefreshToken = () => crypto.randomBytes(48).toString("base64url");
+const newPasswordResetToken = () => crypto.randomBytes(32).toString("base64url");
 
 const publicUser = (row) => ({
   id: row.id,
@@ -178,6 +184,177 @@ export const revokeAllSessions = async (userId) => {
      WHERE user_id = ? AND revoked_at IS NULL`,
     [userId],
   );
+};
+
+export const changePassword = async (userId, currentPassword, newPassword) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [users] = await connection.execute(
+      `SELECT password, provider
+       FROM users
+       WHERE id = ? AND status = 'active'
+       LIMIT 1
+       FOR UPDATE`,
+      [userId],
+    );
+    const user = users[0];
+    if (!user || user.provider !== "local" || !user.password) {
+      await connection.rollback();
+      return { error: "invalid_current" };
+    }
+    if (!(await bcrypt.compare(currentPassword, user.password))) {
+      await connection.rollback();
+      return { error: "invalid_current" };
+    }
+    if (await bcrypt.compare(newPassword, user.password)) {
+      await connection.rollback();
+      return { error: "same_password" };
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, bcryptCost);
+    await connection.execute(
+      `UPDATE users
+       SET password = ?, password_changed_at = UTC_TIMESTAMP()
+       WHERE id = ?`,
+      [passwordHash, userId],
+    );
+    await connection.execute(
+      `UPDATE auth_sessions
+       SET revoked_at = UTC_TIMESTAMP()
+       WHERE user_id = ? AND revoked_at IS NULL`,
+      [userId],
+    );
+    await connection.commit();
+    return { success: true };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+export const requestPasswordReset = async (email) => {
+  const [users] = await pool.execute(
+    `SELECT id, email
+     FROM users
+     WHERE email = ? AND provider = 'local' AND status = 'active' AND password IS NOT NULL
+     LIMIT 1`,
+    [email],
+  );
+  const user = users[0];
+  if (!user) return;
+  if (!passwordResetDeliveryAvailable()) {
+    await pool.execute(
+      `UPDATE password_reset_tokens
+       SET used_at = UTC_TIMESTAMP()
+       WHERE user_id = ? AND used_at IS NULL`,
+      [user.id],
+    );
+    return;
+  }
+
+  const rawToken = newPasswordResetToken();
+  const tokenHash = hashToken(rawToken);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute("SELECT id FROM users WHERE id = ? FOR UPDATE", [user.id]);
+    await connection.execute(
+      `UPDATE password_reset_tokens
+       SET used_at = UTC_TIMESTAMP()
+       WHERE user_id = ? AND used_at IS NULL`,
+      [user.id],
+    );
+    await connection.execute(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE))`,
+      [user.id, tokenHash, securityConfig.passwordReset.tokenTtlMinutes],
+    );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  try {
+    await deliverPasswordReset({ email: user.email, token: rawToken });
+  } catch {
+    await pool.execute(
+      `UPDATE password_reset_tokens
+       SET used_at = UTC_TIMESTAMP()
+       WHERE token_hash = ? AND used_at IS NULL`,
+      [tokenHash],
+    );
+  }
+};
+
+export const resetPassword = async (rawToken, newPassword) => {
+  const tokenHash = hashToken(rawToken);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute(
+      `SELECT prt.id AS reset_id, prt.user_id, u.password
+       FROM password_reset_tokens prt
+       JOIN users u ON u.id = prt.user_id
+       WHERE prt.token_hash = ?
+         AND prt.used_at IS NULL
+         AND prt.expires_at > UTC_TIMESTAMP()
+         AND u.provider = 'local'
+         AND u.status = 'active'
+         AND u.password IS NOT NULL
+       LIMIT 1
+       FOR UPDATE`,
+      [tokenHash],
+    );
+    const reset = rows[0];
+    if (!reset || (await bcrypt.compare(newPassword, reset.password))) {
+      await connection.rollback();
+      return false;
+    }
+
+    const [claimed] = await connection.execute(
+      `UPDATE password_reset_tokens
+       SET used_at = UTC_TIMESTAMP()
+       WHERE id = ? AND used_at IS NULL AND expires_at > UTC_TIMESTAMP()`,
+      [reset.reset_id],
+    );
+    if (claimed.affectedRows !== 1) {
+      await connection.rollback();
+      return false;
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, bcryptCost);
+    await connection.execute(
+      `UPDATE users
+       SET password = ?, password_changed_at = UTC_TIMESTAMP()
+       WHERE id = ?`,
+      [passwordHash, reset.user_id],
+    );
+    await connection.execute(
+      `UPDATE password_reset_tokens
+       SET used_at = COALESCE(used_at, UTC_TIMESTAMP())
+       WHERE user_id = ? AND used_at IS NULL`,
+      [reset.user_id],
+    );
+    await connection.execute(
+      `UPDATE auth_sessions
+       SET revoked_at = UTC_TIMESTAMP()
+       WHERE user_id = ? AND revoked_at IS NULL`,
+      [reset.user_id],
+    );
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 };
 
 export const revokeSession = async ({ refreshToken, accessToken }) => {

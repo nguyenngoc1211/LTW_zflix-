@@ -63,6 +63,15 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
         }
       },
+      async changePassword(currentPassword, newPassword) {
+        const result = await apiRequest("/api/v1/auth/change-password", {
+          method: "POST",
+          body: JSON.stringify({ currentPassword, newPassword }),
+        });
+        setAccessToken(null);
+        setUser(null);
+        return result;
+      },
       apiRequest,
     }),
     [loading, user],

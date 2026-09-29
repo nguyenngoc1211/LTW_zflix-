@@ -25,6 +25,23 @@ const createSessionsTable = `
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 `;
 
+const createPasswordResetTokensTable = `
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id bigint unsigned NOT NULL AUTO_INCREMENT,
+    user_id int NOT NULL,
+    token_hash char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+    created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at datetime NOT NULL,
+    used_at datetime DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_password_reset_tokens_hash (token_hash),
+    KEY idx_password_reset_tokens_user (user_id),
+    KEY idx_password_reset_tokens_expiry (expires_at),
+    CONSTRAINT password_reset_tokens_ibfk_1
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+`;
+
 const addColumnIfMissing = async (tableName, columnName, definition) => {
   const [columns] = await pool.execute(
     `SELECT 1
@@ -49,6 +66,7 @@ try {
   await addColumnIfMissing("users", "disabled_at", "DATETIME NULL");
   await addColumnIfMissing("users", "password_changed_at", "DATETIME NULL");
   await pool.execute(createSessionsTable);
+  await pool.execute(createPasswordResetTokensTable);
   await addColumnIfMissing("auth_sessions", "absolute_expires_at", "DATETIME NULL");
   await pool.execute(
     "UPDATE auth_sessions SET absolute_expires_at = expires_at WHERE absolute_expires_at IS NULL",
