@@ -2,18 +2,18 @@
 
 Ngày rà soát source và Git gần nhất: 2026-09-29  
 Current branch: `Du`  
-Current latest security commit: `318f6dd`
-Mốc source hiện tại: `318f6dd security: add MFA management phase 4B`
-Current uncommitted security phase: `Phase 5A — session and device management`
+Current latest security commit: `2946c00`
+Mốc source hiện tại: `2946c00 security: add session management phase 5A`
+Current uncommitted security phase: `Phase 6 — security logging and cleanup`
 
 Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
 
 ## Current working tree expectation
 
-Current expectation while Phase 5A is under review:
+Current expectation while Phase 6 is under review:
 
 ```text
-git status -> Phase 5A session list/revocation backend, account-security session UI, tests, and this document are modified/untracked
+git status -> Phase 6 security logger, auth event instrumentation, cleanup command/tests, config, and this document are modified/untracked
 ```
 
 Do not overwrite or discard those changes. After an explicit future commit, the expected state returns to:
@@ -50,8 +50,9 @@ Các checkpoint auth/security theo thứ tự thời gian:
 | `c6357f2` | 2026-09-29 | `docs: add auth security project context` |
 | `c61103d` | 2026-09-29 | `security: add MFA TOTP phase 4A` |
 | `318f6dd` | 2026-09-29 | `security: add MFA management phase 4B` |
+| `2946c00` | 2026-09-29 | `security: add session management phase 5A` |
 
-Các checkpoint trên đều đã commit. Phase 5A hiện là thay đổi working tree chưa commit theo yêu cầu.
+Các checkpoint trên đều đã commit. Phase 6 hiện là thay đổi working tree chưa commit theo yêu cầu.
 
 ## Chi tiết từng phase
 
@@ -123,7 +124,7 @@ Các checkpoint trên đều đã commit. Phase 5A hiện là thay đổi workin
 
 ### Phase 5A — session and device management
 
-- **Trạng thái:** đã triển khai và verify, chưa commit; không cần migration vì `auth_sessions` đã có đủ metadata.
+- **Trạng thái:** đã commit tại `2946c00` và verify live trên MySQL dev; không cần migration vì `auth_sessions` đã có đủ metadata.
 - **Backend:** thêm `GET /api/v1/auth/sessions`, `DELETE /api/v1/auth/sessions/:sessionId` và `POST /api/v1/auth/logout-others`. Identity luôn lấy từ `req.user.id`; current session lấy từ `req.auth.sessionId`; không nhận hoặc tin `userId` từ body/query.
 - **List policy:** chỉ trả session chưa revoke, chưa idle-expired và chưa absolute-expired. Safe projection gồm ID, created/last-used/idle-expiry/absolute-expiry, user-agent, IP và cờ current; tuyệt đối không trả refresh-token hash hoặc token/secret.
 - **Ownership/revocation:** per-session revoke dùng atomic `UPDATE ... WHERE id = ? AND user_id = ?`; foreign session trả `404`, session của chính user đã revoke trả idempotent `204`. Revoke current session xóa refresh cookie. Logout-others revoke mọi session khác nhưng giữ current; logout-all giữ nguyên hành vi revoke toàn bộ.
@@ -131,6 +132,18 @@ Các checkpoint trên đều đã commit. Phase 5A hiện là thay đổi workin
 - **Last-used semantics:** `lastUsedAt` là lần refresh session gần nhất được auth system ghi nhận, không phải request HTTP gần nhất.
 - **Tests:** backend unit `13/13`, full backend integration live trên MySQL, frontend lint/build và toàn bộ auth/MFA/session browser smoke đều pass. IDOR coverage xác nhận User A không list/revoke session User B, body/query `userId` bị bỏ qua và session User B vẫn hợp lệ sau tấn công.
 - **Rủi ro còn lại:** user-agent/IP là metadata quan sát được, không phải device identity đáng tin; chưa có refresh-token family/history, multi-tab auth sync hoặc scheduled cleanup session cũ.
+
+### Phase 6 — security logging và cleanup
+
+- **Trạng thái:** đã triển khai và verify, chưa commit; không thêm bảng hoặc migration.
+- **Structured logger:** `securityLog(event, metadata)` phát một JSON line với timestamp và allow-list field gồm user/session/target-session ID, IP, user-agent, reason, factor và revoked count. User-agent giới hạn 255 ký tự, IP giới hạn 45 ký tự; lỗi log sink không làm thay đổi auth flow.
+- **Events:** login success/failure, account locked/disabled attempt, refresh success/failure, logout/logout-all/logout-others, session revoke success/failure, password change/reset request/reset success/failure, MFA setup/enable/verify failure/login success/recovery use/regeneration/disable, access denied và admin access denied.
+- **Fields cố ý loại trừ:** password mọi loại, access/refresh token và hash, Authorization/Cookie header, reset token/hash, TOTP secret/ciphertext/code, recovery code/hash, MFA challenge token/hash, JWT secret và MFA encryption key. Unknown-account login/reset request không tạo giả user ID và không log email.
+- **Cleanup targets:** session revoked/idle-expired/absolute-expired đủ cũ; reset token used/expired đủ cũ; MFA challenge consumed/expired đủ cũ; recovery code đã dùng đủ cũ. Active session, valid reset token, active MFA challenge và unused recovery code luôn được giữ. Pending MFA setup nằm trên `users` nhưng không có timestamp an toàn nên Phase 6 không tự xóa.
+- **Retention mặc định:** session `30` ngày, reset token `7` ngày, MFA challenge `1` ngày, used recovery code `30` ngày; cấu hình qua `AUTH_SESSION_RETENTION_DAYS`, `PASSWORD_RESET_RETENTION_DAYS`, `MFA_CHALLENGE_RETENTION_DAYS`, `USED_RECOVERY_CODE_RETENTION_DAYS`.
+- **Run mode:** `npm run cleanup:auth` chạy thủ công, dùng transaction và chỉ in JSON count; chưa tự chạy ở startup. Production có thể schedule lệnh này bằng cron/container scheduler sau.
+- **Tests:** backend unit `14/14`; full auth/password/MFA integration live MySQL pass; cleanup integration xóa đúng 3 session cũ, 2 reset token, 2 MFA challenge, 1 used recovery code và giữ toàn bộ record active/recent; frontend lint/build và toàn bộ UI smoke pass. Integration cũng kiểm tra event bắt buộc và credential thực không xuất hiện trong log.
+- **Rủi ro vận hành còn lại:** chưa có external log transport/SIEM, alerting, scheduler deployment, refresh-token family/history để phân biệt replay với token ngẫu nhiên, hoặc chính sách archive/audit bất biến.
 
 ## Security controls hiện có
 
@@ -265,7 +278,6 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - CSP tương thích streaming; hiện Helmet chạy với CSP disabled
 - Multi-tab auth state sync
 - Refresh-token family/history và replay-family response
-- Scheduled cleanup token reset hết hạn/đã dùng
 - IDOR/BOLA, ownership, mass-assignment khi các resource API thật xuất hiện
 - Server-side premium/subscription authorization khi có API tương ứng
 - Admin CRUD và community/content moderation authorization khi có API tương ứng
@@ -275,7 +287,7 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 
 Next candidate:
 
-**Phase 5B — bot-abuse controls hoặc production password-reset delivery**
+**Phase 7 — bot-abuse controls hoặc production password-reset delivery**
 
 Do not start automatically.  
 First audit current source and propose scope.

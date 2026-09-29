@@ -6,8 +6,10 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate:auth": "node scripts/migrate-auth.js",
+    "cleanup:auth": "node scripts/cleanup-auth-data.js",
     "test": "node --test",
-    "test:integration": "node integration/auth-smoke.js && node integration/password-lifecycle-smoke.js && node integration/mfa-smoke.js"
+    "test:integration": "node integration/auth-smoke.js && node integration/password-lifecycle-smoke.js && node integration/mfa-smoke.js",
+    "test:cleanup": "node integration/auth-cleanup-smoke.js"
   },
   "keywords": [],
   "author": "",

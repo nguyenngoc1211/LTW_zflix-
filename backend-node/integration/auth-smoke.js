@@ -11,6 +11,11 @@ process.env.REFRESH_RATE_LIMIT_MAX = "1000";
 const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 const { default: app } = await import("../src/app.js");
 const { pool } = await import("../src/core/database/pool.js");
+const { setSecurityLogSinkForTests } = await import(
+  "../src/core/security/security-logger.js"
+);
+const securityLogLines = [];
+setSecurityLogSinkForTests((line) => securityLogLines.push(line));
 const database = await mysql.createConnection({
   uri:
     process.env.DATABASE_URL ||
@@ -515,10 +520,36 @@ try {
   });
   assert.equal(forgedRoleAdmin.status, 403);
 
+  const loggedEvents = new Set(securityLogLines.map((line) => JSON.parse(line).event));
+  for (const event of [
+    "ACCESS_DENIED",
+    "ACCOUNT_DISABLED_LOGIN_ATTEMPT",
+    "ACCOUNT_LOCKED",
+    "ADMIN_ACCESS_DENIED",
+    "LOGIN_FAILED",
+    "LOGIN_SUCCESS",
+    "LOGOUT",
+    "LOGOUT_ALL",
+    "LOGOUT_OTHERS",
+    "REFRESH_FAILED",
+    "REFRESH_SUCCESS",
+    "SESSION_REVOKED",
+    "SESSION_REVOKE_FAILED",
+  ]) {
+    assert.ok(loggedEvents.has(event), `missing security event ${event}`);
+  }
+  const serializedSecurityLogs = securityLogLines.join("\n");
+  assert.doesNotMatch(serializedSecurityLogs, /abc123|wrong-password/iu);
+  for (const result of [managerCurrent, managerOther, foreignSession]) {
+    assert.equal(serializedSecurityLogs.includes(result.data.accessToken), false);
+    assert.equal(serializedSecurityLogs.includes(result.cookie), false);
+  }
+
   console.log(
     `Auth integration checks passed: session ownership/revocation, JWT role forgery, disabled sessions, ${adminEndpoints.length} admin endpoint(s), and full auth regression passed.`,
   );
 } finally {
+  setSecurityLogSinkForTests(null);
   for (const sessionId of createdSessionIds) {
     await database.execute("DELETE FROM auth_sessions WHERE id = ?", [sessionId]);
   }
