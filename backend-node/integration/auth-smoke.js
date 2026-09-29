@@ -45,6 +45,20 @@ const rememberSession = (loginResult) => {
   return sessionId;
 };
 
+const adminEndpoints = (app.router?.stack || []).flatMap((layer) => {
+  if (!layer.route) return [];
+  const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path];
+  return paths.flatMap((path) =>
+    path.startsWith("/api/v1/admin/")
+      ? Object.entries(layer.route.methods)
+          .filter(([, enabled]) => enabled)
+          .map(([method]) => ({ method, path }))
+      : [],
+  );
+});
+
+assert.ok(adminEndpoints.length > 0, "at least one /api/v1/admin/ endpoint must be covered");
+
 const [originalUsers] = await database.query(
   `SELECT id, status, disabled_at, failed_login_attempts, locked_until, last_login
    FROM users WHERE id IN (?)`,
@@ -119,6 +133,17 @@ try {
     token: statusSession.data.accessToken,
   });
   assert.equal(disabledAccess.status, 401);
+  const disabledLogoutAll = await call("/api/v1/auth/logout-all", {
+    method: "post",
+    token: statusSession.data.accessToken,
+    cookie: statusSession.cookie,
+    origin: frontendOrigin,
+  });
+  assert.equal(disabledLogoutAll.status, 401);
+  const disabledAdminAccess = await call("/api/v1/admin/check", {
+    token: statusSession.data.accessToken,
+  });
+  assert.equal(disabledAdminAccess.status, 401);
   const disabledRefresh = await call("/api/v1/auth/refresh-token", {
     method: "post",
     cookie: statusSession.cookie,
@@ -141,6 +166,10 @@ try {
     "UPDATE auth_sessions SET expires_at = UTC_TIMESTAMP() - INTERVAL 1 SECOND WHERE id = ?",
     [idleSessionId],
   );
+  const idleExpiredAccess = await call("/api/v1/auth/me", {
+    token: idleSession.data.accessToken,
+  });
+  assert.equal(idleExpiredAccess.status, 401);
   const idleExpiredRefresh = await call("/api/v1/auth/refresh-token", {
     method: "post",
     cookie: idleSession.cookie,
@@ -203,6 +232,41 @@ try {
   });
   assert.equal(replayedRefresh.status, 401);
 
+  const originSession = await login("jane.smith@email.com", "abc123");
+  assert.equal(originSession.status, 200);
+  rememberSession(originSession);
+  const blockedOrigin = await call("/api/v1/auth/refresh-token", {
+    method: "post",
+    cookie: originSession.cookie,
+    origin: "http://localhost:9999",
+  });
+  assert.equal(blockedOrigin.status, 403);
+
+  const logoutSession = await login("jane.smith@email.com", "abc123");
+  assert.equal(logoutSession.status, 200);
+  rememberSession(logoutSession);
+  const logout = await call("/api/v1/auth/logout", {
+    method: "post",
+    token: logoutSession.data.accessToken,
+    cookie: logoutSession.cookie,
+    origin: frontendOrigin,
+  });
+  assert.equal(logout.status, 204);
+  assert.equal(
+    (await call("/api/v1/auth/me", { token: logoutSession.data.accessToken })).status,
+    401,
+  );
+  assert.equal(
+    (
+      await call("/api/v1/auth/refresh-token", {
+        method: "post",
+        cookie: logoutSession.cookie,
+        origin: frontendOrigin,
+      })
+    ).status,
+    401,
+  );
+
   const deviceA = await login("michael.b@email.com", "abc123");
   const deviceB = await login("michael.b@email.com", "abc123");
   assert.equal(deviceA.status, 200);
@@ -245,23 +309,50 @@ try {
     401,
   );
 
-  const guestAdmin = await call("/api/v1/admin/check");
-  assert.equal(guestAdmin.status, 401);
   const regularUser = await login("john.doe@email.com", "abc123");
   assert.equal(regularUser.status, 200);
   rememberSession(regularUser);
-  const userAdmin = await call("/api/v1/admin/check", {
-    token: regularUser.data.accessToken,
-  });
-  assert.equal(userAdmin.status, 403);
   const admin = await login("admin@moviehub.com", "abc123");
   assert.equal(admin.status, 200);
   rememberSession(admin);
-  const adminAdmin = await call("/api/v1/admin/check", { token: admin.data.accessToken });
-  assert.equal(adminAdmin.status, 200);
+
+  for (const endpoint of adminEndpoints) {
+    const guestAdmin = await call(endpoint.path, { method: endpoint.method });
+    assert.equal(guestAdmin.status, 401, `guest ${endpoint.method} ${endpoint.path}`);
+
+    const userAdmin = await call(endpoint.path, {
+      method: endpoint.method,
+      token: regularUser.data.accessToken,
+    });
+    assert.equal(userAdmin.status, 403, `user ${endpoint.method} ${endpoint.path}`);
+
+    const adminAdmin = await call(endpoint.path, {
+      method: endpoint.method,
+      token: admin.data.accessToken,
+    });
+    assert.ok(
+      adminAdmin.status >= 200 && adminAdmin.status < 300,
+      `admin ${endpoint.method} ${endpoint.path}`,
+    );
+  }
+
+  const regularPayload = jwt.decode(regularUser.data.accessToken);
+  const forgedAdminRoleToken = jwt.sign(
+    { role: "admin", sid: regularPayload.sid },
+    process.env.JWT_ACCESS_SECRET,
+    {
+      subject: String(regularUser.data.user.id),
+      expiresIn: "5m",
+      algorithm: "HS256",
+    },
+  );
+  const forgedRoleAdmin = await call("/api/v1/admin/check", {
+    token: forgedAdminRoleToken,
+  });
+  assert.equal(forgedRoleAdmin.status, 403);
 
   console.log(
-    "Auth integration checks passed: login lock/reset, disabled accounts, idle/absolute expiry, capped refresh rotation, logout-all, and guest/user/admin RBAC.",
+    `Auth integration checks passed: JWT role forgery rejected, disabled sessions rejected, ${adminEndpoints.length} admin endpoint(s) covered, and full auth regression passed.`,
   );
 } finally {
   for (const sessionId of createdSessionIds) {
