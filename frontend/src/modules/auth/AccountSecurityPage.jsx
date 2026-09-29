@@ -17,6 +17,9 @@ const ErrorMessage = ({ children }) =>
     </p>
   ) : null;
 
+const formatDate = (value) =>
+  value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Not yet";
+
 const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
   const [acknowledged, setAcknowledged] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -62,7 +65,14 @@ const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
 };
 
 const AccountSecurityPage = () => {
-  const { apiRequest, clearAuthState } = useAuth();
+  const {
+    apiRequest,
+    clearAuthState,
+    getSessions,
+    logoutAll,
+    logoutOtherSessions,
+    revokeSession,
+  } = useAuth();
   const navigate = useNavigate();
   const [status, setStatus] = useState(null);
   const [action, setAction] = useState(null);
@@ -72,10 +82,26 @@ const AccountSecurityPage = () => {
   const [recovery, setRecovery] = useState(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState("");
+  const [sessionAction, setSessionAction] = useState("");
 
   const loadStatus = async () => {
     const data = await apiRequest("/api/v1/auth/mfa/status");
     setStatus(data);
+  };
+
+  const loadSessions = async () => {
+    setSessionsLoading(true);
+    try {
+      setSessions(await getSessions());
+      setSessionsError("");
+    } catch {
+      setSessionsError("Could not load active sessions.");
+    } finally {
+      setSessionsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -91,6 +117,66 @@ const AccountSecurityPage = () => {
       active = false;
     };
   }, [apiRequest]);
+
+  useEffect(() => {
+    let active = true;
+    getSessions()
+      .then((data) => {
+        if (active) setSessions(data);
+      })
+      .catch(() => {
+        if (active) setSessionsError("Could not load active sessions.");
+      })
+      .finally(() => {
+        if (active) setSessionsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [getSessions]);
+
+  const signOutSession = async (session) => {
+    setSessionAction(session.id);
+    setSessionsError("");
+    try {
+      await revokeSession(session.id, session.current);
+      if (session.current) {
+        navigate("/login", { replace: true });
+        return;
+      }
+      await loadSessions();
+    } catch {
+      setSessionsError("Could not sign out that session.");
+    } finally {
+      setSessionAction("");
+    }
+  };
+
+  const signOutOthers = async () => {
+    setSessionAction("others");
+    setSessionsError("");
+    try {
+      await logoutOtherSessions();
+      await loadSessions();
+    } catch {
+      setSessionsError("Could not sign out other sessions.");
+    } finally {
+      setSessionAction("");
+    }
+  };
+
+  const signOutAll = async () => {
+    setSessionAction("all");
+    setSessionsError("");
+    try {
+      await logoutAll();
+      navigate("/login", { replace: true });
+    } catch {
+      setSessionsError("Could not sign out all sessions.");
+    } finally {
+      setSessionAction("");
+    }
+  };
 
   const resetForm = () => {
     setCurrentPassword("");
@@ -292,6 +378,61 @@ const AccountSecurityPage = () => {
             <div className="flex gap-3"><button className={primaryButton} type="submit" disabled={submitting}>Disable MFA and sign out</button><button className={secondaryButton} type="button" onClick={cancelAction}>Cancel</button></div>
           </form>
         )}
+      </section>
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">Active sessions</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Last used is the most recent session refresh recorded by the authentication system.
+        </p>
+        {sessionsLoading ? (
+          <p className="mt-5 text-sm text-slate-600">Loading active sessions...</p>
+        ) : (
+          <ul className="mt-5 space-y-3">
+            {sessions.map((session) => (
+              <li key={session.id} className="rounded-xl border border-slate-200 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="break-all font-medium text-slate-900">
+                        {session.userAgent || "Unknown browser or device"}
+                      </p>
+                      {session.current && (
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">
+                          Current session
+                        </span>
+                      )}
+                    </div>
+                    <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
+                      <div><dt className="inline font-medium">IP: </dt><dd className="inline">{session.ipAddress || "Unavailable"}</dd></div>
+                      <div><dt className="inline font-medium">Created: </dt><dd className="inline">{formatDate(session.createdAt)}</dd></div>
+                      <div><dt className="inline font-medium">Last used: </dt><dd className="inline">{formatDate(session.lastUsedAt)}</dd></div>
+                      <div><dt className="inline font-medium">Idle expiry: </dt><dd className="inline">{formatDate(session.expiresAt)}</dd></div>
+                    </dl>
+                  </div>
+                  {!session.current && (
+                    <button
+                      type="button"
+                      className={secondaryButton}
+                      disabled={Boolean(sessionAction)}
+                      onClick={() => signOutSession(session)}
+                    >
+                      {sessionAction === session.id ? "Signing out..." : "Sign out"}
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <ErrorMessage>{sessionsError}</ErrorMessage>
+        <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-200 pt-5">
+          <button type="button" className={secondaryButton} disabled={Boolean(sessionAction)} onClick={signOutOthers}>
+            {sessionAction === "others" ? "Signing out..." : "Sign out other sessions"}
+          </button>
+          <button type="button" className={primaryButton} disabled={Boolean(sessionAction)} onClick={signOutAll}>
+            {sessionAction === "all" ? "Signing out..." : "Sign out all sessions"}
+          </button>
+        </div>
       </section>
     </main>
   );

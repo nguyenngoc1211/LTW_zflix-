@@ -39,6 +39,20 @@ const installAuthenticatedMocks = async (page, initialEnabled) => {
         recoveryCodesRemaining: enabled ? 8 : 0,
       });
     }
+    if (path === "/api/v1/auth/sessions") {
+      return json(200, {
+        sessions: [{
+          id: "current-session",
+          createdAt: "2026-09-29T00:00:00.000Z",
+          lastUsedAt: null,
+          expiresAt: "2026-10-06T00:00:00.000Z",
+          absoluteExpiresAt: "2026-10-29T00:00:00.000Z",
+          userAgent: "UI smoke browser",
+          ipAddress: "127.0.0.1",
+          current: true,
+        }],
+      });
+    }
     if (path === "/api/v1/auth/mfa/setup") {
       assert.deepEqual(body, { currentPassword: "abc123" });
       return json(200, {

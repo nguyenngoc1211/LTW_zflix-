@@ -75,6 +75,7 @@ try {
     body: { email: "not-an-email", password: "abc123" },
   });
   assert.equal(invalidPayload.status, 400);
+  assert.equal((await call("/api/v1/auth/sessions")).status, 401);
 
   await database.execute(
     `UPDATE users
@@ -144,6 +145,16 @@ try {
     token: statusSession.data.accessToken,
   });
   assert.equal(disabledAdminAccess.status, 401);
+  const disabledSessionList = await call("/api/v1/auth/sessions", {
+    token: statusSession.data.accessToken,
+  });
+  assert.equal(disabledSessionList.status, 401);
+  const disabledSessionRevoke = await call(`/api/v1/auth/sessions/${statusSessionId}`, {
+    method: "delete",
+    token: statusSession.data.accessToken,
+    origin: frontendOrigin,
+  });
+  assert.equal(disabledSessionRevoke.status, 401);
   const disabledRefresh = await call("/api/v1/auth/refresh-token", {
     method: "post",
     cookie: statusSession.cookie,
@@ -267,6 +278,159 @@ try {
     401,
   );
 
+  const managerCurrent = await login("michael.b@email.com", "abc123");
+  const managerOther = await login("michael.b@email.com", "abc123");
+  const foreignSession = await login("jane.smith@email.com", "abc123");
+  const expiredManagedSession = await login("michael.b@email.com", "abc123");
+  const revokedManagedSession = await login("michael.b@email.com", "abc123");
+  for (const result of [
+    managerCurrent,
+    managerOther,
+    foreignSession,
+    expiredManagedSession,
+    revokedManagedSession,
+  ]) {
+    assert.equal(result.status, 200);
+  }
+  const managerCurrentId = rememberSession(managerCurrent);
+  const managerOtherId = rememberSession(managerOther);
+  const foreignSessionId = rememberSession(foreignSession);
+  const expiredManagedSessionId = rememberSession(expiredManagedSession);
+  const revokedManagedSessionId = rememberSession(revokedManagedSession);
+  await database.execute(
+    "UPDATE auth_sessions SET expires_at = UTC_TIMESTAMP() - INTERVAL 1 SECOND WHERE id = ?",
+    [expiredManagedSessionId],
+  );
+  await database.execute(
+    "UPDATE auth_sessions SET revoked_at = UTC_TIMESTAMP() WHERE id = ?",
+    [revokedManagedSessionId],
+  );
+
+  const managedSessions = await call("/api/v1/auth/sessions?userId=3", {
+    token: managerCurrent.data.accessToken,
+  });
+  assert.equal(managedSessions.status, 200);
+  assert.ok(Array.isArray(managedSessions.data.sessions));
+  assert.ok(managedSessions.data.sessions.some((session) => session.id === managerOtherId));
+  assert.equal(
+    managedSessions.data.sessions.find((session) => session.id === managerCurrentId)?.current,
+    true,
+  );
+  assert.equal(
+    managedSessions.data.sessions.filter((session) => session.current).length,
+    1,
+  );
+  assert.equal(
+    managedSessions.data.sessions.some((session) => session.id === foreignSessionId),
+    false,
+  );
+  assert.equal(
+    managedSessions.data.sessions.some((session) => session.id === expiredManagedSessionId),
+    false,
+  );
+  assert.equal(
+    managedSessions.data.sessions.some((session) => session.id === revokedManagedSessionId),
+    false,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(managedSessions.data),
+    /refresh_token_hash|refreshToken|accessToken|password|secret/iu,
+  );
+
+  const foreignRevoke = await call(`/api/v1/auth/sessions/${foreignSessionId}`, {
+    method: "delete",
+    token: managerCurrent.data.accessToken,
+    origin: frontendOrigin,
+    body: { userId: 4 },
+  });
+  assert.equal(foreignRevoke.status, 404);
+  assert.equal(
+    (await call("/api/v1/auth/me", { token: foreignSession.data.accessToken })).status,
+    200,
+  );
+
+  const ownRevoke = await call(`/api/v1/auth/sessions/${managerOtherId}`, {
+    method: "delete",
+    token: managerCurrent.data.accessToken,
+    origin: frontendOrigin,
+  });
+  assert.equal(ownRevoke.status, 204);
+  assert.equal(
+    (await call("/api/v1/auth/me", { token: managerOther.data.accessToken })).status,
+    401,
+  );
+  assert.equal(
+    (await call("/api/v1/auth/refresh-token", {
+      method: "post",
+      cookie: managerOther.cookie,
+      origin: frontendOrigin,
+    })).status,
+    401,
+  );
+  assert.equal(
+    (await call(`/api/v1/auth/sessions/${managerOtherId}`, {
+      method: "delete",
+      token: managerCurrent.data.accessToken,
+      origin: frontendOrigin,
+    })).status,
+    204,
+  );
+
+  const managerThird = await login("michael.b@email.com", "abc123");
+  assert.equal(managerThird.status, 200);
+  rememberSession(managerThird);
+  const logoutOthers = await call("/api/v1/auth/logout-others", {
+    method: "post",
+    token: managerCurrent.data.accessToken,
+    origin: frontendOrigin,
+  });
+  assert.equal(logoutOthers.status, 204);
+  assert.equal(
+    (await call("/api/v1/auth/me", { token: managerCurrent.data.accessToken })).status,
+    200,
+  );
+  assert.equal(
+    (await call("/api/v1/auth/me", { token: managerThird.data.accessToken })).status,
+    401,
+  );
+  assert.equal(
+    (await call("/api/v1/auth/refresh-token", {
+      method: "post",
+      cookie: managerThird.cookie,
+      origin: frontendOrigin,
+    })).status,
+    401,
+  );
+  assert.equal(
+    (await call("/api/v1/auth/me", { token: foreignSession.data.accessToken })).status,
+    200,
+  );
+  const afterLogoutOthers = await call("/api/v1/auth/sessions", {
+    token: managerCurrent.data.accessToken,
+  });
+  assert.deepEqual(afterLogoutOthers.data.sessions.map((session) => session.id), [managerCurrentId]);
+
+  const revokeCurrent = await call(`/api/v1/auth/sessions/${foreignSessionId}`, {
+    method: "delete",
+    token: foreignSession.data.accessToken,
+    cookie: foreignSession.cookie,
+    origin: frontendOrigin,
+  });
+  assert.equal(revokeCurrent.status, 204);
+  assert.equal(revokeCurrent.cookie, "refreshToken=");
+  assert.equal(
+    (await call("/api/v1/auth/me", { token: foreignSession.data.accessToken })).status,
+    401,
+  );
+  assert.equal(
+    (await call("/api/v1/auth/refresh-token", {
+      method: "post",
+      cookie: foreignSession.cookie,
+      origin: frontendOrigin,
+    })).status,
+    401,
+  );
+
   const deviceA = await login("michael.b@email.com", "abc123");
   const deviceB = await login("michael.b@email.com", "abc123");
   assert.equal(deviceA.status, 200);
@@ -352,7 +516,7 @@ try {
   assert.equal(forgedRoleAdmin.status, 403);
 
   console.log(
-    `Auth integration checks passed: JWT role forgery rejected, disabled sessions rejected, ${adminEndpoints.length} admin endpoint(s) covered, and full auth regression passed.`,
+    `Auth integration checks passed: session ownership/revocation, JWT role forgery, disabled sessions, ${adminEndpoints.length} admin endpoint(s), and full auth regression passed.`,
   );
 } finally {
   for (const sessionId of createdSessionIds) {

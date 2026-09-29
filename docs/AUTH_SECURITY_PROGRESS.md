@@ -2,18 +2,18 @@
 
 Ngày rà soát source và Git gần nhất: 2026-09-29  
 Current branch: `Du`  
-Current latest security commit: `c61103d`
-Mốc source hiện tại: `c61103d security: add MFA TOTP phase 4A`
-Current uncommitted security phase: `Phase 4B — MFA management UI`
+Current latest security commit: `318f6dd`
+Mốc source hiện tại: `318f6dd security: add MFA management phase 4B`
+Current uncommitted security phase: `Phase 5A — session and device management`
 
 Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
 
 ## Current working tree expectation
 
-Current expectation while Phase 4B is under review:
+Current expectation while Phase 5A is under review:
 
 ```text
-git status -> Phase 4B MFA status/regeneration backend, account-security UI, tests, QR dependency, and this document are modified/untracked
+git status -> Phase 5A session list/revocation backend, account-security session UI, tests, and this document are modified/untracked
 ```
 
 Do not overwrite or discard those changes. After an explicit future commit, the expected state returns to:
@@ -49,8 +49,9 @@ Các checkpoint auth/security theo thứ tự thời gian:
 | `00de989` | 2026-09-29 | `security: implement password lifecycle hardening` |
 | `c6357f2` | 2026-09-29 | `docs: add auth security project context` |
 | `c61103d` | 2026-09-29 | `security: add MFA TOTP phase 4A` |
+| `318f6dd` | 2026-09-29 | `security: add MFA management phase 4B` |
 
-Các checkpoint trên đều đã commit. Phase 4B hiện là thay đổi working tree chưa commit theo yêu cầu.
+Các checkpoint trên đều đã commit. Phase 5A hiện là thay đổi working tree chưa commit theo yêu cầu.
 
 ## Chi tiết từng phase
 
@@ -113,12 +114,23 @@ Các checkpoint trên đều đã commit. Phase 4B hiện là thay đổi workin
 
 ### Phase 4B — MFA management UI
 
-- **Trạng thái:** đã triển khai và verify, chưa commit.
+- **Trạng thái:** đã commit tại `318f6dd` và verify live trên MySQL dev.
 - **Backend:** thêm `GET /api/v1/auth/mfa/status` với safe projection và `POST /api/v1/auth/mfa/recovery-codes/regenerate`. Cả hai lấy identity từ `req.user.id`; regeneration yêu cầu current password + TOTP, dùng rate limit hiện hữu, chặn replay TOTP, xóa toàn bộ code cũ và chỉ lưu hash của code mới.
 - **Frontend:** thêm protected route `/account/security`, link Security nhỏ trong navigation hiện hữu, QR provisioning bằng `qrcode.react`, xác nhận enrollment, recovery-code acknowledgement/copy, regeneration và disable. Provisioning URI, TOTP secret và raw recovery codes chỉ ở component memory, không vào browser storage.
 - **Session behavior:** enable và disable tiếp tục revoke toàn bộ session; UI giữ recovery codes sau enable đủ lâu để user lưu rồi xóa auth state và chuyển về `/login`. Regeneration không đổi TOTP secret và không revoke session; endpoint bắt buộc strong reauthentication.
 - **Tests:** backend unit `13/13`, full integration live trên MySQL, frontend lint/build, auth UI smoke, MFA login smoke và MFA management smoke đều pass. Coverage mới gồm status disabled/enabled/safe projection, guest rejection, regeneration wrong password/TOTP, invalidation code cũ, code mới one-time, disabled-user rejection, QR/setup error/success, recovery codes memory-only và disable sign-out.
-- **MFA work còn lại ngoài scope:** trusted/remembered devices, SMS/email OTP, passkeys/WebAuthn và session/device management chưa triển khai.
+- **MFA work còn lại ngoài scope:** trusted/remembered devices, SMS/email OTP và passkeys/WebAuthn chưa triển khai.
+
+### Phase 5A — session and device management
+
+- **Trạng thái:** đã triển khai và verify, chưa commit; không cần migration vì `auth_sessions` đã có đủ metadata.
+- **Backend:** thêm `GET /api/v1/auth/sessions`, `DELETE /api/v1/auth/sessions/:sessionId` và `POST /api/v1/auth/logout-others`. Identity luôn lấy từ `req.user.id`; current session lấy từ `req.auth.sessionId`; không nhận hoặc tin `userId` từ body/query.
+- **List policy:** chỉ trả session chưa revoke, chưa idle-expired và chưa absolute-expired. Safe projection gồm ID, created/last-used/idle-expiry/absolute-expiry, user-agent, IP và cờ current; tuyệt đối không trả refresh-token hash hoặc token/secret.
+- **Ownership/revocation:** per-session revoke dùng atomic `UPDATE ... WHERE id = ? AND user_id = ?`; foreign session trả `404`, session của chính user đã revoke trả idempotent `204`. Revoke current session xóa refresh cookie. Logout-others revoke mọi session khác nhưng giữ current; logout-all giữ nguyên hành vi revoke toàn bộ.
+- **Frontend:** mở rộng `/account/security` với danh sách Active sessions, current badge, raw user-agent/IP, thời gian tạo/refresh/expiry, revoke từng session khác, logout others và logout all. Không thêm fingerprinting hoặc geo-IP.
+- **Last-used semantics:** `lastUsedAt` là lần refresh session gần nhất được auth system ghi nhận, không phải request HTTP gần nhất.
+- **Tests:** backend unit `13/13`, full backend integration live trên MySQL, frontend lint/build và toàn bộ auth/MFA/session browser smoke đều pass. IDOR coverage xác nhận User A không list/revoke session User B, body/query `userId` bị bỏ qua và session User B vẫn hợp lệ sau tấn công.
+- **Rủi ro còn lại:** user-agent/IP là metadata quan sát được, không phải device identity đáng tin; chưa có refresh-token family/history, multi-tab auth sync hoặc scheduled cleanup session cũ.
 
 ## Security controls hiện có
 
@@ -170,6 +182,9 @@ Chỉ liệt kê route thực sự có trong source.
 | POST | `/api/v1/auth/forgot-password` | Public; generic response, validation, rate limit |
 | POST | `/api/v1/auth/reset-password` | Public; generic invalid-token response, validation, rate limit |
 | POST | `/api/v1/auth/logout` | Origin check; revoke matching session và clear cookie |
+| GET | `/api/v1/auth/sessions` | `requireAuth`; active-only safe projection của `req.user.id`; current theo `req.auth.sessionId` |
+| DELETE | `/api/v1/auth/sessions/:sessionId` | `requireAuth`; Origin; atomic ownership constraint; current revoke clear cookie |
+| POST | `/api/v1/auth/logout-others` | `requireAuth`; Origin; revoke mọi session khác của current user |
 | POST | `/api/v1/auth/logout-all` | `requireAuth`; revoke session của `req.user.id`; Origin check |
 | GET | `/api/v1/auth/me` | `requireAuth`; safe user projection |
 | GET | `/api/v1/admin/check` | `requireAuth` + `requireRole("admin")` |
@@ -248,7 +263,6 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - CAPTCHA hoặc bot-abuse control bổ sung
 - Production email provider và delivery monitoring cho password reset
 - CSP tương thích streaming; hiện Helmet chạy với CSP disabled
-- Session/device management UI
 - Multi-tab auth state sync
 - Refresh-token family/history và replay-family response
 - Scheduled cleanup token reset hết hạn/đã dùng
@@ -261,7 +275,7 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 
 Next candidate:
 
-**Phase 5 — bot-abuse controls hoặc production password-reset delivery**
+**Phase 5B — bot-abuse controls hoặc production password-reset delivery**
 
 Do not start automatically.  
 First audit current source and propose scope.

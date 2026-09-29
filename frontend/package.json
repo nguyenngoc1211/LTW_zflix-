@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test:ui": "node integration/auth-ui-smoke.js",
     "test:ui:mfa": "node integration/mfa-login-smoke.js",
-    "test:ui:mfa-management": "node integration/mfa-management-smoke.js"
+    "test:ui:mfa-management": "node integration/mfa-management-smoke.js",
+    "test:ui:sessions": "node integration/session-management-smoke.js"
   },
   "dependencies": {
     "@ant-design/icons": "6.0.0",

@@ -226,6 +226,56 @@ export const revokeAllSessions = async (userId) => {
   );
 };
 
+export const listActiveSessions = async (userId, currentSessionId) => {
+  const [rows] = await pool.execute(
+    `SELECT id, user_agent, ip_address, expires_at, absolute_expires_at,
+            last_used_at, created_at
+     FROM auth_sessions
+     WHERE user_id = ?
+       AND revoked_at IS NULL
+       AND expires_at > UTC_TIMESTAMP()
+       AND absolute_expires_at > UTC_TIMESTAMP()
+     ORDER BY (id = ?) DESC, COALESCE(last_used_at, created_at) DESC`,
+    [userId, currentSessionId],
+  );
+
+  return rows.map((session) => ({
+    id: session.id,
+    createdAt: session.created_at,
+    lastUsedAt: session.last_used_at,
+    expiresAt: session.expires_at,
+    absoluteExpiresAt: session.absolute_expires_at,
+    userAgent: session.user_agent,
+    ipAddress: session.ip_address,
+    current: session.id === currentSessionId,
+  }));
+};
+
+export const revokeOwnedSession = async (userId, sessionId) => {
+  const [result] = await pool.execute(
+    `UPDATE auth_sessions
+     SET revoked_at = UTC_TIMESTAMP()
+     WHERE id = ? AND user_id = ? AND revoked_at IS NULL`,
+    [sessionId, userId],
+  );
+  if (result.affectedRows === 1) return "revoked";
+
+  const [ownedSessions] = await pool.execute(
+    "SELECT id FROM auth_sessions WHERE id = ? AND user_id = ? LIMIT 1",
+    [sessionId, userId],
+  );
+  return ownedSessions.length === 1 ? "already_revoked" : "not_found";
+};
+
+export const revokeOtherSessions = async (userId, currentSessionId) => {
+  await pool.execute(
+    `UPDATE auth_sessions
+     SET revoked_at = UTC_TIMESTAMP()
+     WHERE user_id = ? AND id <> ? AND revoked_at IS NULL`,
+    [userId, currentSessionId],
+  );
+};
+
 const verifyTotpFactor = async (connection, user, code) => {
   if (
     user.mfa_secret_ciphertext &&

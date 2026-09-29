@@ -18,12 +18,15 @@ import {
   enableMfa,
   getMfaStatus,
   login,
+  listActiveSessions,
   regenerateMfaRecoveryCodes,
   refresh,
   refreshCookieOptions,
   requestPasswordReset,
   resetPassword,
   revokeAllSessions,
+  revokeOtherSessions,
+  revokeOwnedSession,
   revokeSession,
 } from "./auth.service.js";
 
@@ -326,6 +329,54 @@ authRouter.post("/logout", requireFrontendOrigin, async (req, res, next) => {
     return next(error);
   }
 });
+
+authRouter.get("/sessions", requireAuth, async (req, res, next) => {
+  try {
+    const sessions = await listActiveSessions(req.user.id, req.auth.sessionId);
+    res.set("Cache-Control", "no-store");
+    return res.json({ sessions });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+authRouter.delete(
+  "/sessions/:sessionId",
+  requireAuth,
+  requireFrontendOrigin,
+  async (req, res, next) => {
+    try {
+      const { sessionId } = req.params;
+      if (typeof sessionId !== "string" || sessionId.length === 0 || sessionId.length > 64) {
+        return res.status(400).json({ message: "Session identifier is invalid" });
+      }
+      const result = await revokeOwnedSession(req.user.id, sessionId);
+      if (result === "not_found") {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      if (sessionId === req.auth.sessionId) {
+        res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
+      }
+      return res.status(204).end();
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+authRouter.post(
+  "/logout-others",
+  requireFrontendOrigin,
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      await revokeOtherSessions(req.user.id, req.auth.sessionId);
+      return res.status(204).end();
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
 
 authRouter.post(
   "/logout-all",
