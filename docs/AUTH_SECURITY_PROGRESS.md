@@ -2,18 +2,18 @@
 
 Ngày rà soát source và Git gần nhất: 2026-09-29  
 Current branch: `Du`  
-Current latest security commit: `2946c00`
-Mốc source hiện tại: `2946c00 security: add session management phase 5A`
-Current uncommitted security phase: `Phase 6 — security logging and cleanup`
+Current latest security commit: `8988504`
+Mốc source hiện tại: `8988504 security: add auth logging and cleanup phase 6`
+Current uncommitted security phase: `None; only this post-commit documentation update is pending`
 
 Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
 
 ## Current working tree expectation
 
-Current expectation while Phase 6 is under review:
+Current expectation while this post-commit documentation update is pending:
 
 ```text
-git status -> Phase 6 security logger, auth event instrumentation, cleanup command/tests, config, and this document are modified/untracked
+git status -> docs/AUTH_SECURITY_PROGRESS.md modified only
 ```
 
 Do not overwrite or discard those changes. After an explicit future commit, the expected state returns to:
@@ -51,8 +51,9 @@ Các checkpoint auth/security theo thứ tự thời gian:
 | `c61103d` | 2026-09-29 | `security: add MFA TOTP phase 4A` |
 | `318f6dd` | 2026-09-29 | `security: add MFA management phase 4B` |
 | `2946c00` | 2026-09-29 | `security: add session management phase 5A` |
+| `8988504` | 2026-09-29 | `security: add auth logging and cleanup phase 6` |
 
-Các checkpoint trên đều đã commit. Phase 6 hiện là thay đổi working tree chưa commit theo yêu cầu.
+Các checkpoint trên đều đã commit đến hết Phase 6. Working tree được kỳ vọng clean trước phase tiếp theo.
 
 ## Chi tiết từng phase
 
@@ -135,7 +136,7 @@ Các checkpoint trên đều đã commit. Phase 6 hiện là thay đổi working
 
 ### Phase 6 — security logging và cleanup
 
-- **Trạng thái:** đã triển khai và verify, chưa commit; không thêm bảng hoặc migration.
+- **Trạng thái:** đã commit tại `8988504` và verify live trên MySQL dev; không thêm bảng hoặc migration.
 - **Structured logger:** `securityLog(event, metadata)` phát một JSON line với timestamp và allow-list field gồm user/session/target-session ID, IP, user-agent, reason, factor và revoked count. User-agent giới hạn 255 ký tự, IP giới hạn 45 ký tự; lỗi log sink không làm thay đổi auth flow.
 - **Events:** login success/failure, account locked/disabled attempt, refresh success/failure, logout/logout-all/logout-others, session revoke success/failure, password change/reset request/reset success/failure, MFA setup/enable/verify failure/login success/recovery use/regeneration/disable, access denied và admin access denied.
 - **Fields cố ý loại trừ:** password mọi loại, access/refresh token và hash, Authorization/Cookie header, reset token/hash, TOTP secret/ciphertext/code, recovery code/hash, MFA challenge token/hash, JWT secret và MFA encryption key. Unknown-account login/reset request không tạo giả user ID và không log email.
