@@ -58,6 +58,31 @@ test("cookie-backed endpoints require the configured frontend origin", async () 
   assert.equal(allowedOrigin.status, 401);
 });
 
+test("password lifecycle endpoints validate input and rate-limit forgot-password", async () => {
+  const guestChange = await request(app)
+    .post("/api/v1/auth/change-password")
+    .set("Origin", process.env.FRONTEND_ORIGIN)
+    .send({ currentPassword: "old-password", newPassword: "new-password" });
+  assert.equal(guestChange.status, 401);
+
+  let invalidForgot;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    invalidForgot = await request(app)
+      .post("/api/v1/auth/forgot-password")
+      .send({ email: "not-an-email" });
+    assert.equal(invalidForgot.status, 400);
+  }
+  const limitedForgot = await request(app)
+    .post("/api/v1/auth/forgot-password")
+    .send({ email: "not-an-email" });
+  assert.equal(limitedForgot.status, 429);
+
+  const malformedReset = await request(app)
+    .post("/api/v1/auth/reset-password")
+    .send({ token: "", newPassword: "valid-password" });
+  assert.equal(malformedReset.status, 400);
+});
+
 test("login rate limit returns 429 without account-specific information", async () => {
   let response;
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -104,4 +129,29 @@ test("production rejects missing or weak JWT secrets without printing their valu
   assert.notEqual(weakResult.status, 0);
   assert.match(weakResult.stderr, /strong, non-demo value/);
   assert.equal(weakResult.stderr.includes(weakSecret), false);
+});
+
+test("production password reset delivery is disabled when no provider is configured", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `import('./src/modules/auth/password-reset-delivery.js').then((module) => {
+        if (module.passwordResetDeliveryAvailable()) process.exit(2);
+      })`,
+    ],
+    {
+      cwd: new URL("..", import.meta.url),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        FRONTEND_ORIGIN: "https://movies.example.com",
+        JWT_ACCESS_SECRET: "9f4d8a12c7e65b30a1f829d46c73e5089b2a61d4f7c83e50",
+        DOTENV_CONFIG_PATH: "./test/does-not-exist.env",
+      },
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
 });

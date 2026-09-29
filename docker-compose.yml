@@ -38,6 +38,9 @@ services:
       AUTH_LOCK_MINUTES: 5
       REFRESH_IDLE_TTL_DAYS: 7
       REFRESH_ABSOLUTE_TTL_DAYS: 30
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: 30
+      FORGOT_PASSWORD_RATE_LIMIT_MAX: 5
+      RESET_PASSWORD_RATE_LIMIT_MAX: 10
     depends_on:
       db:
         condition: service_healthy
