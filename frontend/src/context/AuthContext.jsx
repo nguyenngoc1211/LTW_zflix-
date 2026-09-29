@@ -74,6 +74,22 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
         }
       },
+      async getSessions() {
+        const result = await apiRequest("/api/v1/auth/sessions");
+        return result.sessions;
+      },
+      async revokeSession(sessionId, current = false) {
+        await apiRequest(`/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`, {
+          method: "DELETE",
+        }, !current);
+        if (current) {
+          setAccessToken(null);
+          setUser(null);
+        }
+      },
+      async logoutOtherSessions() {
+        await apiRequest("/api/v1/auth/logout-others", { method: "POST" });
+      },
       async changePassword(currentPassword, newPassword) {
         const result = await apiRequest("/api/v1/auth/change-password", {
           method: "POST",
