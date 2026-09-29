@@ -55,6 +55,14 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
         }
       },
+      async logoutAll() {
+        try {
+          await apiRequest("/api/v1/auth/logout-all", { method: "POST" }, false);
+        } finally {
+          setAccessToken(null);
+          setUser(null);
+        }
+      },
       apiRequest,
     }),
     [loading, user],

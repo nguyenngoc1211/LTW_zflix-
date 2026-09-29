@@ -46,4 +46,15 @@ export const securityConfig = Object.freeze({
     windowMs: positiveInteger(process.env.REFRESH_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
     max: positiveInteger(process.env.REFRESH_RATE_LIMIT_MAX, 120),
   }),
+  accountLock: Object.freeze({
+    maxFailedAttempts: positiveInteger(process.env.AUTH_MAX_FAILED_ATTEMPTS, 5),
+    minutes: positiveInteger(process.env.AUTH_LOCK_MINUTES, 5),
+  }),
+  refreshSession: Object.freeze({
+    idleTtlDays: positiveInteger(
+      process.env.REFRESH_IDLE_TTL_DAYS ?? process.env.REFRESH_TOKEN_DAYS,
+      7,
+    ),
+    absoluteTtlDays: positiveInteger(process.env.REFRESH_ABSOLUTE_TTL_DAYS, 30),
+  }),
 });

@@ -11,6 +11,7 @@ import {
   login,
   refresh,
   refreshCookieOptions,
+  revokeAllSessions,
   revokeSession,
 } from "./auth.service.js";
 
@@ -32,7 +33,14 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
       userAgent: req.get("user-agent"),
       ipAddress: req.ip,
     });
-    if (!result) return res.status(401).json({ message: "Invalid email or password" });
+    if (result?.denied === "locked") {
+      return res
+        .status(429)
+        .json({ message: "Unable to sign in right now. Please try again later" });
+    }
+    if (!result || result.denied) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
 
     res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
     return res.json({ accessToken: result.accessToken, user: result.user });
@@ -78,5 +86,20 @@ authRouter.post("/logout", requireFrontendOrigin, async (req, res, next) => {
     return next(error);
   }
 });
+
+authRouter.post(
+  "/logout-all",
+  requireFrontendOrigin,
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      await revokeAllSessions(req.user.id);
+      res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
+      return res.status(204).end();
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
 
 authRouter.get("/me", requireAuth, (req, res) => res.json({ user: req.user }));

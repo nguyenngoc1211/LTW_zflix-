@@ -1,6 +1,9 @@
-import "dotenv/config";
 import bcrypt from "bcryptjs";
-import { pool } from "../src/core/database/pool.js";
+import dotenv from "dotenv";
+
+dotenv.config();
+dotenv.config({ path: new URL("../../.env", import.meta.url), override: false });
+const { pool } = await import("../src/core/database/pool.js");
 
 const createSessionsTable = `
   CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -10,6 +13,7 @@ const createSessionsTable = `
     user_agent varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
     ip_address varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
     expires_at datetime NOT NULL,
+    absolute_expires_at datetime DEFAULT NULL,
     last_used_at datetime DEFAULT NULL,
     revoked_at datetime DEFAULT NULL,
     created_at timestamp NULL DEFAULT CURRENT_TIMESTAMP,
@@ -21,8 +25,34 @@ const createSessionsTable = `
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 `;
 
+const addColumnIfMissing = async (tableName, columnName, definition) => {
+  const [columns] = await pool.execute(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?
+     LIMIT 1`,
+    [tableName, columnName],
+  );
+  if (columns.length === 0) {
+    await pool.query(`ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${definition}`);
+  }
+};
+
 try {
+  await addColumnIfMissing("users", "failed_login_attempts", "INT NOT NULL DEFAULT 0");
+  await addColumnIfMissing("users", "locked_until", "DATETIME NULL");
+  await addColumnIfMissing(
+    "users",
+    "status",
+    "ENUM('active','disabled') NOT NULL DEFAULT 'active'",
+  );
+  await addColumnIfMissing("users", "disabled_at", "DATETIME NULL");
+  await addColumnIfMissing("users", "password_changed_at", "DATETIME NULL");
   await pool.execute(createSessionsTable);
+  await addColumnIfMissing("auth_sessions", "absolute_expires_at", "DATETIME NULL");
+  await pool.execute(
+    "UPDATE auth_sessions SET absolute_expires_at = expires_at WHERE absolute_expires_at IS NULL",
+  );
   await pool.execute("UPDATE users SET password = NULL WHERE provider <> 'local'");
 
   const [users] = await pool.execute(
