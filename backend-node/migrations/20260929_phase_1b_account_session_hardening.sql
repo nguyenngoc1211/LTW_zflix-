@@ -85,3 +85,6 @@ DEALLOCATE PREPARE migration_statement;
 UPDATE auth_sessions
 SET absolute_expires_at = expires_at
 WHERE absolute_expires_at IS NULL;
+
+ALTER TABLE auth_sessions
+MODIFY COLUMN absolute_expires_at DATETIME NOT NULL;

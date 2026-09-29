@@ -19,3 +19,4 @@ export const forgotPasswordRateLimiter = authenticationRateLimiter(
 export const resetPasswordRateLimiter = authenticationRateLimiter(
   securityConfig.resetPasswordRateLimit,
 );
+export const mfaRateLimiter = authenticationRateLimiter(securityConfig.mfa.rateLimit);

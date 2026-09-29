@@ -7,6 +7,7 @@ import request from "supertest";
 process.env.DATABASE_URL ||= "mysql://root:rootpassword@127.0.0.1:3306/movie_streaming_db";
 process.env.JWT_ACCESS_SECRET ||= "test-only-secret-with-at-least-thirty-two-characters";
 process.env.FRONTEND_ORIGIN ||= "http://localhost:5173";
+process.env.MFA_ENCRYPTION_KEY ||= Buffer.alloc(32, 7).toString("base64");
 
 const { default: app } = await import("../src/app.js");
 
@@ -56,6 +57,11 @@ test("cookie-backed endpoints require the configured frontend origin", async () 
     .post("/api/v1/auth/refresh-token")
     .set("Origin", process.env.FRONTEND_ORIGIN);
   assert.equal(allowedOrigin.status, 401);
+
+  const missingMfaOrigin = await request(app)
+    .post("/api/v1/auth/mfa/verify")
+    .send({ challengeToken: "challenge", code: "123456" });
+  assert.equal(missingMfaOrigin.status, 403);
 });
 
 test("password lifecycle endpoints validate input and rate-limit forgot-password", async () => {
@@ -102,6 +108,7 @@ test("production rejects missing or weak JWT secrets without printing their valu
     ...process.env,
     NODE_ENV: "production",
     FRONTEND_ORIGIN: "https://movies.example.com",
+    MFA_ENCRYPTION_KEY: Buffer.alloc(32, 8).toString("base64"),
     DOTENV_CONFIG_PATH: "./test/does-not-exist.env",
   };
   delete productionEnv.JWT_ACCESS_SECRET;
@@ -131,6 +138,24 @@ test("production rejects missing or weak JWT secrets without printing their valu
   assert.equal(weakResult.stderr.includes(weakSecret), false);
 });
 
+test("production requires a dedicated 32-byte MFA encryption key", () => {
+  const productionEnv = {
+    ...process.env,
+    NODE_ENV: "production",
+    FRONTEND_ORIGIN: "https://movies.example.com",
+    JWT_ACCESS_SECRET: "9f4d8a12c7e65b30a1f829d46c73e5089b2a61d4f7c83e50",
+    DOTENV_CONFIG_PATH: "./test/does-not-exist.env",
+  };
+  delete productionEnv.MFA_ENCRYPTION_KEY;
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "--eval", "import('./src/config/security.config.js')"],
+    { cwd: new URL("..", import.meta.url), encoding: "utf8", env: productionEnv },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /MFA_ENCRYPTION_KEY is required in production/);
+});
+
 test("production password reset delivery is disabled when no provider is configured", () => {
   const result = spawnSync(
     process.execPath,
@@ -149,6 +174,7 @@ test("production password reset delivery is disabled when no provider is configu
         NODE_ENV: "production",
         FRONTEND_ORIGIN: "https://movies.example.com",
         JWT_ACCESS_SECRET: "9f4d8a12c7e65b30a1f829d46c73e5089b2a61d4f7c83e50",
+        MFA_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64"),
         DOTENV_CONFIG_PATH: "./test/does-not-exist.env",
       },
     },

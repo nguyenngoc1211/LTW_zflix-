@@ -4,28 +4,29 @@ Ngày rà soát source và Git gần nhất: 2026-09-29
 Current branch: `Du`  
 Current latest security commit: `00de989`  
 Mốc source hiện tại: `00de989 security: implement password lifecycle hardening`
+Current uncommitted security phase: `Phase 4A — backend MFA/TOTP and login second step`
 
 Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
 
 ## Current working tree expectation
 
-Expected:
+Current expectation while Phase 4A is under review:
+
+```text
+git status -> Phase 4A source, migration, tests, minimal MFA login UI, and this document are modified/untracked
+```
+
+Do not overwrite or discard those changes. After an explicit future commit, the expected state returns to:
 
 ```text
 git status -> clean
 ```
 
-If dirty:
-
-```text
-stop and inspect changes before continuing
-```
-
-Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
+Mọi thay đổi khác ngoài scope trên vẫn phải dừng lại để kiểm tra. Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
 
 ## Kiến trúc hiện tại
 
-- **Login:** `POST /api/v1/auth/login` validate request, tìm local user active theo email đã chuẩn hóa, kiểm tra temporary lock, so sánh mật khẩu bằng bcrypt, ghi nhận failed attempts, tạo session trong database, trả access JWT ngắn hạn và set refresh-token cookie.
+- **Login:** `POST /api/v1/auth/login` validate request, tìm local user active theo email đã chuẩn hóa, kiểm tra temporary lock và so sánh mật khẩu bằng bcrypt. User không bật MFA được cấp session như trước; user bật MFA chỉ nhận challenge ngắn hạn, chưa có session/access token/refresh cookie cho tới khi factor hợp lệ.
 - **Logout:** `POST /api/v1/auth/logout` có Origin protection; revoke session tương ứng nếu có refresh token và luôn xóa refresh cookie.
 - **Refresh token:** raw token được tạo bằng CSPRNG và chỉ tồn tại trong cookie client. `auth_sessions` chỉ lưu SHA-256 hash. Refresh rotation thay hash trong cùng session và từ chối token cũ bị dùng lại.
 - **JWT:** access token dùng `HS256`, thời hạn mặc định 15 phút, có `sub` và `sid`. Claim role có thể tồn tại vì tương thích nhưng không được dùng làm nguồn phân quyền; verify allow-list rõ `HS256`.
@@ -47,7 +48,7 @@ Các checkpoint auth/security theo thứ tự thời gian:
 | `cd9a4a8` | 2026-09-29 | `test: strengthen authorization regression coverage` |
 | `00de989` | 2026-09-29 | `security: implement password lifecycle hardening` |
 
-Cả năm checkpoint trên đều đã commit. Không có phase security production nào pending commit tại thời điểm rà soát. Hai file ghi nhớ `docs/AUTH_SECURITY_PROGRESS.md` và `AGENTS.md` là thay đổi tài liệu riêng, chưa commit.
+Cả năm checkpoint trên đều đã commit. Commit `c6357f2` đã commit riêng `docs/AUTH_SECURITY_PROGRESS.md` và `AGENTS.md`. Phase 4A hiện là thay đổi working tree chưa commit theo yêu cầu.
 
 ## Chi tiết từng phase
 
@@ -96,6 +97,18 @@ Cả năm checkpoint trên đều đã commit. Không có phase security product
 - **Tests:** password validation/change, revoke access/refresh cũ, old/new password login, generic no-enumeration, không expose token, hash/TTL, invalidate nhiều request, reject reuse/expiry/random/malformed, revoke session và concurrent single-use.
 - **Rủi ro còn lại:** production email provider chưa cấu hình; dev/test dùng in-memory capture; chưa có scheduled cleanup token hết hạn.
 
+### Phase 4A — backend MFA/TOTP và login second step
+
+- **Trạng thái:** đã triển khai và verify live trên MySQL dev trong working tree, chưa commit.
+- **Đã triển khai:** encrypted TOTP enrollment/confirmation, MFA login challenge, TOTP hoặc recovery-code verification, MFA disable và frontend login second step tối thiểu. Chưa có trang `/account/security` hoặc UI regenerate recovery code.
+- **Migration:** `backend-node/migrations/20260929_phase_4a_mfa_totp.sql` thêm trạng thái/secret MFA vào `users`, bảng `auth_mfa_challenges` và `auth_mfa_recovery_codes`. `scripts/migrate-auth.js` và `database/init.sql` đã đồng bộ cho database hiện hữu và database mới.
+- **Security controls:** TOTP secret AES-256-GCM; production bắt buộc key base64 32 byte riêng. Challenge và recovery code chỉ lưu SHA-256 hash; challenge TTL 5 phút, tối đa 5 lần thử, one-time; recovery code 128-bit và one-time. TOTP time step cuối được cập nhật atomic để chặn replay.
+- **Session boundary:** password đúng với user bật MFA chỉ trả HTTP 202 challenge. Chỉ `/mfa/verify` thành công mới tạo `auth_sessions`, access JWT và refresh cookie.
+- **Lifecycle:** password reset giữ nguyên MFA; disabled user bị từ chối; enable/disable MFA revoke toàn bộ session; disable cần current password và TOTP/recovery code.
+- **Tests:** backend unit `13/13`, schema-consistency, full backend integration trên MySQL thật, frontend lint/build, full auth UI smoke và focused MFA browser smoke đều pass. Integration live bao phủ enrollment/enable, không cấp credential trước factor, TOTP đúng/sai/replay, challenge expiry/attempt cap/one-time, recovery code one-time, disabled user, password-reset preservation, MFA disable và session revocation.
+- **Live migration verification:** `npm run migrate:auth` đã chạy thành công trong backend container trên MySQL dev; live schema có đủ 6 cột MFA ở `users`, 2 bảng MFA và `auth_sessions.absolute_expires_at` là `NOT NULL`.
+- **Verification fix:** sửa biểu thức consume challenge để MySQL đánh dấu used đúng ở lần sai thứ 5, không phải lần thứ 4; toàn bộ integration được chạy lại và pass.
+
 ## Security controls hiện có
 
 - Password dùng bcrypt cost `12`; không dùng SHA-256 để hash password.
@@ -120,6 +133,10 @@ Cả năm checkpoint trên đều đã commit. Không có phase security product
 - Reset token 32 random bytes, chỉ lưu SHA-256 hash, TTL 30 phút, one-time và claim trong transaction.
 - Reset thành công update bcrypt password, invalidate token khác và revoke mọi session atomic.
 - Không chủ động log password, raw refresh/reset token, Authorization header hoặc Cookie header.
+- TOTP secret chỉ lưu ciphertext AES-256-GCM cùng IV/tag; raw secret chỉ trả ở bước setup với `Cache-Control: no-store`.
+- MFA challenge và recovery code không lưu raw value; challenge có TTL/attempt cap/one-time consumption.
+- Không tạo auth session, access token hoặc refresh cookie trước khi MFA login challenge thành công.
+- TOTP time step đã dùng không được chấp nhận lại; recovery code chỉ dùng một lần.
 
 ## Real APIs hiện đang tồn tại
 
@@ -131,6 +148,10 @@ Chỉ liệt kê route thực sự có trong source.
 |---|---|---|
 | GET | `/` | Public health |
 | POST | `/api/v1/auth/login` | Public; validation, rate limit, local/active policy, lock tracking |
+| POST | `/api/v1/auth/mfa/setup` | `requireAuth`; Origin; current-password reauthentication; trả enrollment secret/URI một lần |
+| POST | `/api/v1/auth/mfa/enable` | `requireAuth`; Origin; xác minh TOTP; tạo recovery codes; revoke sessions |
+| POST | `/api/v1/auth/mfa/verify` | Origin; rate limit; challenge one-time; chỉ endpoint này hoàn tất MFA login và cấp session |
+| POST | `/api/v1/auth/mfa/disable` | `requireAuth`; Origin; current password + TOTP/recovery; revoke sessions |
 | POST | `/api/v1/auth/refresh-token` | Cookie endpoint; Origin, rate limit, session/status/expiry checks |
 | POST | `/api/v1/auth/change-password` | `requireAuth`; user lấy từ `req.user.id`; Origin check |
 | POST | `/api/v1/auth/forgot-password` | Public; generic response, validation, rate limit |
@@ -206,10 +227,12 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - Forgot generic equality, unknown/non-local account và không expose token trong production response.
 - Reset token hash, TTL, invalidate token cũ, valid/reuse/expired/random/malformed và concurrent one-time.
 - Frontend login/admin guard, refresh bootstrap/failure, logout state clearing và ordinary-user redirect.
+- MFA setup/enable, không cấp credential trước factor, challenge expiry/attempt cap/one-time, TOTP replay, recovery-code one-time, disabled user, password-reset preservation và disable session revocation.
+- Frontend login chuyển sang second step bằng challenge giữ trong memory và chấp nhận TOTP/recovery code.
 
 ## Remaining work
 
-- MFA/TOTP
+- Full MFA account-security UI và recovery-code regeneration UI
 - CAPTCHA hoặc bot-abuse control bổ sung
 - Production email provider và delivery monitoring cho password reset
 - CSP tương thích streaming; hiện Helmet chạy với CSP disabled
@@ -220,13 +243,13 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - IDOR/BOLA, ownership, mass-assignment khi các resource API thật xuất hiện
 - Server-side premium/subscription authorization khi có API tương ứng
 - Admin CRUD và community/content moderation authorization khi có API tương ứng
-- Email verification, OAuth, passkeys và recovery nâng cao
+- Email verification, OAuth, passkeys/WebAuthn và recovery nâng cao
 
 ## Next recommended phase
 
 Next candidate:
 
-**Phase 4 — MFA/TOTP**
+**Phase 4B — MFA account-security UI và recovery-code regeneration**
 
 Do not start automatically.  
 First audit current source and propose scope.

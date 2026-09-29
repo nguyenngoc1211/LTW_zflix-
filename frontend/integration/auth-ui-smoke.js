@@ -63,8 +63,53 @@ try {
   await page.waitForURL(baseUrl + "/");
   assert.equal(new URL(page.url()).pathname, "/");
 
+  const mfaPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  let submittedChallenge;
+  await mfaPage.route(`${apiUrl}/api/v1/auth/**`, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/v1/auth/login") {
+      return route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          mfaRequired: true,
+          challengeToken: "browser-memory-only-challenge",
+          expiresInSeconds: 300,
+        }),
+      });
+    }
+    if (path === "/api/v1/auth/mfa/verify") {
+      submittedChallenge = JSON.parse(route.request().postData());
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          accessToken: "test-access-token",
+          user: { id: 2, username: "john_doe", email: "john.doe@email.com", role: "user" },
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "Refresh session is missing" }),
+    });
+  });
+  await mfaPage.goto(`${baseUrl}/login`);
+  await mfaPage.getByLabel("Email").fill("john.doe@email.com");
+  await mfaPage.getByLabel("Password").fill("abc123");
+  await mfaPage.getByRole("button", { name: "Sign in" }).click();
+  await mfaPage.getByLabel("Authentication or recovery code").fill("AAAA-BBBB-CCCC-DDDD");
+  await mfaPage.getByRole("button", { name: "Verify code" }).click();
+  await mfaPage.waitForURL(baseUrl + "/");
+  assert.deepEqual(submittedChallenge, {
+    challengeToken: "browser-memory-only-challenge",
+    code: "AAAA-BBBB-CCCC-DDDD",
+  });
+  await mfaPage.close();
+
   console.log(
-    "UI auth checks passed: admin guard/login/reload, refresh-failure state reset, logout, and user redirect.",
+    "UI auth checks passed: existing auth regressions and the in-memory MFA second step.",
   );
 } finally {
   await browser.close();

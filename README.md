@@ -62,13 +62,16 @@ Tài khoản mẫu sau được tạo từ `database/init.sql`. Mật khẩu tro
 
 Các endpoint xác thực dùng base path `/api/v1/auth`:
 
-- `POST /login`: đăng nhập bằng email và mật khẩu.
+- `POST /login`: đăng nhập bằng email và mật khẩu; tài khoản bật MFA nhận challenge tạm thời thay vì session.
+- `POST /mfa/verify`: hoàn tất challenge bằng TOTP hoặc recovery code rồi mới cấp session.
+- `POST /mfa/setup`, `POST /mfa/enable`: khởi tạo và xác nhận TOTP cho tài khoản local.
+- `POST /mfa/disable`: tắt MFA sau khi xác minh lại mật khẩu và factor; thu hồi toàn bộ session.
 - `POST /refresh-token`: xoay refresh token từ cookie HTTP-only.
 - `GET /me`: lấy người dùng hiện tại bằng Bearer access token.
 - `POST /logout`: thu hồi phiên và xóa refresh cookie.
 - `GET /api/v1/admin/check`: endpoint kiểm tra quyền admin.
 
-Access token chỉ nên giữ trong bộ nhớ frontend. Refresh token nằm trong cookie HTTP-only và database chỉ lưu SHA-256 hash của token. Chạy `npm test` trong `backend-node` để kiểm tra API cơ bản, `npm run test:integration` để kiểm tra auth với MySQL đang chạy, và `npm run test:ui` trong `frontend` để kiểm tra luồng trình duyệt bằng Chrome cục bộ.
+Access token chỉ nên giữ trong bộ nhớ frontend. Refresh token nằm trong cookie HTTP-only và database chỉ lưu SHA-256 hash của token. TOTP secret được mã hóa AES-256-GCM; production phải cấu hình `MFA_ENCRYPTION_KEY` là base64 của đúng 32 byte ngẫu nhiên. Chạy `npm test` trong `backend-node` để kiểm tra API cơ bản, `npm run test:integration` để kiểm tra auth với MySQL đang chạy, và `npm run test:ui` trong `frontend` để kiểm tra luồng trình duyệt bằng Chrome cục bộ.
 
 ---
 
