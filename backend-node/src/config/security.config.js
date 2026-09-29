@@ -86,6 +86,21 @@ export const securityConfig = Object.freeze({
   passwordReset: Object.freeze({
     tokenTtlMinutes: positiveInteger(process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES, 30),
   }),
+  cleanup: Object.freeze({
+    sessionRetentionDays: positiveInteger(process.env.AUTH_SESSION_RETENTION_DAYS, 30),
+    passwordResetRetentionDays: positiveInteger(
+      process.env.PASSWORD_RESET_RETENTION_DAYS,
+      7,
+    ),
+    mfaChallengeRetentionDays: positiveInteger(
+      process.env.MFA_CHALLENGE_RETENTION_DAYS,
+      1,
+    ),
+    usedRecoveryCodeRetentionDays: positiveInteger(
+      process.env.USED_RECOVERY_CODE_RETENTION_DAYS,
+      30,
+    ),
+  }),
   mfa: Object.freeze({
     encryptionKey: mfaEncryptionKey,
     issuer: process.env.MFA_ISSUER?.trim() || "MovieHub",

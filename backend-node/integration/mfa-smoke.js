@@ -15,6 +15,11 @@ process.env.RESET_PASSWORD_RATE_LIMIT_MAX = "1000";
 const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 const { default: app } = await import("../src/app.js");
 const { pool } = await import("../src/core/database/pool.js");
+const { setSecurityLogSinkForTests } = await import(
+  "../src/core/security/security-logger.js"
+);
+const securityLogLines = [];
+setSecurityLogSinkForTests((line) => securityLogLines.push(line));
 const { consumeDevelopmentPasswordReset } = await import(
   "../src/modules/auth/password-reset-delivery.js"
 );
@@ -398,10 +403,43 @@ try {
   assert.equal(normalLoginAfterDisable.status, 200);
   rememberSession(normalLoginAfterDisable);
 
+  const loggedEvents = new Set(securityLogLines.map((line) => JSON.parse(line).event));
+  for (const event of [
+    "LOGIN_SUCCESS",
+    "MFA_DISABLED",
+    "MFA_ENABLED",
+    "MFA_LOGIN_SUCCESS",
+    "MFA_RECOVERY_REGENERATED",
+    "MFA_RECOVERY_USED",
+    "MFA_SETUP_STARTED",
+    "MFA_VERIFY_FAILED",
+  ]) {
+    assert.ok(loggedEvents.has(event), `missing security event ${event}`);
+  }
+  for (const line of securityLogLines) {
+    assert.doesNotMatch(
+      Object.keys(JSON.parse(line)).join(" "),
+      /password|token|hash|secret|code|challenge/iu,
+    );
+  }
+  const serializedSecurityLogs = securityLogLines.join("\n");
+  for (const secret of [
+    setup.data.secret,
+    setup.data.otpauthUrl,
+    challenged.data.challengeToken,
+    recoveryCodes[0],
+    originalGeneratedRecoveryCodes[1],
+    normalLoginAfterDisable.data.accessToken,
+    normalLoginAfterDisable.cookie,
+  ]) {
+    assert.equal(serializedSecurityLogs.includes(secret), false);
+  }
+
   console.log(
     "MFA integration checks passed: safe status, encrypted TOTP, deferred sessions, challenge caps, replay prevention, recovery regeneration and one-time use, reset preservation, disabled-user rejection, and disable revocation.",
   );
 } finally {
+  setSecurityLogSinkForTests(null);
   await database.execute("DELETE FROM auth_mfa_challenges WHERE user_id = ?", [userId]);
   await database.execute("DELETE FROM auth_mfa_recovery_codes WHERE user_id = ?", [userId]);
   await database.execute("DELETE FROM password_reset_tokens WHERE user_id = ?", [userId]);

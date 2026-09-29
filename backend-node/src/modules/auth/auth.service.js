@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../../core/database/pool.js";
+import { securityLog } from "../../core/security/security-logger.js";
 import {
   deliverPasswordReset,
   passwordResetDeliveryAvailable,
@@ -62,6 +63,7 @@ const createSession = async (executor, user, metadata = {}) => {
     ],
   );
   return {
+    sessionId,
     accessToken: signAccessToken(user, sessionId),
     refreshToken,
     user: publicUser(user),
@@ -91,9 +93,9 @@ export const login = async (email, password, metadata = {}) => {
   const user = users[0];
 
   if (!user || user.provider !== "local" || !user.password) return null;
-  if (user.status !== "active") return { denied: "disabled" };
+  if (user.status !== "active") return { denied: "disabled", userId: user.id };
   if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
-    return { denied: "locked" };
+    return { denied: "locked", userId: user.id };
   }
 
   if (!(await bcrypt.compare(password, user.password))) {
@@ -121,7 +123,10 @@ export const login = async (email, password, metadata = {}) => {
       "SELECT locked_until FROM users WHERE id = ? LIMIT 1",
       [user.id],
     );
-    return attemptRows[0]?.locked_until ? { denied: "locked" } : null;
+    return {
+      denied: attemptRows[0]?.locked_until ? "locked" : "invalid",
+      userId: user.id,
+    };
   }
 
   await pool.execute(
@@ -152,6 +157,7 @@ export const login = async (email, password, metadata = {}) => {
     );
     return {
       mfaRequired: true,
+      userId: user.id,
       challengeToken,
       expiresInSeconds: securityConfig.mfa.challengeTtlSeconds,
     };
@@ -211,6 +217,7 @@ export const refresh = async (currentToken) => {
   if (result.affectedRows !== 1) return null;
 
   return {
+    sessionId: user.session_id,
     accessToken: signAccessToken(user, user.session_id),
     refreshToken: nextToken,
     user: publicUser(user),
@@ -218,12 +225,13 @@ export const refresh = async (currentToken) => {
 };
 
 export const revokeAllSessions = async (userId) => {
-  await pool.execute(
+  const [result] = await pool.execute(
     `UPDATE auth_sessions
      SET revoked_at = UTC_TIMESTAMP()
      WHERE user_id = ? AND revoked_at IS NULL`,
     [userId],
   );
+  return result.affectedRows;
 };
 
 export const listActiveSessions = async (userId, currentSessionId) => {
@@ -268,12 +276,13 @@ export const revokeOwnedSession = async (userId, sessionId) => {
 };
 
 export const revokeOtherSessions = async (userId, currentSessionId) => {
-  await pool.execute(
+  const [result] = await pool.execute(
     `UPDATE auth_sessions
      SET revoked_at = UTC_TIMESTAMP()
      WHERE user_id = ? AND id <> ? AND revoked_at IS NULL`,
     [userId, currentSessionId],
   );
+  return result.affectedRows;
 };
 
 const verifyTotpFactor = async (connection, user, code) => {
@@ -296,18 +305,19 @@ const verifyTotpFactor = async (connection, user, code) => {
            AND (mfa_last_used_step IS NULL OR mfa_last_used_step < ?)`,
         [acceptedStep, user.id, acceptedStep],
       );
-      if (updated.affectedRows === 1) return true;
+      if (updated.affectedRows === 1) return "totp";
     }
   }
 
-  return false;
+  return null;
 };
 
 const verifyMfaFactor = async (connection, user, code) => {
-  if (await verifyTotpFactor(connection, user, code)) return true;
+  const totpFactor = await verifyTotpFactor(connection, user, code);
+  if (totpFactor) return totpFactor;
 
   const recoveryHash = hashRecoveryCode(code);
-  if (!recoveryHash) return false;
+  if (!recoveryHash) return null;
   const [codes] = await connection.execute(
     `SELECT id
      FROM auth_mfa_recovery_codes
@@ -316,14 +326,14 @@ const verifyMfaFactor = async (connection, user, code) => {
      FOR UPDATE`,
     [user.id, recoveryHash],
   );
-  if (codes.length === 0) return false;
+  if (codes.length === 0) return null;
   const [consumed] = await connection.execute(
     `UPDATE auth_mfa_recovery_codes
      SET used_at = UTC_TIMESTAMP()
      WHERE id = ? AND used_at IS NULL`,
     [codes[0].id],
   );
-  return consumed.affectedRows === 1;
+  return consumed.affectedRows === 1 ? "recovery" : null;
 };
 
 export const getMfaStatus = async (userId) => {
@@ -482,10 +492,17 @@ export const completeMfaChallenge = async (challengeToken, code, metadata = {}) 
       } else {
         await connection.rollback();
       }
+      securityLog("MFA_VERIFY_FAILED", {
+        userId: challenge?.id,
+        ip: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        reason: challenge ? "invalid_challenge" : "unknown_challenge",
+      });
       return null;
     }
 
-    if (!(await verifyMfaFactor(connection, challenge, code))) {
+    const factor = await verifyMfaFactor(connection, challenge, code);
+    if (!factor) {
       await connection.execute(
         `UPDATE auth_mfa_challenges
          SET attempts = attempts + 1,
@@ -494,6 +511,12 @@ export const completeMfaChallenge = async (challengeToken, code, metadata = {}) 
         [challenge.challenge_id],
       );
       await connection.commit();
+      securityLog("MFA_VERIFY_FAILED", {
+        userId: challenge.id,
+        ip: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        reason: "invalid_factor",
+      });
       return null;
     }
 
@@ -507,6 +530,21 @@ export const completeMfaChallenge = async (challengeToken, code, metadata = {}) 
     );
     const result = await createSession(connection, challenge, metadata);
     await connection.commit();
+    if (factor === "recovery") {
+      securityLog("MFA_RECOVERY_USED", {
+        userId: challenge.id,
+        sessionId: result.sessionId,
+        ip: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+      });
+    }
+    securityLog("MFA_LOGIN_SUCCESS", {
+      userId: challenge.id,
+      sessionId: result.sessionId,
+      ip: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      factor,
+    });
     return result;
   } catch (error) {
     await connection.rollback();
@@ -516,7 +554,7 @@ export const completeMfaChallenge = async (challengeToken, code, metadata = {}) 
   }
 };
 
-export const disableMfa = async (userId, currentPassword, code) => {
+export const disableMfa = async (userId, currentPassword, code, metadata = {}) => {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -533,9 +571,13 @@ export const disableMfa = async (userId, currentPassword, code) => {
       user.status !== "active" ||
       !user.mfa_enabled ||
       !user.password ||
-      !(await bcrypt.compare(currentPassword, user.password)) ||
-      !(await verifyMfaFactor(connection, user, code))
+      !(await bcrypt.compare(currentPassword, user.password))
     ) {
+      await connection.rollback();
+      return false;
+    }
+    const factor = await verifyMfaFactor(connection, user, code);
+    if (!factor) {
       await connection.rollback();
       return false;
     }
@@ -562,6 +604,13 @@ export const disableMfa = async (userId, currentPassword, code) => {
       [user.id],
     );
     await connection.commit();
+    if (factor === "recovery") {
+      securityLog("MFA_RECOVERY_USED", {
+        userId,
+        ip: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+      });
+    }
     return true;
   } catch (error) {
     await connection.rollback();
@@ -671,7 +720,7 @@ export const requestPasswordReset = async (email) => {
     [email],
   );
   const user = users[0];
-  if (!user) return;
+  if (!user) return null;
   if (!passwordResetDeliveryAvailable()) {
     await pool.execute(
       `UPDATE password_reset_tokens
@@ -679,7 +728,7 @@ export const requestPasswordReset = async (email) => {
        WHERE user_id = ? AND used_at IS NULL`,
       [user.id],
     );
-    return;
+    return { userId: user.id };
   }
 
   const rawToken = newPasswordResetToken();
@@ -717,6 +766,7 @@ export const requestPasswordReset = async (email) => {
       [tokenHash],
     );
   }
+  return { userId: user.id };
 };
 
 export const resetPassword = async (rawToken, newPassword) => {
@@ -741,7 +791,7 @@ export const resetPassword = async (rawToken, newPassword) => {
     const reset = rows[0];
     if (!reset || (await bcrypt.compare(newPassword, reset.password))) {
       await connection.rollback();
-      return false;
+      return null;
     }
 
     const [claimed] = await connection.execute(
@@ -752,7 +802,7 @@ export const resetPassword = async (rawToken, newPassword) => {
     );
     if (claimed.affectedRows !== 1) {
       await connection.rollback();
-      return false;
+      return null;
     }
 
     const passwordHash = await bcrypt.hash(newPassword, bcryptCost);
@@ -775,7 +825,7 @@ export const resetPassword = async (rawToken, newPassword) => {
       [reset.user_id],
     );
     await connection.commit();
-    return true;
+    return { success: true, userId: reset.user_id };
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -785,6 +835,7 @@ export const resetPassword = async (rawToken, newPassword) => {
 };
 
 export const revokeSession = async ({ refreshToken, accessToken }) => {
+  let sessionId;
   if (refreshToken) {
     await pool.execute(
       "UPDATE auth_sessions SET revoked_at = UTC_TIMESTAMP() WHERE refresh_token_hash = ? AND revoked_at IS NULL",
@@ -798,6 +849,7 @@ export const revokeSession = async ({ refreshToken, accessToken }) => {
         algorithms: securityConfig.jwtAlgorithms,
         ignoreExpiration: true,
       });
+      sessionId = payload.sid;
       await pool.execute(
         "UPDATE auth_sessions SET revoked_at = UTC_TIMESTAMP() WHERE id = ? AND revoked_at IS NULL",
         [payload.sid],
@@ -806,4 +858,5 @@ export const revokeSession = async ({ refreshToken, accessToken }) => {
       // Logout remains idempotent when the supplied access token is malformed.
     }
   }
+  return { sessionId };
 };

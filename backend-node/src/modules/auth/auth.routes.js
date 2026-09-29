@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { requireFrontendOrigin } from "../../core/middleware/origin.middleware.js";
+import { securityLog } from "../../core/security/security-logger.js";
 import {
   forgotPasswordRateLimiter,
   loginRateLimiter,
@@ -40,6 +41,10 @@ const validCurrentPassword = (value) =>
   typeof value === "string" && value.length > 0 && value.length <= 128;
 const forgotPasswordMessage =
   "If the email exists, password reset instructions have been sent";
+const requestSecurityMetadata = (req) => ({
+  ip: req.ip,
+  userAgent: req.get("user-agent"),
+});
 
 authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
   try {
@@ -47,6 +52,10 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
     const password = typeof req.body?.password === "string" ? req.body.password : "";
 
     if (!validEmail(email) || password.length === 0 || password.length > 128) {
+      securityLog("LOGIN_FAILED", {
+        ...requestSecurityMetadata(req),
+        reason: "invalid_request",
+      });
       return res.status(400).json({ message: "A valid email and password are required" });
     }
 
@@ -55,18 +64,47 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
       ipAddress: req.ip,
     });
     if (result?.denied === "locked") {
+      securityLog("ACCOUNT_LOCKED", {
+        userId: result.userId,
+        ...requestSecurityMetadata(req),
+      });
+      securityLog("LOGIN_FAILED", {
+        userId: result.userId,
+        ...requestSecurityMetadata(req),
+        reason: "locked",
+      });
       return res
         .status(429)
         .json({ message: "Unable to sign in right now. Please try again later" });
     }
     if (!result || result.denied) {
+      if (result?.denied === "disabled") {
+        securityLog("ACCOUNT_DISABLED_LOGIN_ATTEMPT", {
+          userId: result.userId,
+          ...requestSecurityMetadata(req),
+        });
+      }
+      securityLog("LOGIN_FAILED", {
+        userId: result?.userId,
+        ...requestSecurityMetadata(req),
+        reason: result?.denied || "invalid_credentials",
+      });
       return res.status(401).json({ message: "Invalid email or password" });
     }
     if (result.mfaRequired) {
       res.set("Cache-Control", "no-store");
-      return res.status(202).json(result);
+      return res.status(202).json({
+        mfaRequired: true,
+        challengeToken: result.challengeToken,
+        expiresInSeconds: result.expiresInSeconds,
+      });
     }
 
+    securityLog("LOGIN_SUCCESS", {
+      userId: result.user.id,
+      sessionId: result.sessionId,
+      ...requestSecurityMetadata(req),
+    });
     res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
     return res.json({ accessToken: result.accessToken, user: result.user });
   } catch (error) {
@@ -92,6 +130,11 @@ authRouter.post(
       if (result.error) {
         return res.status(400).json({ message: "Current password is incorrect" });
       }
+      securityLog("MFA_SETUP_STARTED", {
+        userId: req.user.id,
+        sessionId: req.auth.sessionId,
+        ...requestSecurityMetadata(req),
+      });
       res.set("Cache-Control", "no-store");
       return res.json(result);
     } catch (error) {
@@ -126,6 +169,11 @@ authRouter.post(
       if (result.error) {
         return res.status(400).json({ message: "Authentication code is invalid" });
       }
+      securityLog("MFA_ENABLED", {
+        userId: req.user.id,
+        sessionId: req.auth.sessionId,
+        ...requestSecurityMetadata(req),
+      });
       res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
       res.set("Cache-Control", "no-store");
       return res.json({
@@ -154,6 +202,10 @@ authRouter.post(
         code.length === 0 ||
         code.length > 64
       ) {
+        securityLog("MFA_VERIFY_FAILED", {
+          ...requestSecurityMetadata(req),
+          reason: "invalid_request",
+        });
         return res.status(400).json({ message: "MFA challenge or code is invalid" });
       }
       const result = await completeMfaChallenge(challengeToken, code, {
@@ -163,6 +215,11 @@ authRouter.post(
       if (!result) {
         return res.status(401).json({ message: "MFA challenge or code is invalid or expired" });
       }
+      securityLog("LOGIN_SUCCESS", {
+        userId: result.user.id,
+        sessionId: result.sessionId,
+        ...requestSecurityMetadata(req),
+      });
       res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
       return res.json({ accessToken: result.accessToken, user: result.user });
     } catch (error) {
@@ -188,9 +245,19 @@ authRouter.post(
       ) {
         return res.status(400).json({ message: "Current password and MFA code are required" });
       }
-      if (!(await disableMfa(req.user.id, currentPassword, code))) {
+      if (!(await disableMfa(
+        req.user.id,
+        currentPassword,
+        code,
+        { userAgent: req.get("user-agent"), ipAddress: req.ip },
+      ))) {
         return res.status(400).json({ message: "Unable to disable MFA" });
       }
+      securityLog("MFA_DISABLED", {
+        userId: req.user.id,
+        sessionId: req.auth.sessionId,
+        ...requestSecurityMetadata(req),
+      });
       res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
       return res.json({ message: "MFA disabled successfully. Please sign in again." });
     } catch (error) {
@@ -220,6 +287,11 @@ authRouter.post(
       if (!result) {
         return res.status(400).json({ message: "Unable to regenerate recovery codes" });
       }
+      securityLog("MFA_RECOVERY_REGENERATED", {
+        userId: req.user.id,
+        sessionId: req.auth.sessionId,
+        ...requestSecurityMetadata(req),
+      });
       res.set("Cache-Control", "no-store");
       return res.json(result);
     } catch (error) {
@@ -235,14 +307,29 @@ authRouter.post(
   async (req, res, next) => {
     try {
       const currentToken = req.cookies[REFRESH_COOKIE];
-      if (!currentToken) return res.status(401).json({ message: "Refresh session is missing" });
+      if (!currentToken) {
+        securityLog("REFRESH_FAILED", {
+          ...requestSecurityMetadata(req),
+          reason: "missing",
+        });
+        return res.status(401).json({ message: "Refresh session is missing" });
+      }
 
       const result = await refresh(currentToken);
       if (!result) {
+        securityLog("REFRESH_FAILED", {
+          ...requestSecurityMetadata(req),
+          reason: "invalid_or_expired",
+        });
         res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
         return res.status(401).json({ message: "Refresh session is invalid or expired" });
       }
 
+      securityLog("REFRESH_SUCCESS", {
+        userId: result.user.id,
+        sessionId: result.sessionId,
+        ...requestSecurityMetadata(req),
+      });
       res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
       return res.json({ accessToken: result.accessToken, user: result.user });
     } catch (error) {
@@ -272,6 +359,11 @@ authRouter.post(
       }
 
       res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
+      securityLog("PASSWORD_CHANGED", {
+        userId: req.user.id,
+        sessionId: req.auth.sessionId,
+        ...requestSecurityMetadata(req),
+      });
       return res.json({ message: "Password changed successfully. Please sign in again." });
     } catch (error) {
       return next(error);
@@ -286,7 +378,11 @@ authRouter.post("/forgot-password", forgotPasswordRateLimiter, async (req, res, 
       return res.status(400).json({ message: "A valid email is required" });
     }
 
-    await requestPasswordReset(email);
+    const result = await requestPasswordReset(email);
+    securityLog("PASSWORD_RESET_REQUESTED", {
+      userId: result?.userId,
+      ...requestSecurityMetadata(req),
+    });
     return res.json({ message: forgotPasswordMessage });
   } catch (error) {
     return next(error);
@@ -304,10 +400,19 @@ authRouter.post("/reset-password", resetPasswordRateLimiter, async (req, res, ne
       return res.status(400).json({ message: "Passwords must be between 8 and 128 characters" });
     }
 
-    if (!(await resetPassword(token, newPassword))) {
+    const result = await resetPassword(token, newPassword);
+    if (!result) {
+      securityLog("PASSWORD_RESET_FAILED", {
+        ...requestSecurityMetadata(req),
+        reason: "invalid_or_expired",
+      });
       return res.status(400).json({ message: "Reset token is invalid or expired" });
     }
 
+    securityLog("PASSWORD_RESET_SUCCESS", {
+      userId: result.userId,
+      ...requestSecurityMetadata(req),
+    });
     res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
     return res.json({ message: "Password reset successfully. Please sign in again." });
   } catch (error) {
@@ -319,9 +424,13 @@ authRouter.post("/logout", requireFrontendOrigin, async (req, res, next) => {
   try {
     const authorization = req.get("authorization") || "";
     const accessToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : null;
-    await revokeSession({
+    const result = await revokeSession({
       refreshToken: req.cookies[REFRESH_COOKIE],
       accessToken,
+    });
+    securityLog("LOGOUT", {
+      sessionId: result.sessionId,
+      ...requestSecurityMetadata(req),
     });
     res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
     return res.status(204).end();
@@ -352,8 +461,21 @@ authRouter.delete(
       }
       const result = await revokeOwnedSession(req.user.id, sessionId);
       if (result === "not_found") {
+        securityLog("SESSION_REVOKE_FAILED", {
+          userId: req.user.id,
+          sessionId: req.auth.sessionId,
+          targetSessionId: sessionId,
+          ...requestSecurityMetadata(req),
+          reason: "not_found",
+        });
         return res.status(404).json({ message: "Session not found" });
       }
+      securityLog("SESSION_REVOKED", {
+        userId: req.user.id,
+        sessionId: req.auth.sessionId,
+        targetSessionId: sessionId,
+        ...requestSecurityMetadata(req),
+      });
       if (sessionId === req.auth.sessionId) {
         res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
       }
@@ -370,7 +492,13 @@ authRouter.post(
   requireAuth,
   async (req, res, next) => {
     try {
-      await revokeOtherSessions(req.user.id, req.auth.sessionId);
+      const revokedCount = await revokeOtherSessions(req.user.id, req.auth.sessionId);
+      securityLog("LOGOUT_OTHERS", {
+        userId: req.user.id,
+        sessionId: req.auth.sessionId,
+        revokedCount,
+        ...requestSecurityMetadata(req),
+      });
       return res.status(204).end();
     } catch (error) {
       return next(error);
@@ -384,7 +512,13 @@ authRouter.post(
   requireAuth,
   async (req, res, next) => {
     try {
-      await revokeAllSessions(req.user.id);
+      const revokedCount = await revokeAllSessions(req.user.id);
+      securityLog("LOGOUT_ALL", {
+        userId: req.user.id,
+        sessionId: req.auth.sessionId,
+        revokedCount,
+        ...requestSecurityMetadata(req),
+      });
       res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
       return res.status(204).end();
     } catch (error) {

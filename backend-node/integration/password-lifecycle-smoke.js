@@ -13,6 +13,11 @@ process.env.RESET_PASSWORD_RATE_LIMIT_MAX = "1000";
 const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 const { default: app } = await import("../src/app.js");
 const { pool } = await import("../src/core/database/pool.js");
+const { setSecurityLogSinkForTests } = await import(
+  "../src/core/security/security-logger.js"
+);
+const securityLogLines = [];
+setSecurityLogSinkForTests((line) => securityLogLines.push(line));
 const { consumeDevelopmentPasswordReset } = await import(
   "../src/modules/auth/password-reset-delivery.js"
 );
@@ -256,10 +261,36 @@ try {
   assert.equal(concurrentLogin.status, 200);
   rememberSession(concurrentLogin);
 
+  const loggedEvents = new Set(securityLogLines.map((line) => JSON.parse(line).event));
+  for (const event of [
+    "PASSWORD_CHANGED",
+    "PASSWORD_RESET_FAILED",
+    "PASSWORD_RESET_REQUESTED",
+    "PASSWORD_RESET_SUCCESS",
+  ]) {
+    assert.ok(loggedEvents.has(event), `missing security event ${event}`);
+  }
+  const serializedSecurityLogs = securityLogLines.join("\n");
+  for (const secret of [
+    originalPassword,
+    changedPassword,
+    resetPasswordValue,
+    concurrentPassword,
+    tokenA,
+    tokenB,
+    expiredToken,
+    concurrentToken,
+    concurrentLogin.data.accessToken,
+    concurrentLogin.cookie,
+  ]) {
+    assert.equal(serializedSecurityLogs.includes(secret), false);
+  }
+
   console.log(
     "Password lifecycle checks passed: change, generic forgot, hashed/expiring one-time reset, token replacement, concurrent use, and session revocation.",
   );
 } finally {
+  setSecurityLogSinkForTests(null);
   for (const sessionId of createdSessionIds) {
     await database.execute("DELETE FROM auth_sessions WHERE id = ?", [sessionId]);
   }
