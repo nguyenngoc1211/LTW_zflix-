@@ -1,0 +1,242 @@
+# Tiến độ bảo mật Authentication & Authorization
+
+Ngày rà soát source và Git gần nhất: 2026-09-29  
+Current branch: `Du`  
+Current latest security commit: `00de989`  
+Mốc source hiện tại: `00de989 security: implement password lifecycle hardening`
+
+Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
+
+## Current working tree expectation
+
+Expected:
+
+```text
+git status -> clean
+```
+
+If dirty:
+
+```text
+stop and inspect changes before continuing
+```
+
+Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
+
+## Kiến trúc hiện tại
+
+- **Login:** `POST /api/v1/auth/login` validate request, tìm local user active theo email đã chuẩn hóa, kiểm tra temporary lock, so sánh mật khẩu bằng bcrypt, ghi nhận failed attempts, tạo session trong database, trả access JWT ngắn hạn và set refresh-token cookie.
+- **Logout:** `POST /api/v1/auth/logout` có Origin protection; revoke session tương ứng nếu có refresh token và luôn xóa refresh cookie.
+- **Refresh token:** raw token được tạo bằng CSPRNG và chỉ tồn tại trong cookie client. `auth_sessions` chỉ lưu SHA-256 hash. Refresh rotation thay hash trong cùng session và từ chối token cũ bị dùng lại.
+- **JWT:** access token dùng `HS256`, thời hạn mặc định 15 phút, có `sub` và `sid`. Claim role có thể tồn tại vì tương thích nhưng không được dùng làm nguồn phân quyền; verify allow-list rõ `HS256`.
+- **`auth_sessions`:** session server-side lưu user ID, refresh-token hash, idle expiry, absolute expiry, last-used, revoked-at, created-at và metadata user-agent/IP tùy chọn. Cả access authentication và refresh đều phụ thuộc database session hiện tại.
+- **Role:** `requireAuth` đọc lại user từ database và tạo `req.user`; `requireRole("admin")` dùng role lấy từ database. JWT role giả không thể nâng quyền.
+- **Account status:** `active/disabled` được đọc từ database. User disabled không login, refresh hoặc tiếp tục dùng access token cũ. Temporary login lock cũng lưu trong database.
+- **Frontend `AuthContext`:** bootstrap bằng refresh, giữ access token qua API service in-memory, cung cấp login/logout/logout-all/change-password và xóa user/token khi auth thất bại hoặc session bị revoke.
+- **`ProtectedRoute`:** chỉ phục vụ UX điều hướng/render. Đây không phải security boundary; API protected/admin vẫn enforce ở backend.
+
+## Git checkpoints
+
+Các checkpoint auth/security theo thứ tự thời gian:
+
+| Commit | Ngày | Checkpoint |
+|---|---|---|
+| `a2a84cf` | 2026-09-29 | `checkpoint: working auth flow before security hardening` |
+| `feb1fc4` | 2026-09-29 | `security: harden auth phase 1A` |
+| `32a6add` | 2026-09-29 | `security: harden account and session phase 1B` |
+| `cd9a4a8` | 2026-09-29 | `test: strengthen authorization regression coverage` |
+| `00de989` | 2026-09-29 | `security: implement password lifecycle hardening` |
+
+Cả năm checkpoint trên đều đã commit. Không có phase security production nào pending commit tại thời điểm rà soát. Hai file ghi nhớ `docs/AUTH_SECURITY_PROGRESS.md` và `AGENTS.md` là thay đổi tài liệu riêng, chưa commit.
+
+## Chi tiết từng phase
+
+### Checkpoint auth cơ bản
+
+- **Commit:** `a2a84cf`
+- **Đã triển khai:** route login, refresh, logout, current user, admin check; database-backed sessions; React AuthContext; access token in-memory; ProtectedRoute; login UI và smoke test.
+- **Schema/database:** đưa vào model/migration/bootstrap cho `auth_sessions`; migration utility chuyển legacy local plaintext password sang bcrypt và xóa password ở non-local account.
+- **Security controls:** bcrypt, refresh token hash, HttpOnly cookie, access JWT ngắn hạn, server-side revoke và backend role enforcement.
+- **Tests:** backend unit/auth, integration auth smoke và frontend auth UI smoke.
+- **Rủi ro còn lại lúc đó:** thiếu security headers/origin defense, account lock/status, absolute session lifetime, logout-all và password recovery. Các phần này được xử lý ở phase sau.
+
+### Phase 1A — hardening biên authentication
+
+- **Commit:** `feb1fc4`
+- **Đã triển khai:** security config tập trung, rate limit login/refresh, exact-origin protection cho cookie/state routes, Helmet, credentialed CORS giới hạn origin, JWT algorithm allow-list và production JWT-secret validation.
+- **Schema/database:** không cần thay đổi schema.
+- **Security controls:** chỉ chấp nhận `HS256`, từ chối production thiếu/yếu JWT secret, giới hạn frontend origin, giới hạn JSON body và throttling auth endpoint.
+- **Tests:** login rate limit, Origin accept/reject, thuật toán JWT không hợp lệ, Helmet headers và lỗi secret production an toàn.
+- **Rủi ro còn lại:** CSP tạm disabled để chờ policy tương thích streaming; account/session lifecycle chuyển sang Phase 1B.
+
+### Phase 1B — hardening account và session
+
+- **Commit:** `32a6add`
+- **Đã triển khai:** failed-login tracking, lock 5 lần sai trong 5 phút mặc định, active/disabled status, absolute session expiry, logout-all và frontend helper.
+- **Migration:** `backend-node/migrations/20260929_phase_1b_account_session_hardening.sql` thêm `users.failed_login_attempts`, `users.locked_until`, `users.status`, `users.disabled_at`, `users.password_changed_at` và `auth_sessions.absolute_expires_at`. Session cũ được backfill absolute expiry bằng expiry cũ, không tự gia hạn.
+- **Security controls:** login đúng reset counter/lock; disabled user bị từ chối ở login, refresh và `requireAuth`; idle expiry không vượt absolute expiry bất biến; logout-all luôn dùng `req.user.id`.
+- **Tests:** lock/recovery, reset attempts, disabled-user rejection, idle/absolute expiry, capped refresh rotation, revoke access/refresh nhiều session và auth/RBAC regression.
+- **Rủi ro còn lại:** chưa có session-management UI và refresh-token family/history.
+
+### Phase 2 — authorization regression hardening
+
+- **Commit:** `cd9a4a8`
+- **Đã triển khai:** regression cho role authoritative từ database, disabled user và toàn bộ route thật `/api/v1/admin/*`; không thêm abstraction/API giả chưa dùng.
+- **Schema/database:** không thay đổi.
+- **Security controls:** JWT hợp lệ có `role=admin` nhưng session thuộc DB user role `user` vẫn nhận `403`; disabled user không dùng credential cũ; admin route được kiểm tra đúng guest/user/admin.
+- **Tests:** dynamic admin route coverage, guest `401` / user `403` / admin success; forged-role; disabled access-token/refresh/protected-route; giữ các auth regression cũ.
+- **Rủi ro còn lại:** chưa thể test ownership, IDOR/BOLA, mass assignment khi chưa có resource API thật.
+
+### Phase 3 — password lifecycle security
+
+- **Commit:** `00de989`
+- **Đã triển khai:** change-password có auth, forgot-password generic, reset-password, development/test delivery capture, token hash/expiry, one-time/concurrency safety, invalidate reset cũ và revoke mọi session sau change/reset.
+- **Migration:** `backend-node/migrations/20260929_phase_3_password_reset.sql` tạo `password_reset_tokens` gồm `id`, `user_id`, unique `token_hash`, `created_at`, `expires_at`, `used_at`; index `user_id`, `expires_at`; foreign key cascade. `database/init.sql` có bảng tương ứng cho DB mới.
+- **Security controls:** reset token CSPRNG 32 byte, chỉ lưu SHA-256 hash, TTL mặc định 30 phút, không trả/log/lưu raw token, một reset flow active/user, chỉ local active account, update token/password/session atomic và rate limit riêng.
+- **Tests:** password validation/change, revoke access/refresh cũ, old/new password login, generic no-enumeration, không expose token, hash/TTL, invalidate nhiều request, reject reuse/expiry/random/malformed, revoke session và concurrent single-use.
+- **Rủi ro còn lại:** production email provider chưa cấu hình; dev/test dùng in-memory capture; chưa có scheduled cleanup token hết hạn.
+
+## Security controls hiện có
+
+- Password dùng bcrypt cost `12`; không dùng SHA-256 để hash password.
+- Password mới dài 8–128 ký tự; không trim và không bắt buộc composition.
+- Rate limit: login `10/15 phút`, forgot `5/15 phút`, reset `10/15 phút`, refresh `120/15 phút`.
+- Sai password 5 lần khóa tạm 5 phút; login đúng reset counter.
+- User status `active/disabled` được kiểm tra từ database ở login, refresh và mọi `requireAuth`.
+- JWT verify allow-list `HS256`; production từ chối secret thiếu/yếu.
+- Frontend giữ access token trong memory module, không dùng localStorage/sessionStorage.
+- Raw refresh token chỉ nằm trong HttpOnly SameSite=Lax cookie, Secure ở production, path `/api/v1/auth`.
+- Database chỉ lưu SHA-256 hash của refresh token.
+- Refresh rotation mỗi lần thành công; token cũ bị reject khi replay.
+- Session DB được kiểm tra tồn tại, revoked, idle expiry, absolute expiry, khớp subject/session, user active và role database.
+- Idle TTL mặc định 7 ngày, absolute TTL 30 ngày; refresh chỉ gia hạn idle tới absolute expiry ban đầu.
+- Logout-all revoke tất cả session active của `req.user.id` và clear cookie.
+- Origin protection exact match cho auth cookie/state routes.
+- CORS chỉ cho frontend origin cấu hình với credentials; không tin origin tùy ý.
+- Helmet bật; CSP hiện disabled vì chưa có policy tương thích streaming.
+- Backend dùng role từ database; JWT/frontend role không authoritative.
+- Change password cần current password, không cho password mới giống cũ, cập nhật `password_changed_at` và revoke mọi session.
+- Forgot response giống nhau cho account tồn tại, không tồn tại và non-local.
+- Reset token 32 random bytes, chỉ lưu SHA-256 hash, TTL 30 phút, one-time và claim trong transaction.
+- Reset thành công update bcrypt password, invalidate token khác và revoke mọi session atomic.
+- Không chủ động log password, raw refresh/reset token, Authorization header hoặc Cookie header.
+
+## Real APIs hiện đang tồn tại
+
+Chỉ liệt kê route thực sự có trong source.
+
+### Node backend
+
+| Method | Route | Policy hiện tại |
+|---|---|---|
+| GET | `/` | Public health |
+| POST | `/api/v1/auth/login` | Public; validation, rate limit, local/active policy, lock tracking |
+| POST | `/api/v1/auth/refresh-token` | Cookie endpoint; Origin, rate limit, session/status/expiry checks |
+| POST | `/api/v1/auth/change-password` | `requireAuth`; user lấy từ `req.user.id`; Origin check |
+| POST | `/api/v1/auth/forgot-password` | Public; generic response, validation, rate limit |
+| POST | `/api/v1/auth/reset-password` | Public; generic invalid-token response, validation, rate limit |
+| POST | `/api/v1/auth/logout` | Origin check; revoke matching session và clear cookie |
+| POST | `/api/v1/auth/logout-all` | `requireAuth`; revoke session của `req.user.id`; Origin check |
+| GET | `/api/v1/auth/me` | `requireAuth`; safe user projection |
+| GET | `/api/v1/admin/check` | `requireAuth` + `requireRole("admin")` |
+
+### Python services
+
+| Service | Method | Route | Policy |
+|---|---|---|---|
+| AI chatbot | GET | `/` | Public health |
+| Video processor | GET | `/` | Public health |
+
+Python services hiện không expose user resource, premium, subscription, moderation hay admin CRUD API.
+
+## Modules chưa triển khai
+
+Các khái niệm có thể xuất hiện trong schema/frontend nhưng chưa có backend API thật:
+
+- Profile update/delete
+- Favorites/bookmarks
+- Watch history
+- Comments/comment likes
+- Ratings/reviews
+- Watching party, participant, chat, host management
+- Premium entitlement hoặc premium enforcement backend
+- Subscription/transaction
+- Admin user/content/community CRUD và moderation
+- User registration
+- Session-management UI
+
+Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm ownership, IDOR/BOLA, mass-assignment hoặc premium test khi resource API tương ứng thực sự được triển khai.
+
+## Các quyết định bảo mật quan trọng
+
+- Access token frontend phải memory-only.
+- Raw refresh token chỉ ở HttpOnly cookie; không lưu trong database hoặc browser storage.
+- Không lưu/log raw password-reset token; database chỉ lưu SHA-256 hash.
+- Database role và account status là authoritative; JWT claim và frontend state không phải nguồn quyền.
+- Current user luôn lấy từ `req.user.id`; không nhận `userId`, actor ID hoặc owner ID từ client để xác định identity.
+- `ProtectedRoute` chỉ là UX; mọi protected action phải được backend enforce.
+- Không trust `role`, `status`, `isAdmin`, `premium`, `subscription`, `ownerId` hoặc field đặc quyền do client gửi.
+- Không trả password hash, lock internals, refresh-token data hoặc reset-token data trong response thông thường.
+- Không tạo fake endpoint hoặc authorization abstraction chưa dùng chỉ để làm test pass.
+- Giữ refresh rotation/session model hiện tại nếu phase mới không yêu cầu rõ thay đổi.
+- Không tạo `auth_refresh_tokens` family/history table nếu chưa có yêu cầu mới.
+
+## Tests dự kiến phải pass
+
+### Lệnh chạy
+
+- Backend unit: `npm test` trong `backend-node`.
+- Backend integration: `npm run test:integration` trong `backend-node` với DB/service test.
+- Frontend lint: `npm run lint` trong `frontend`.
+- Frontend build: `npm run build` trong `frontend`.
+- Frontend auth smoke: `npm run test:ui` trong `frontend`.
+- Kiểm tra whitespace/error: `git diff --check`.
+
+### Hành vi đã được test
+
+- Login đúng/sai, validation, generic credential error và login rate limit.
+- Failed attempts, lần sai thứ 5 lock, password đúng trong lock bị reject, unlock recovery và reset counter sau login đúng.
+- Refresh, hash rotation, replay token cũ, idle expiry, absolute expiry và capped idle extension.
+- Logout, clear cookie, logout-all và invalidation access/refresh trên nhiều session.
+- Disabled-user login/access/refresh/logout-all/protected-route rejection.
+- Origin protection, JWT algorithm allow-list và production-secret validation.
+- JWT ký hợp lệ có `role=admin` nhưng DB role=user nhận `403`.
+- Admin coverage: guest `401`, user `403`, admin success trên mọi `/api/v1/admin/*` thật (hiện chỉ có `GET /api/v1/admin/check`).
+- Change password, wrong/same password, revoke session và old/new password login.
+- Forgot generic equality, unknown/non-local account và không expose token trong production response.
+- Reset token hash, TTL, invalidate token cũ, valid/reuse/expired/random/malformed và concurrent one-time.
+- Frontend login/admin guard, refresh bootstrap/failure, logout state clearing và ordinary-user redirect.
+
+## Remaining work
+
+- MFA/TOTP
+- CAPTCHA hoặc bot-abuse control bổ sung
+- Production email provider và delivery monitoring cho password reset
+- CSP tương thích streaming; hiện Helmet chạy với CSP disabled
+- Session/device management UI
+- Multi-tab auth state sync
+- Refresh-token family/history và replay-family response
+- Scheduled cleanup token reset hết hạn/đã dùng
+- IDOR/BOLA, ownership, mass-assignment khi các resource API thật xuất hiện
+- Server-side premium/subscription authorization khi có API tương ứng
+- Admin CRUD và community/content moderation authorization khi có API tương ứng
+- Email verification, OAuth, passkeys và recovery nâng cao
+
+## Next recommended phase
+
+Next candidate:
+
+**Phase 4 — MFA/TOTP**
+
+Do not start automatically.  
+First audit current source and propose scope.
+
+## Hướng dẫn cho các phiên Codex sau
+
+1. Đọc file này.
+2. Chạy `git status`.
+3. Chạy `git log --oneline -10`.
+4. Đọc source hiện tại trước khi sửa.
+5. Nếu tài liệu khác source, source code là technical truth.
+6. Không commit nếu chưa được yêu cầu rõ.
+7. Sau mỗi phase auth/security, cập nhật lại file này.
