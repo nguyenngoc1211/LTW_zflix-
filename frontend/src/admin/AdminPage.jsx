@@ -9,14 +9,15 @@ import {
   HomeOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Dropdown, Space, Avatar } from "antd";
-import { Outlet, Link, useLocation } from "react-router-dom";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import React, { useState, memo } from "react";
 import Logo from "../components/Logo";
 import Logo_Icon from "../assets/react.svg";
+import { useAuth } from "../hooks/useAuth.js";
 
 const { Content, Sider, Header: AntHeader } = Layout;
 
-const MemoizedHeader = memo(({ collapsed, onToggle }) => {
+const MemoizedHeader = memo(({ collapsed, onToggle, username, onLogout }) => {
   const dropdownItems = [
     {
       label: <Link to="/">Homepage</Link>,
@@ -47,10 +48,18 @@ const MemoizedHeader = memo(({ collapsed, onToggle }) => {
         )}
       </div>
       <div className="pr-6">
-        <Dropdown menu={{ items: dropdownItems }} trigger={["click"]}>
+        <Dropdown
+          menu={{
+            items: dropdownItems,
+            onClick: ({ key }) => {
+              if (key === "logout") onLogout();
+            },
+          }}
+          trigger={["click"]}
+        >
           <Space className="cursor-pointer p-2 rounded-md">
             <Avatar src={urlAvatar} />
-            <span className="font-medium text-gray-600">Admin</span>
+            <span className="font-medium text-white">{username}</span>
           </Space>
         </Dropdown>
       </div>
@@ -72,6 +81,8 @@ MemoizedContent.displayName = "MemoizedContent";
 const AdminPage = () => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const getActiveMenuKey = () => {
     const pathSegments = location.pathname.split("/");
     const lastSegment = pathSegments.pop() || pathSegments.pop(); // Xử lý trường hợp trailing slash
@@ -111,6 +122,10 @@ const AdminPage = () => {
   ];
 
   const handleToggle = () => setCollapsed(!collapsed);
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -138,7 +153,12 @@ const AdminPage = () => {
       </Sider>
 
       <Layout className="!bg-gray-200 transition-all duration-300 ease-in-out">
-        <MemoizedHeader collapsed={collapsed} onToggle={handleToggle} />
+        <MemoizedHeader
+          collapsed={collapsed}
+          onToggle={handleToggle}
+          username={user.username}
+          onLogout={handleLogout}
+        />
         <MemoizedContent />
       </Layout>
     </Layout>
