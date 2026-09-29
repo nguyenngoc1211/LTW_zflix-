@@ -19,7 +19,11 @@ export const requireAuth = async (req, res, next) => {
       `SELECT s.id, u.id AS user_id, u.username, u.email, u.avatar_url, u.role
        FROM auth_sessions s
        JOIN users u ON u.id = s.user_id
-       WHERE s.id = ? AND s.user_id = ? AND s.revoked_at IS NULL AND s.expires_at > UTC_TIMESTAMP()
+       WHERE s.id = ? AND s.user_id = ?
+         AND s.revoked_at IS NULL
+         AND s.expires_at > UTC_TIMESTAMP()
+         AND s.absolute_expires_at > UTC_TIMESTAMP()
+         AND u.status = 'active'
        LIMIT 1`,
       [payload.sid, payload.sub],
     );
