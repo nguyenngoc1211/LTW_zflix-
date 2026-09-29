@@ -83,6 +83,10 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         return result;
       },
+      clearAuthState() {
+        setAccessToken(null);
+        setUser(null);
+      },
       apiRequest,
     }),
     [loading, user],

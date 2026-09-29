@@ -226,7 +226,7 @@ export const revokeAllSessions = async (userId) => {
   );
 };
 
-const verifyMfaFactor = async (connection, user, code) => {
+const verifyTotpFactor = async (connection, user, code) => {
   if (
     user.mfa_secret_ciphertext &&
     user.mfa_secret_iv &&
@@ -250,6 +250,12 @@ const verifyMfaFactor = async (connection, user, code) => {
     }
   }
 
+  return false;
+};
+
+const verifyMfaFactor = async (connection, user, code) => {
+  if (await verifyTotpFactor(connection, user, code)) return true;
+
   const recoveryHash = hashRecoveryCode(code);
   if (!recoveryHash) return false;
   const [codes] = await connection.execute(
@@ -268,6 +274,26 @@ const verifyMfaFactor = async (connection, user, code) => {
     [codes[0].id],
   );
   return consumed.affectedRows === 1;
+};
+
+export const getMfaStatus = async (userId) => {
+  const [rows] = await pool.execute(
+    `SELECT mfa_enabled, mfa_enabled_at,
+            (SELECT COUNT(*)
+             FROM auth_mfa_recovery_codes
+             WHERE user_id = users.id AND used_at IS NULL) AS recovery_codes_remaining
+     FROM users
+     WHERE id = ? AND status = 'active'
+     LIMIT 1`,
+    [userId],
+  );
+  const status = rows[0];
+  if (!status) return null;
+  return {
+    enabled: Boolean(status.mfa_enabled),
+    enabledAt: status.mfa_enabled_at,
+    recoveryCodesRemaining: Number(status.recovery_codes_remaining),
+  };
 };
 
 export const beginMfaSetup = async (userId, currentPassword) => {
@@ -487,6 +513,48 @@ export const disableMfa = async (userId, currentPassword, code) => {
     );
     await connection.commit();
     return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+export const regenerateMfaRecoveryCodes = async (userId, currentPassword, code) => {
+  const recoveryCodes = createRecoveryCodes();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [users] = await connection.execute(
+      `SELECT id, password, provider, status, mfa_enabled, mfa_secret_ciphertext,
+              mfa_secret_iv, mfa_secret_tag, mfa_last_used_step
+       FROM users WHERE id = ? LIMIT 1 FOR UPDATE`,
+      [userId],
+    );
+    const user = users[0];
+    if (
+      !user ||
+      user.provider !== "local" ||
+      user.status !== "active" ||
+      !user.mfa_enabled ||
+      !user.password ||
+      !(await bcrypt.compare(currentPassword, user.password)) ||
+      !(await verifyTotpFactor(connection, user, code))
+    ) {
+      await connection.rollback();
+      return null;
+    }
+
+    await connection.execute("DELETE FROM auth_mfa_recovery_codes WHERE user_id = ?", [user.id]);
+    for (const recoveryCode of recoveryCodes) {
+      await connection.execute(
+        "INSERT INTO auth_mfa_recovery_codes (user_id, code_hash) VALUES (?, ?)",
+        [user.id, hashRecoveryCode(recoveryCode)],
+      );
+    }
+    await connection.commit();
+    return { recoveryCodes };
   } catch (error) {
     await connection.rollback();
     throw error;

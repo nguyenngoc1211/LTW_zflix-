@@ -9,13 +9,15 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:ui": "node integration/auth-ui-smoke.js",
-    "test:ui:mfa": "node integration/mfa-login-smoke.js"
+    "test:ui:mfa": "node integration/mfa-login-smoke.js",
+    "test:ui:mfa-management": "node integration/mfa-management-smoke.js"
   },
   "dependencies": {
     "@ant-design/icons": "6.0.0",
     "@tailwindcss/vite": "^4.1.18",
     "antd": "5.27.0",
     "axios": "^1.13.2",
+    "qrcode.react": "4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.12.0",

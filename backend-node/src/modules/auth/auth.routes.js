@@ -16,7 +16,9 @@ import {
   completeMfaChallenge,
   disableMfa,
   enableMfa,
+  getMfaStatus,
   login,
+  regenerateMfaRecoveryCodes,
   refresh,
   refreshCookieOptions,
   requestPasswordReset,
@@ -94,6 +96,17 @@ authRouter.post(
     }
   },
 );
+
+authRouter.get("/mfa/status", requireAuth, async (req, res, next) => {
+  try {
+    const status = await getMfaStatus(req.user.id);
+    if (!status) return res.status(401).json({ message: "Authentication required" });
+    res.set("Cache-Control", "no-store");
+    return res.json(status);
+  } catch (error) {
+    return next(error);
+  }
+});
 
 authRouter.post(
   "/mfa/enable",
@@ -177,6 +190,35 @@ authRouter.post(
       }
       res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
       return res.json({ message: "MFA disabled successfully. Please sign in again." });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+authRouter.post(
+  "/mfa/recovery-codes/regenerate",
+  requireAuth,
+  requireFrontendOrigin,
+  mfaRateLimiter,
+  async (req, res, next) => {
+    try {
+      const currentPassword = req.body?.currentPassword;
+      const code = req.body?.code;
+      if (
+        !validCurrentPassword(currentPassword) ||
+        typeof code !== "string" ||
+        code.length === 0 ||
+        code.length > 64
+      ) {
+        return res.status(400).json({ message: "Current password and TOTP code are required" });
+      }
+      const result = await regenerateMfaRecoveryCodes(req.user.id, currentPassword, code);
+      if (!result) {
+        return res.status(400).json({ message: "Unable to regenerate recovery codes" });
+      }
+      res.set("Cache-Control", "no-store");
+      return res.json(result);
     } catch (error) {
       return next(error);
     }
