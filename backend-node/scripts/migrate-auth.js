@@ -13,7 +13,7 @@ const createSessionsTable = `
     user_agent varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
     ip_address varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
     expires_at datetime NOT NULL,
-    absolute_expires_at datetime DEFAULT NULL,
+    absolute_expires_at datetime NOT NULL,
     last_used_at datetime DEFAULT NULL,
     revoked_at datetime DEFAULT NULL,
     created_at timestamp NULL DEFAULT CURRENT_TIMESTAMP,
@@ -42,6 +42,40 @@ const createPasswordResetTokensTable = `
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 `;
 
+const createMfaChallengesTable = `
+  CREATE TABLE IF NOT EXISTS auth_mfa_challenges (
+    id bigint unsigned NOT NULL AUTO_INCREMENT,
+    user_id int NOT NULL,
+    token_hash char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+    attempts smallint unsigned NOT NULL DEFAULT 0,
+    max_attempts smallint unsigned NOT NULL,
+    expires_at datetime NOT NULL,
+    used_at datetime DEFAULT NULL,
+    created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_auth_mfa_challenges_hash (token_hash),
+    KEY idx_auth_mfa_challenges_user (user_id),
+    KEY idx_auth_mfa_challenges_expiry (expires_at, used_at),
+    CONSTRAINT auth_mfa_challenges_ibfk_1
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+`;
+
+const createMfaRecoveryCodesTable = `
+  CREATE TABLE IF NOT EXISTS auth_mfa_recovery_codes (
+    id bigint unsigned NOT NULL AUTO_INCREMENT,
+    user_id int NOT NULL,
+    code_hash char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+    created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    used_at datetime DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_auth_mfa_recovery_codes_hash (code_hash),
+    KEY idx_auth_mfa_recovery_codes_user (user_id, used_at),
+    CONSTRAINT auth_mfa_recovery_codes_ibfk_1
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+`;
+
 const addColumnIfMissing = async (tableName, columnName, definition) => {
   const [columns] = await pool.execute(
     `SELECT 1
@@ -65,11 +99,22 @@ try {
   );
   await addColumnIfMissing("users", "disabled_at", "DATETIME NULL");
   await addColumnIfMissing("users", "password_changed_at", "DATETIME NULL");
+  await addColumnIfMissing("users", "mfa_enabled", "TINYINT(1) NOT NULL DEFAULT 0");
+  await addColumnIfMissing("users", "mfa_secret_ciphertext", "VARBINARY(255) NULL");
+  await addColumnIfMissing("users", "mfa_secret_iv", "BINARY(12) NULL");
+  await addColumnIfMissing("users", "mfa_secret_tag", "BINARY(16) NULL");
+  await addColumnIfMissing("users", "mfa_enabled_at", "DATETIME NULL");
+  await addColumnIfMissing("users", "mfa_last_used_step", "BIGINT UNSIGNED NULL");
   await pool.execute(createSessionsTable);
   await pool.execute(createPasswordResetTokensTable);
+  await pool.execute(createMfaChallengesTable);
+  await pool.execute(createMfaRecoveryCodesTable);
   await addColumnIfMissing("auth_sessions", "absolute_expires_at", "DATETIME NULL");
   await pool.execute(
     "UPDATE auth_sessions SET absolute_expires_at = expires_at WHERE absolute_expires_at IS NULL",
+  );
+  await pool.query(
+    "ALTER TABLE auth_sessions MODIFY COLUMN absolute_expires_at DATETIME NOT NULL",
   );
   await pool.execute("UPDATE users SET password = NULL WHERE provider <> 'local'");
 

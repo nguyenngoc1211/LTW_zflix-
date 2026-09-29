@@ -734,6 +734,19 @@ INSERT INTO `users` VALUES (1,'admin','admin@moviehub.com','$2b$12$RcOxakqSvk67T
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 
+ALTER TABLE `users`
+  ADD COLUMN `failed_login_attempts` int NOT NULL DEFAULT '0',
+  ADD COLUMN `locked_until` datetime DEFAULT NULL,
+  ADD COLUMN `status` enum('active','disabled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  ADD COLUMN `disabled_at` datetime DEFAULT NULL,
+  ADD COLUMN `password_changed_at` datetime DEFAULT NULL,
+  ADD COLUMN `mfa_enabled` tinyint(1) NOT NULL DEFAULT '0',
+  ADD COLUMN `mfa_secret_ciphertext` varbinary(255) DEFAULT NULL,
+  ADD COLUMN `mfa_secret_iv` binary(12) DEFAULT NULL,
+  ADD COLUMN `mfa_secret_tag` binary(16) DEFAULT NULL,
+  ADD COLUMN `mfa_enabled_at` datetime DEFAULT NULL,
+  ADD COLUMN `mfa_last_used_step` bigint unsigned DEFAULT NULL;
+
 UPDATE `users` SET `password` = NULL WHERE `provider` <> 'local';
 
 --
@@ -750,6 +763,7 @@ CREATE TABLE `auth_sessions` (
   `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ip_address` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `expires_at` datetime NOT NULL,
+  `absolute_expires_at` datetime NOT NULL,
   `last_used_at` datetime DEFAULT NULL,
   `revoked_at` datetime DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
@@ -780,6 +794,50 @@ CREATE TABLE `password_reset_tokens` (
   KEY `idx_password_reset_tokens_user` (`user_id`),
   KEY `idx_password_reset_tokens_expiry` (`expires_at`),
   CONSTRAINT `password_reset_tokens_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `auth_mfa_challenges`
+--
+
+DROP TABLE IF EXISTS `auth_mfa_challenges`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_mfa_challenges` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `token_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `attempts` smallint unsigned NOT NULL DEFAULT '0',
+  `max_attempts` smallint unsigned NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_auth_mfa_challenges_hash` (`token_hash`),
+  KEY `idx_auth_mfa_challenges_user` (`user_id`),
+  KEY `idx_auth_mfa_challenges_expiry` (`expires_at`,`used_at`),
+  CONSTRAINT `auth_mfa_challenges_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `auth_mfa_recovery_codes`
+--
+
+DROP TABLE IF EXISTS `auth_mfa_recovery_codes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_mfa_recovery_codes` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `code_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `used_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_auth_mfa_recovery_codes_hash` (`code_hash`),
+  KEY `idx_auth_mfa_recovery_codes_user` (`user_id`,`used_at`),
+  CONSTRAINT `auth_mfa_recovery_codes_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

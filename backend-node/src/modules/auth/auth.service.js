@@ -7,6 +7,16 @@ import {
   deliverPasswordReset,
   passwordResetDeliveryAvailable,
 } from "./password-reset-delivery.js";
+import {
+  createMfaChallengeToken,
+  createRecoveryCodes,
+  createTotpEnrollment,
+  decryptTotpSecret,
+  encryptTotpSecret,
+  hashOpaqueToken,
+  hashRecoveryCode,
+  validateTotp,
+} from "./mfa.js";
 
 export const REFRESH_COOKIE = "refreshToken";
 
@@ -31,6 +41,33 @@ const signAccessToken = (user, sessionId) =>
     { subject: String(user.id), expiresIn: accessTokenTtl, algorithm: "HS256" },
   );
 
+const createSession = async (executor, user, metadata = {}) => {
+  const sessionId = crypto.randomUUID();
+  const refreshToken = newRefreshToken();
+  await executor.execute(
+    `INSERT INTO auth_sessions
+       (id, user_id, refresh_token_hash, user_agent, ip_address, expires_at,
+        absolute_expires_at)
+     VALUES (?, ?, ?, ?, ?,
+             DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY),
+             DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY))`,
+    [
+      sessionId,
+      user.id,
+      hashToken(refreshToken),
+      metadata.userAgent?.slice(0, 255) || null,
+      metadata.ipAddress?.slice(0, 45) || null,
+      securityConfig.refreshSession.idleTtlDays,
+      securityConfig.refreshSession.absoluteTtlDays,
+    ],
+  );
+  return {
+    accessToken: signAccessToken(user, sessionId),
+    refreshToken,
+    user: publicUser(user),
+  };
+};
+
 export const refreshCookieOptions = () => ({
   httpOnly: true,
   secure: securityConfig.isProduction,
@@ -47,7 +84,7 @@ export const clearRefreshCookieOptions = () => {
 export const login = async (email, password, metadata = {}) => {
   const [users] = await pool.execute(
     `SELECT id, username, email, password, avatar_url, role, provider,
-            status, failed_login_attempts, locked_until
+            status, failed_login_attempts, locked_until, mfa_enabled
      FROM users WHERE email = ? LIMIT 1`,
     [email],
   );
@@ -87,38 +124,41 @@ export const login = async (email, password, metadata = {}) => {
     return attemptRows[0]?.locked_until ? { denied: "locked" } : null;
   }
 
-  const sessionId = crypto.randomUUID();
-  const refreshToken = newRefreshToken();
-
-  await pool.execute(
-    `INSERT INTO auth_sessions
-       (id, user_id, refresh_token_hash, user_agent, ip_address, expires_at,
-        absolute_expires_at)
-     VALUES (?, ?, ?, ?, ?,
-             DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY),
-             DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY))`,
-    [
-      sessionId,
-      user.id,
-      hashToken(refreshToken),
-      metadata.userAgent?.slice(0, 255) || null,
-      metadata.ipAddress?.slice(0, 45) || null,
-      securityConfig.refreshSession.idleTtlDays,
-      securityConfig.refreshSession.absoluteTtlDays,
-    ],
-  );
   await pool.execute(
     `UPDATE users
-     SET last_login = UTC_TIMESTAMP(), failed_login_attempts = 0, locked_until = NULL
+     SET failed_login_attempts = 0, locked_until = NULL
      WHERE id = ?`,
     [user.id],
   );
 
-  return {
-    accessToken: signAccessToken(user, sessionId),
-    refreshToken,
-    user: publicUser(user),
-  };
+  if (user.mfa_enabled) {
+    const challengeToken = createMfaChallengeToken();
+    await pool.execute(
+      `UPDATE auth_mfa_challenges
+       SET used_at = UTC_TIMESTAMP()
+       WHERE user_id = ? AND used_at IS NULL`,
+      [user.id],
+    );
+    await pool.execute(
+      `INSERT INTO auth_mfa_challenges
+         (user_id, token_hash, expires_at, max_attempts)
+       VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), ?)`,
+      [
+        user.id,
+        hashOpaqueToken(challengeToken),
+        securityConfig.mfa.challengeTtlSeconds,
+        securityConfig.mfa.challengeMaxAttempts,
+      ],
+    );
+    return {
+      mfaRequired: true,
+      challengeToken,
+      expiresInSeconds: securityConfig.mfa.challengeTtlSeconds,
+    };
+  }
+
+  await pool.execute("UPDATE users SET last_login = UTC_TIMESTAMP() WHERE id = ?", [user.id]);
+  return createSession(pool, user, metadata);
 };
 
 export const refresh = async (currentToken) => {
@@ -184,6 +224,275 @@ export const revokeAllSessions = async (userId) => {
      WHERE user_id = ? AND revoked_at IS NULL`,
     [userId],
   );
+};
+
+const verifyMfaFactor = async (connection, user, code) => {
+  if (
+    user.mfa_secret_ciphertext &&
+    user.mfa_secret_iv &&
+    user.mfa_secret_tag
+  ) {
+    const secret = decryptTotpSecret({
+      ciphertext: user.mfa_secret_ciphertext,
+      iv: user.mfa_secret_iv,
+      tag: user.mfa_secret_tag,
+    });
+    const acceptedStep = validateTotp(secret, code);
+    if (acceptedStep !== null) {
+      const [updated] = await connection.execute(
+        `UPDATE users
+         SET mfa_last_used_step = ?
+         WHERE id = ?
+           AND (mfa_last_used_step IS NULL OR mfa_last_used_step < ?)`,
+        [acceptedStep, user.id, acceptedStep],
+      );
+      if (updated.affectedRows === 1) return true;
+    }
+  }
+
+  const recoveryHash = hashRecoveryCode(code);
+  if (!recoveryHash) return false;
+  const [codes] = await connection.execute(
+    `SELECT id
+     FROM auth_mfa_recovery_codes
+     WHERE user_id = ? AND code_hash = ? AND used_at IS NULL
+     LIMIT 1
+     FOR UPDATE`,
+    [user.id, recoveryHash],
+  );
+  if (codes.length === 0) return false;
+  const [consumed] = await connection.execute(
+    `UPDATE auth_mfa_recovery_codes
+     SET used_at = UTC_TIMESTAMP()
+     WHERE id = ? AND used_at IS NULL`,
+    [codes[0].id],
+  );
+  return consumed.affectedRows === 1;
+};
+
+export const beginMfaSetup = async (userId, currentPassword) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [users] = await connection.execute(
+      `SELECT id, email, password, provider, status, mfa_enabled
+       FROM users WHERE id = ? LIMIT 1 FOR UPDATE`,
+      [userId],
+    );
+    const user = users[0];
+    if (!user || user.provider !== "local" || user.status !== "active" || !user.password) {
+      await connection.rollback();
+      return { error: "invalid_current" };
+    }
+    if (user.mfa_enabled) {
+      await connection.rollback();
+      return { error: "already_enabled" };
+    }
+    if (!(await bcrypt.compare(currentPassword, user.password))) {
+      await connection.rollback();
+      return { error: "invalid_current" };
+    }
+
+    const enrollment = createTotpEnrollment(user.email);
+    const encrypted = encryptTotpSecret(enrollment.secret);
+    await connection.execute(
+      `UPDATE users
+       SET mfa_secret_ciphertext = ?, mfa_secret_iv = ?, mfa_secret_tag = ?,
+           mfa_enabled = 0, mfa_enabled_at = NULL, mfa_last_used_step = NULL
+       WHERE id = ?`,
+      [encrypted.ciphertext, encrypted.iv, encrypted.tag, user.id],
+    );
+    await connection.execute("DELETE FROM auth_mfa_recovery_codes WHERE user_id = ?", [user.id]);
+    await connection.commit();
+    return enrollment;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+export const enableMfa = async (userId, code) => {
+  const recoveryCodes = createRecoveryCodes();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [users] = await connection.execute(
+      `SELECT id, provider, status, mfa_enabled, mfa_secret_ciphertext,
+              mfa_secret_iv, mfa_secret_tag, mfa_last_used_step
+       FROM users WHERE id = ? LIMIT 1 FOR UPDATE`,
+      [userId],
+    );
+    const user = users[0];
+    if (
+      !user ||
+      user.provider !== "local" ||
+      user.status !== "active" ||
+      user.mfa_enabled ||
+      !user.mfa_secret_ciphertext
+    ) {
+      await connection.rollback();
+      return { error: "invalid_setup" };
+    }
+    const enrollmentSecret = decryptTotpSecret({
+      ciphertext: user.mfa_secret_ciphertext,
+      iv: user.mfa_secret_iv,
+      tag: user.mfa_secret_tag,
+    });
+    if (validateTotp(enrollmentSecret, code) === null) {
+      await connection.rollback();
+      return { error: "invalid_code" };
+    }
+
+    await connection.execute("DELETE FROM auth_mfa_recovery_codes WHERE user_id = ?", [user.id]);
+    for (const recoveryCode of recoveryCodes) {
+      await connection.execute(
+        "INSERT INTO auth_mfa_recovery_codes (user_id, code_hash) VALUES (?, ?)",
+        [user.id, hashRecoveryCode(recoveryCode)],
+      );
+    }
+    await connection.execute(
+      "UPDATE users SET mfa_enabled = 1, mfa_enabled_at = UTC_TIMESTAMP() WHERE id = ?",
+      [user.id],
+    );
+    await connection.execute(
+      "UPDATE auth_sessions SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL",
+      [user.id],
+    );
+    await connection.execute(
+      "UPDATE auth_mfa_challenges SET used_at = UTC_TIMESTAMP() WHERE user_id = ? AND used_at IS NULL",
+      [user.id],
+    );
+    await connection.commit();
+    return { recoveryCodes };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+export const completeMfaChallenge = async (challengeToken, code, metadata = {}) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute(
+      `SELECT c.id AS challenge_id, c.attempts, c.max_attempts, c.expires_at,
+              u.id, u.username, u.email, u.avatar_url, u.role, u.status,
+              u.mfa_enabled, u.mfa_secret_ciphertext, u.mfa_secret_iv,
+              u.mfa_secret_tag, u.mfa_last_used_step
+       FROM auth_mfa_challenges c
+       JOIN users u ON u.id = c.user_id
+       WHERE c.token_hash = ? AND c.used_at IS NULL
+       LIMIT 1 FOR UPDATE`,
+      [hashOpaqueToken(challengeToken)],
+    );
+    const challenge = rows[0];
+    if (
+      !challenge ||
+      challenge.status !== "active" ||
+      !challenge.mfa_enabled ||
+      challenge.attempts >= challenge.max_attempts ||
+      new Date(challenge.expires_at).getTime() <= Date.now()
+    ) {
+      if (challenge) {
+        await connection.execute(
+          "UPDATE auth_mfa_challenges SET used_at = UTC_TIMESTAMP() WHERE id = ?",
+          [challenge.challenge_id],
+        );
+        await connection.commit();
+      } else {
+        await connection.rollback();
+      }
+      return null;
+    }
+
+    if (!(await verifyMfaFactor(connection, challenge, code))) {
+      await connection.execute(
+        `UPDATE auth_mfa_challenges
+         SET attempts = attempts + 1,
+             used_at = IF(attempts >= max_attempts, UTC_TIMESTAMP(), used_at)
+         WHERE id = ?`,
+        [challenge.challenge_id],
+      );
+      await connection.commit();
+      return null;
+    }
+
+    await connection.execute(
+      "UPDATE auth_mfa_challenges SET used_at = UTC_TIMESTAMP() WHERE id = ? AND used_at IS NULL",
+      [challenge.challenge_id],
+    );
+    await connection.execute(
+      "UPDATE users SET last_login = UTC_TIMESTAMP() WHERE id = ?",
+      [challenge.id],
+    );
+    const result = await createSession(connection, challenge, metadata);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+export const disableMfa = async (userId, currentPassword, code) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [users] = await connection.execute(
+      `SELECT id, password, provider, status, mfa_enabled, mfa_secret_ciphertext,
+              mfa_secret_iv, mfa_secret_tag, mfa_last_used_step
+       FROM users WHERE id = ? LIMIT 1 FOR UPDATE`,
+      [userId],
+    );
+    const user = users[0];
+    if (
+      !user ||
+      user.provider !== "local" ||
+      user.status !== "active" ||
+      !user.mfa_enabled ||
+      !user.password ||
+      !(await bcrypt.compare(currentPassword, user.password)) ||
+      !(await verifyMfaFactor(connection, user, code))
+    ) {
+      await connection.rollback();
+      return false;
+    }
+
+    await connection.execute(
+      `UPDATE users
+       SET mfa_enabled = 0, mfa_secret_ciphertext = NULL, mfa_secret_iv = NULL,
+           mfa_secret_tag = NULL, mfa_enabled_at = NULL, mfa_last_used_step = NULL
+       WHERE id = ?`,
+      [user.id],
+    );
+    await connection.execute(
+      `UPDATE auth_mfa_recovery_codes
+       SET used_at = COALESCE(used_at, UTC_TIMESTAMP())
+       WHERE user_id = ?`,
+      [user.id],
+    );
+    await connection.execute(
+      "UPDATE auth_mfa_challenges SET used_at = UTC_TIMESTAMP() WHERE user_id = ? AND used_at IS NULL",
+      [user.id],
+    );
+    await connection.execute(
+      "UPDATE auth_sessions SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL",
+      [user.id],
+    );
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 };
 
 export const changePassword = async (userId, currentPassword, newPassword) => {

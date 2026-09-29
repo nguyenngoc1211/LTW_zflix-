@@ -43,6 +43,17 @@ export const AuthProvider = ({ children }) => {
           { method: "POST", body: JSON.stringify({ email, password }) },
           false,
         );
+        if (data.mfaRequired) return data;
+        setAccessToken(data.accessToken);
+        setUser(data.user);
+        return { user: data.user };
+      },
+      async verifyMfa(challengeToken, code) {
+        const data = await apiRequest(
+          "/api/v1/auth/mfa/verify",
+          { method: "POST", body: JSON.stringify({ challengeToken, code }) },
+          false,
+        );
         setAccessToken(data.accessToken);
         setUser(data.user);
         return data.user;

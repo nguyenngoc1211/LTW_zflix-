@@ -4,13 +4,18 @@ import { requireFrontendOrigin } from "../../core/middleware/origin.middleware.j
 import {
   forgotPasswordRateLimiter,
   loginRateLimiter,
+  mfaRateLimiter,
   refreshRateLimiter,
   resetPasswordRateLimiter,
 } from "../../core/middleware/rate-limit.middleware.js";
 import {
   REFRESH_COOKIE,
+  beginMfaSetup,
   changePassword,
   clearRefreshCookieOptions,
+  completeMfaChallenge,
+  disableMfa,
+  enableMfa,
   login,
   refresh,
   refreshCookieOptions,
@@ -52,6 +57,10 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
     if (!result || result.denied) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
+    if (result.mfaRequired) {
+      res.set("Cache-Control", "no-store");
+      return res.status(202).json(result);
+    }
 
     res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
     return res.json({ accessToken: result.accessToken, user: result.user });
@@ -59,6 +68,120 @@ authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
     return next(error);
   }
 });
+
+authRouter.post(
+  "/mfa/setup",
+  requireAuth,
+  requireFrontendOrigin,
+  mfaRateLimiter,
+  async (req, res, next) => {
+    try {
+      const currentPassword = req.body?.currentPassword;
+      if (!validCurrentPassword(currentPassword)) {
+        return res.status(400).json({ message: "Current password is required" });
+      }
+      const result = await beginMfaSetup(req.user.id, currentPassword);
+      if (result.error === "already_enabled") {
+        return res.status(409).json({ message: "MFA is already enabled" });
+      }
+      if (result.error) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+      res.set("Cache-Control", "no-store");
+      return res.json(result);
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+authRouter.post(
+  "/mfa/enable",
+  requireAuth,
+  requireFrontendOrigin,
+  mfaRateLimiter,
+  async (req, res, next) => {
+    try {
+      const code = req.body?.code;
+      if (typeof code !== "string" || code.length === 0 || code.length > 64) {
+        return res.status(400).json({ message: "A valid authentication code is required" });
+      }
+      const result = await enableMfa(req.user.id, code);
+      if (result.error) {
+        return res.status(400).json({ message: "Authentication code is invalid" });
+      }
+      res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
+      res.set("Cache-Control", "no-store");
+      return res.json({
+        message: "MFA enabled successfully. Please sign in again.",
+        recoveryCodes: result.recoveryCodes,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+authRouter.post(
+  "/mfa/verify",
+  requireFrontendOrigin,
+  mfaRateLimiter,
+  async (req, res, next) => {
+    try {
+      const challengeToken = req.body?.challengeToken;
+      const code = req.body?.code;
+      if (
+        typeof challengeToken !== "string" ||
+        challengeToken.length === 0 ||
+        challengeToken.length > 512 ||
+        typeof code !== "string" ||
+        code.length === 0 ||
+        code.length > 64
+      ) {
+        return res.status(400).json({ message: "MFA challenge or code is invalid" });
+      }
+      const result = await completeMfaChallenge(challengeToken, code, {
+        userAgent: req.get("user-agent"),
+        ipAddress: req.ip,
+      });
+      if (!result) {
+        return res.status(401).json({ message: "MFA challenge or code is invalid or expired" });
+      }
+      res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
+      return res.json({ accessToken: result.accessToken, user: result.user });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
+
+authRouter.post(
+  "/mfa/disable",
+  requireAuth,
+  requireFrontendOrigin,
+  mfaRateLimiter,
+  async (req, res, next) => {
+    try {
+      const currentPassword = req.body?.currentPassword;
+      const code = req.body?.code;
+      if (
+        !validCurrentPassword(currentPassword) ||
+        typeof code !== "string" ||
+        code.length === 0 ||
+        code.length > 64
+      ) {
+        return res.status(400).json({ message: "Current password and MFA code are required" });
+      }
+      if (!(await disableMfa(req.user.id, currentPassword, code))) {
+        return res.status(400).json({ message: "Unable to disable MFA" });
+      }
+      res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
+      return res.json({ message: "MFA disabled successfully. Please sign in again." });
+    } catch (error) {
+      return next(error);
+    }
+  },
+);
 
 authRouter.post(
   "/refresh-token",

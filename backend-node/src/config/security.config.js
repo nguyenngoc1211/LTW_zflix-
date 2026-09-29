@@ -1,4 +1,5 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 
 const nodeEnv = process.env.NODE_ENV || "development";
 const isProduction = nodeEnv === "production";
@@ -32,6 +33,23 @@ const positiveInteger = (value, fallback) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
+
+const configuredMfaEncryptionKey = process.env.MFA_ENCRYPTION_KEY?.trim();
+if (isProduction && !configuredMfaEncryptionKey) {
+  throw new Error("MFA_ENCRYPTION_KEY is required in production");
+}
+
+const decodeMfaEncryptionKey = (value) => {
+  const key = Buffer.from(value, "base64");
+  if (key.length !== 32 || key.toString("base64").replace(/=+$/u, "") !== value.replace(/=+$/u, "")) {
+    throw new Error("MFA_ENCRYPTION_KEY must be a base64-encoded 32-byte key");
+  }
+  return key;
+};
+
+const mfaEncryptionKey = configuredMfaEncryptionKey
+  ? decodeMfaEncryptionKey(configuredMfaEncryptionKey)
+  : crypto.createHash("sha256").update(`development-mfa:${jwtAccessSecret}`).digest();
 
 export const securityConfig = Object.freeze({
   isProduction,
@@ -67,5 +85,17 @@ export const securityConfig = Object.freeze({
   }),
   passwordReset: Object.freeze({
     tokenTtlMinutes: positiveInteger(process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES, 30),
+  }),
+  mfa: Object.freeze({
+    encryptionKey: mfaEncryptionKey,
+    issuer: process.env.MFA_ISSUER?.trim() || "MovieHub",
+    challengeTtlSeconds: positiveInteger(process.env.MFA_CHALLENGE_TTL_SECONDS, 5 * 60),
+    challengeMaxAttempts: positiveInteger(process.env.MFA_CHALLENGE_MAX_ATTEMPTS, 5),
+    verificationWindow: 1,
+    recoveryCodeCount: 10,
+    rateLimit: Object.freeze({
+      windowMs: positiveInteger(process.env.MFA_RATE_LIMIT_WINDOW_MS, 5 * 60 * 1000),
+      max: positiveInteger(process.env.MFA_RATE_LIMIT_MAX, 20),
+    }),
   }),
 });
