@@ -6,6 +6,8 @@ import Test from "../admin/analytics/Test";
 import Test1 from "../admin/users/Test";
 import Test2 from "../admin/content/Test";
 import Test3 from "../admin/community/Test";
+import LoginPage from "../modules/auth/LoginPage";
+import ProtectedRoute from "./ProtectedRoute";
 
 export const router = createBrowserRouter([
   {
@@ -19,24 +21,33 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    path: "/admin",
-    element: <AdminPage />,
+    path: "/login",
+    element: <LoginPage />,
+  },
+  {
+    element: <ProtectedRoute allowedRoles={["admin"]} />,
     children: [
       {
-        index: true,
-        element: <Test />,
-      },
-      {
-        path: "/admin/users",
-        element: <Test1 />,
-      },
-      {
-        path: "/admin/content",
-        element: <Test2 />,
-      },
-      {
-        path: "/admin/community",
-        element: <Test3 />,
+        path: "/admin",
+        element: <AdminPage />,
+        children: [
+          {
+            index: true,
+            element: <Test />,
+          },
+          {
+            path: "/admin/users",
+            element: <Test1 />,
+          },
+          {
+            path: "/admin/content",
+            element: <Test2 />,
+          },
+          {
+            path: "/admin/community",
+            element: <Test3 />,
+          },
+        ],
       },
     ],
   },

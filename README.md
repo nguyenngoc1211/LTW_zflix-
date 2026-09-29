@@ -51,6 +51,27 @@ Sau khi khởi động xong, bạn có thể truy cập các dịch vụ tại:
 
 ---
 
+## 🔐 Đăng nhập và phân quyền
+
+Tài khoản mẫu sau được tạo từ `database/init.sql`. Mật khẩu trong MySQL được lưu dưới dạng bcrypt.
+
+| Quyền | Email | Mật khẩu |
+| :--- | :--- | :--- |
+| Admin | `admin@moviehub.com` | `abc123` |
+| User | `john.doe@email.com` | `abc123` |
+
+Các endpoint xác thực dùng base path `/api/v1/auth`:
+
+- `POST /login`: đăng nhập bằng email và mật khẩu.
+- `POST /refresh-token`: xoay refresh token từ cookie HTTP-only.
+- `GET /me`: lấy người dùng hiện tại bằng Bearer access token.
+- `POST /logout`: thu hồi phiên và xóa refresh cookie.
+- `GET /api/v1/admin/check`: endpoint kiểm tra quyền admin.
+
+Access token chỉ nên giữ trong bộ nhớ frontend. Refresh token nằm trong cookie HTTP-only và database chỉ lưu SHA-256 hash của token. Chạy `npm test` trong `backend-node` để kiểm tra API cơ bản, `npm run test:integration` để kiểm tra auth với MySQL đang chạy, và `npm run test:ui` trong `frontend` để kiểm tra luồng trình duyệt bằng Chrome cục bộ.
+
+---
+
 ## 👨‍💻 Quy trình làm việc (Workflow)
 
 ### 1. Code hàng ngày
