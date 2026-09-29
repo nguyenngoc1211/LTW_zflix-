@@ -1,3 +1,4 @@
+# Development-only stack. Supply secrets through the untracked root .env file.
 services:
   # MySQL Database
   db:
@@ -29,8 +30,9 @@ services:
     environment:
       DATABASE_URL: mysql://root:rootpassword@db:3306/movie_streaming_db
       PORT: 3000
-      FRONTEND_URL: http://localhost:5173
-      JWT_ACCESS_SECRET: local-development-secret-change-in-production
+      NODE_ENV: ${NODE_ENV:-development}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set}
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_DAYS: 7
     depends_on:

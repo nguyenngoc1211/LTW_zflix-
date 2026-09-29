@@ -2,9 +2,14 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 let accessToken = null;
 let pendingRefresh = null;
+let sessionInvalidHandler = null;
 
 export const setAccessToken = (token) => {
   accessToken = token;
+};
+
+export const setSessionInvalidHandler = (handler) => {
+  sessionInvalidHandler = typeof handler === "function" ? handler : null;
 };
 
 const parseResponse = async (response) => {
@@ -31,6 +36,7 @@ export const refreshSession = async () => {
       })
       .catch((error) => {
         setAccessToken(null);
+        sessionInvalidHandler?.();
         throw error;
       })
       .finally(() => {

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiRequest, refreshSession, setAccessToken } from "../services/api.js";
+import {
+  apiRequest,
+  refreshSession,
+  setAccessToken,
+  setSessionInvalidHandler,
+} from "../services/api.js";
 import { AuthContext } from "./auth-context.js";
 
 export const AuthProvider = ({ children }) => {
@@ -8,6 +13,10 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let active = true;
+    const clearInvalidSession = () => {
+      if (active) setUser(null);
+    };
+    setSessionInvalidHandler(clearInvalidSession);
     refreshSession()
       .then((data) => {
         if (active) setUser(data.user);
@@ -20,6 +29,7 @@ export const AuthProvider = ({ children }) => {
       });
     return () => {
       active = false;
+      setSessionInvalidHandler(null);
     };
   }, []);
 

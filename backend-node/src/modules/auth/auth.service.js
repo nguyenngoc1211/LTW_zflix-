@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../../core/database/pool.js";
 
 export const REFRESH_COOKIE = "refreshToken";
@@ -23,13 +24,13 @@ const publicUser = (row) => ({
 const signAccessToken = (user, sessionId) =>
   jwt.sign(
     { role: user.role, sid: sessionId },
-    process.env.JWT_ACCESS_SECRET,
-    { subject: String(user.id), expiresIn: accessTokenTtl },
+    securityConfig.jwtAccessSecret,
+    { subject: String(user.id), expiresIn: accessTokenTtl, algorithm: "HS256" },
   );
 
 export const refreshCookieOptions = () => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: securityConfig.isProduction,
   sameSite: "lax",
   path: "/api/v1/auth",
   maxAge: refreshTokenDays * 24 * 60 * 60 * 1000,
@@ -116,7 +117,8 @@ export const revokeSession = async ({ refreshToken, accessToken }) => {
 
   if (accessToken) {
     try {
-      const payload = jwt.verify(accessToken, process.env.JWT_ACCESS_SECRET, {
+      const payload = jwt.verify(accessToken, securityConfig.jwtAccessSecret, {
+        algorithms: securityConfig.jwtAlgorithms,
         ignoreExpiration: true,
       });
       await pool.execute(

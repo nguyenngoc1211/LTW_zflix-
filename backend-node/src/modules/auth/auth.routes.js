@@ -1,5 +1,10 @@
 import { Router } from "express";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
+import { requireFrontendOrigin } from "../../core/middleware/origin.middleware.js";
+import {
+  loginRateLimiter,
+  refreshRateLimiter,
+} from "../../core/middleware/rate-limit.middleware.js";
 import {
   REFRESH_COOKIE,
   clearRefreshCookieOptions,
@@ -14,7 +19,7 @@ export const authRouter = Router();
 const normalizeEmail = (value) => (typeof value === "string" ? value.trim().toLowerCase() : "");
 const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-authRouter.post("/login", async (req, res, next) => {
+authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = typeof req.body?.password === "string" ? req.body.password : "";
@@ -36,25 +41,30 @@ authRouter.post("/login", async (req, res, next) => {
   }
 });
 
-authRouter.post("/refresh-token", async (req, res, next) => {
-  try {
-    const currentToken = req.cookies[REFRESH_COOKIE];
-    if (!currentToken) return res.status(401).json({ message: "Refresh session is missing" });
+authRouter.post(
+  "/refresh-token",
+  requireFrontendOrigin,
+  refreshRateLimiter,
+  async (req, res, next) => {
+    try {
+      const currentToken = req.cookies[REFRESH_COOKIE];
+      if (!currentToken) return res.status(401).json({ message: "Refresh session is missing" });
 
-    const result = await refresh(currentToken);
-    if (!result) {
-      res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
-      return res.status(401).json({ message: "Refresh session is invalid or expired" });
+      const result = await refresh(currentToken);
+      if (!result) {
+        res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
+        return res.status(401).json({ message: "Refresh session is invalid or expired" });
+      }
+
+      res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
+      return res.json({ accessToken: result.accessToken, user: result.user });
+    } catch (error) {
+      return next(error);
     }
+  },
+);
 
-    res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions());
-    return res.json({ accessToken: result.accessToken, user: result.user });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-authRouter.post("/logout", async (req, res, next) => {
+authRouter.post("/logout", requireFrontendOrigin, async (req, res, next) => {
   try {
     const authorization = req.get("authorization") || "";
     const accessToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : null;

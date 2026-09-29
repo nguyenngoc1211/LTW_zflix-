@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../database/pool.js";
 
 const unauthorized = (res, message = "Authentication required") =>
@@ -11,7 +12,9 @@ export const requireAuth = async (req, res, next) => {
 
     if (scheme !== "Bearer" || !token) return unauthorized(res);
 
-    const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+    const payload = jwt.verify(token, securityConfig.jwtAccessSecret, {
+      algorithms: securityConfig.jwtAlgorithms,
+    });
     const [sessions] = await pool.execute(
       `SELECT s.id, u.id AS user_id, u.username, u.email, u.avatar_url, u.role
        FROM auth_sessions s
