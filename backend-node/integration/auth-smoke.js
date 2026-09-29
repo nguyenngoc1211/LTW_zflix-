@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
+import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import mysql from "mysql2/promise";
 
-const baseUrl = process.env.API_URL || "http://localhost:3000";
+dotenv.config({ path: new URL("../../.env", import.meta.url) });
 
-const call = async (path, { token, cookie, ...options } = {}) => {
+const baseUrl = process.env.API_URL || "http://localhost:3000";
+const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+
+const call = async (path, { token, cookie, origin, ...options } = {}) => {
   const headers = new Headers(options.headers);
   if (options.body) headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (cookie) headers.set("Cookie", cookie);
+  if (origin) headers.set("Origin", origin);
 
   const response = await fetch(`${baseUrl}${path}`, { ...options, headers });
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
@@ -60,9 +65,17 @@ assert.equal(user.data.user.role, "user");
 const deniedAdmin = await call("/api/v1/admin/check", { token: user.data.accessToken });
 assert.equal(deniedAdmin.status, 403);
 
+const blockedOrigin = await call("/api/v1/auth/refresh-token", {
+  method: "POST",
+  cookie: user.cookie,
+  origin: "http://localhost:9999",
+});
+assert.equal(blockedOrigin.status, 403);
+
 const refreshed = await call("/api/v1/auth/refresh-token", {
   method: "POST",
   cookie: user.cookie,
+  origin: frontendOrigin,
 });
 assert.equal(refreshed.status, 200);
 assert.notEqual(refreshed.cookie, user.cookie);
@@ -70,6 +83,7 @@ assert.notEqual(refreshed.cookie, user.cookie);
 const replayedRefresh = await call("/api/v1/auth/refresh-token", {
   method: "POST",
   cookie: user.cookie,
+  origin: frontendOrigin,
 });
 assert.equal(replayedRefresh.status, 401);
 
@@ -77,6 +91,7 @@ const logout = await call("/api/v1/auth/logout", {
   method: "POST",
   token: refreshed.data.accessToken,
   cookie: refreshed.cookie,
+  origin: frontendOrigin,
 });
 assert.equal(logout.status, 204);
 
@@ -86,6 +101,7 @@ assert.equal(revokedAccess.status, 401);
 const revokedRefresh = await call("/api/v1/auth/refresh-token", {
   method: "POST",
   cookie: refreshed.cookie,
+  origin: frontendOrigin,
 });
 assert.equal(revokedRefresh.status, 401);
 
@@ -108,9 +124,10 @@ assert.equal(expiredSessionAccess.status, 401);
 const expiredSessionRefresh = await call("/api/v1/auth/refresh-token", {
   method: "POST",
   cookie: expiringSession.cookie,
+  origin: frontendOrigin,
 });
 assert.equal(expiredSessionRefresh.status, 401);
 
 console.log(
-  "Auth integration checks passed: validation, invalid login, admin/user roles, token/session expiry, refresh rotation, and logout revocation.",
+  "Auth integration checks passed: validation, invalid login, admin/user roles, token/session expiry, origin protection, refresh rotation, and logout revocation.",
 );

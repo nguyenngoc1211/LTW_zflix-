@@ -53,7 +53,7 @@ Sau khi khởi động xong, bạn có thể truy cập các dịch vụ tại:
 
 ## 🔐 Đăng nhập và phân quyền
 
-Tài khoản mẫu sau được tạo từ `database/init.sql`. Mật khẩu trong MySQL được lưu dưới dạng bcrypt.
+Tài khoản mẫu sau được tạo từ `database/init.sql`. Mật khẩu trong MySQL được lưu dưới dạng bcrypt. **Các tài khoản này chỉ dành cho local/development; không chạy file seed này trong production.**
 
 | Quyền | Email | Mật khẩu |
 | :--- | :--- | :--- |

@@ -2,14 +2,24 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import { securityConfig } from "./config/security.config.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { requireAuth, requireRole } from "./core/middleware/auth.middleware.js";
 
 export const createApp = () => {
   const app = express();
-  const allowedOrigin = process.env.FRONTEND_URL || "http://localhost:5173";
 
-  app.use(cors({ origin: allowedOrigin, credentials: true }));
+  app.use(
+    helmet({
+      // A streaming-compatible CSP needs to be designed with the media hosts in a later phase.
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: false,
+      strictTransportSecurity: securityConfig.isProduction ? undefined : false,
+    }),
+  );
+  app.use(cors({ origin: securityConfig.frontendOrigin, credentials: true }));
   app.use(express.json({ limit: "32kb" }));
   app.use(cookieParser());
 
