@@ -4,25 +4,20 @@ Ngày rà soát source và Git gần nhất: 2026-09-29
 Current branch: `Du`  
 Current latest security commit: `8988504`
 Mốc source hiện tại: `8988504 security: add auth logging and cleanup phase 6`
-Current uncommitted security phase: `None; only this post-commit documentation update is pending`
+Current latest documentation commit: `5424d74 update auth_sec_progess_ phase 6`
+Current uncommitted security phase: `None`
 
 Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
 
 ## Current working tree expectation
 
-Current expectation while this post-commit documentation update is pending:
-
-```text
-git status -> docs/AUTH_SECURITY_PROGRESS.md modified only
-```
-
-Do not overwrite or discard those changes. After an explicit future commit, the expected state returns to:
+Phase 6 implementation và tài liệu hậu kiểm đã được commit. Baseline trước Phase 7 được kỳ vọng:
 
 ```text
 git status -> clean
 ```
 
-Mọi thay đổi khác ngoài scope trên vẫn phải dừng lại để kiểm tra. Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
+Nếu `git status` khác baseline này, phải kiểm tra và bảo toàn mọi thay đổi hiện hữu trước khi bắt đầu Phase 7. Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
 
 ## Kiến trúc hiện tại
 
@@ -226,7 +221,6 @@ Các khái niệm có thể xuất hiện trong schema/frontend nhưng chưa có
 - Subscription/transaction
 - Admin user/content/community CRUD và moderation
 - User registration
-- Session-management UI
 
 Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm ownership, IDOR/BOLA, mass-assignment hoặc premium test khi resource API tương ứng thực sự được triển khai.
 
@@ -272,13 +266,15 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - MFA setup/enable, không cấp credential trước factor, challenge expiry/attempt cap/one-time, TOTP replay, recovery-code one-time, disabled user, password-reset preservation và disable session revocation.
 - Frontend login chuyển sang second step bằng challenge giữ trong memory và chấp nhận TOTP/recovery code.
 
-## Remaining work
+## Deferred / Future hardening
 
-- CAPTCHA hoặc bot-abuse control bổ sung
-- Production email provider và delivery monitoring cho password reset
-- CSP tương thích streaming; hiện Helmet chạy với CSP disabled
-- Multi-tab auth state sync
+- CAPTCHA hoặc bot-abuse controls
+- Production password-reset email delivery và delivery monitoring
 - Refresh-token family/history và replay-family response
+- Streaming-compatible CSP; hiện Helmet chạy với CSP disabled
+- Centralized SIEM/log transport, alerting và chính sách archive/audit bất biến
+- Deployed cleanup scheduler cho `npm run cleanup:auth`
+- Multi-tab auth state sync
 - IDOR/BOLA, ownership, mass-assignment khi các resource API thật xuất hiện
 - Server-side premium/subscription authorization khi có API tương ứng
 - Admin CRUD và community/content moderation authorization khi có API tương ứng
@@ -286,12 +282,15 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 
 ## Next recommended phase
 
-Next candidate:
+Next phase:
 
-**Phase 7 — bot-abuse controls hoặc production password-reset delivery**
+**Phase 7 — Final Security Audit**
 
-Do not start automatically.  
-First audit current source and propose scope.
+Phase 7 là đợt audit cuối dựa trên source, Git, migration, route, cấu hình và bằng chứng test hiện có. Audit phải rà soát lại authentication, authorization, password lifecycle, MFA, session management, security logging, cleanup và các trust boundary thực tế; phân loại rõ finding đã xác minh, rủi ro được chấp nhận và hạng mục deferred.
+
+Phase 7 không tự động triển khai CAPTCHA/bot-abuse controls, production password-reset email delivery, refresh-token family/history, streaming-compatible CSP, centralized SIEM/log transport hoặc deployed cleanup scheduler. Các hạng mục đó thuộc **Deferred / Future hardening** và chỉ được triển khai khi có scope riêng được phê duyệt.
+
+Do not start automatically. Trước tiên phải xác nhận working tree, audit source hiện tại và chốt phạm vi audit; mọi remediation phát sinh cần được báo cáo trước khi sửa.
 
 ## Hướng dẫn cho các phiên Codex sau
 
