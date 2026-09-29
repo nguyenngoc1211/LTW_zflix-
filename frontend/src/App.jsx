@@ -18,6 +18,7 @@ const App = () => {
           {user ? (
             <>
               <span>{user.username} ({user.role})</span>
+              <Link to="/account/security">Security</Link>
               {user.role === "admin" && <Link to="/admin">Admin</Link>}
               <button type="button" onClick={handleLogout} className="rounded bg-red-600 px-3 py-2">
                 Log out

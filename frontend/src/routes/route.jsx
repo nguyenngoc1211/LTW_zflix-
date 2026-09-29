@@ -7,6 +7,7 @@ import Test1 from "../admin/users/Test";
 import Test2 from "../admin/content/Test";
 import Test3 from "../admin/community/Test";
 import LoginPage from "../modules/auth/LoginPage";
+import AccountSecurityPage from "../modules/auth/AccountSecurityPage";
 import ProtectedRoute from "./ProtectedRoute";
 
 export const router = createBrowserRouter([
@@ -17,6 +18,15 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <HomePage />,
+      },
+      {
+        element: <ProtectedRoute />,
+        children: [
+          {
+            path: "account/security",
+            element: <AccountSecurityPage />,
+          },
+        ],
       },
     ],
   },
