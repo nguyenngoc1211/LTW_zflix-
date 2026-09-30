@@ -2,16 +2,16 @@
 
 Ngày rà soát source và Git gần nhất: 2026-09-30
 Current branch: `Du`  
-Current latest security commit: `8988504`
-Mốc source hiện tại: `8988504 security: add auth logging and cleanup phase 6`
-Current latest documentation commit: `56253a9 docs: record final auth security audit`
-Current uncommitted security phase: `Post-audit auth UI and local registration follow-up`
+Current latest security phase commit: `8988504`
+Mốc source hiện tại: `55430bf update UI User` (đã commit follow-up auth UI và đăng ký local)
+Current latest documentation commit: `55430bf update UI User`
+Current uncommitted documentation work: authorization integration guide (xem `docs/AUTHORIZATION_INTEGRATION_GUIDE.md`)
 
 Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
 
 ## Current working tree expectation
 
-Phase 7 audit và tài liệu đã được commit. Trước follow-up UI này, `.gitignore` đã có thay đổi từ công việc khác của user; phải giữ nguyên thay đổi đó. Follow-up hiện có thay đổi frontend, backend auth và file tài liệu này; chưa commit.
+Phase 7 audit đã commit tại `56253a9`; follow-up auth UI và đăng ký local đã commit tại `55430bf`. Trước guide này, working tree chỉ có `docs/AUTH_SCOPE_STATUS.md` untracked; giữ nguyên file đó. Guide mới và reference trong file này chưa commit.
 
 ```text
 git status -> kiểm tra trực tiếp trước mọi công việc tiếp theo
@@ -48,7 +48,7 @@ Các checkpoint auth/security theo thứ tự thời gian:
 | `2946c00` | 2026-09-29 | `security: add session management phase 5A` |
 | `8988504` | 2026-09-29 | `security: add auth logging and cleanup phase 6` |
 
-Các checkpoint trên đều đã commit đến hết Phase 6. Working tree được kỳ vọng clean trước phase tiếp theo.
+Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follow-up auth sau đó cũng đã commit như ghi ở đầu tài liệu. Kiểm tra working tree trực tiếp trước phase tiếp theo.
 
 ## Chi tiết từng phase
 
@@ -149,7 +149,7 @@ Các checkpoint trên đều đã commit đến hết Phase 6. Working tree đư
 - **Kiểm thử thực chạy:** backend unit `14/14` pass; live MySQL `npm run test:integration` pass cả auth, password lifecycle và MFA; `npm run test:cleanup` pass, xóa đúng 3 session cũ, 2 reset token, 2 MFA challenge, 1 used recovery code và giữ record hợp lệ; frontend lint/build pass; `test:ui`, `test:ui:mfa`, `test:ui:mfa-management`, `test:ui:sessions` đều pass; `npm audit --audit-level=low` cho backend/frontend báo 0 vulnerability; `git diff --check` pass. Vite báo warning chunk >500 kB, không phải finding bảo mật.
 - **Giới hạn bằng chứng:** test integration chạy trên MySQL dev trong Docker; audit không xác nhận cấu hình/deployment production, external log transport, scheduler hoặc email provider. Dependency check là npm advisory audit cho lockfile hiện tại, không phải scan container image.
 - **Not applicable hiện tại:** authorization/IDOR cho profile update, comments, favorites, history, ratings, watching party, premium/subscriptions và admin CRUD vì backend chưa có các API đó. Phải rà soát ownership, mass assignment, entitlement và admin policy khi API tương ứng xuất hiện.
-- **Kết luận:** auth module sẵn sàng đóng theo scope API tại thời điểm audit; deferred controls bên dưới vẫn deferred. Tài liệu audit Phase 7 đã commit tại `56253a9`; follow-up UI bên dưới là thay đổi riêng chưa commit.
+- **Kết luận:** auth module sẵn sàng đóng theo scope API tại thời điểm audit; deferred controls bên dưới vẫn deferred. Tài liệu audit Phase 7 đã commit tại `56253a9`; follow-up UI bên dưới đã commit riêng tại `55430bf`.
 
 ### Hậu kiểm Phase 7 — giao diện password lifecycle
 
@@ -164,7 +164,11 @@ Các checkpoint trên đều đã commit đến hết Phase 6. Working tree đư
 - **Backend:** thêm `POST /api/v1/auth/register` với Origin check, rate limit mặc định `5/15 phút`, kiểm tra username/email/password, chuẩn hóa email, hash bcrypt cost `12`, tạo account cố định `role=user`, `provider=local`, `status=active`; không auto-login hoặc cấp token. Trùng username/email trả `409` generic; không tin các field đặc quyền từ client. Không cần schema migration.
 - **Password policy:** password mới dài 8–128 ký tự và không vượt 72 byte UTF-8 để bcrypt không âm thầm cắt phần cuối. Áp dụng chung tại registration, change-password và reset-password; login vẫn nhận password cũ theo giới hạn request trước đây.
 - **Frontend:** thêm `/register` và link từ `/login`; thành công chuyển về login. Admin shell kiểm tra thêm API thật `GET /api/v1/admin/check` trước khi hiển thị, nhưng backend RBAC vẫn là security boundary. Password lifecycle, MFA và session UI hiện có được giữ trong phạm vi auth.
-- **Xác minh:** backend unit `15/15`; full auth/password/MFA/registration integration trên MySQL thật pass; cleanup integration pass; frontend lint/build pass; auth, MFA login, MFA management, sessions, password lifecycle và registration UI smoke đều pass. Kiểm tra `git diff --check` sau khi hoàn tất chỉnh sửa. Không commit.
+- **Xác minh tại thời điểm follow-up:** backend unit `15/15`; full auth/password/MFA/registration integration trên MySQL thật pass; cleanup integration pass; frontend lint/build pass; auth, MFA login, MFA management, sessions, password lifecycle và registration UI smoke đều pass. Follow-up đã được commit tại `55430bf`.
+
+### Authorization integration guide
+
+`docs/AUTHORIZATION_INTEGRATION_GUIDE.md` ghi pattern thực tế và checklist cho teammate khi backend bổ sung API mới. Đây là documentation-only; không thêm API, role, ownership helper hoặc thay đổi production source. Các policy trong ma trận là **yêu cầu tương lai**, phải review lại theo resource API thật khi được triển khai.
 
 ## Security controls hiện có
 
