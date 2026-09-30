@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { requireFrontendOrigin } from "../../core/middleware/origin.middleware.js";
 import { securityLog } from "../../core/security/security-logger.js";
@@ -6,6 +7,7 @@ import {
   forgotPasswordRateLimiter,
   loginRateLimiter,
   mfaRateLimiter,
+  registrationRateLimiter,
   refreshRateLimiter,
   resetPasswordRateLimiter,
 } from "../../core/middleware/rate-limit.middleware.js";
@@ -20,6 +22,7 @@ import {
   getMfaStatus,
   login,
   listActiveSessions,
+  registerLocalAccount,
   regenerateMfaRecoveryCodes,
   refresh,
   refreshCookieOptions,
@@ -35,8 +38,9 @@ export const authRouter = Router();
 
 const normalizeEmail = (value) => (typeof value === "string" ? value.trim().toLowerCase() : "");
 const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const validUsername = (value) => typeof value === "string" && /^[a-zA-Z0-9_]{3,50}$/.test(value);
 const validPassword = (value) =>
-  typeof value === "string" && value.length >= 8 && value.length <= 128;
+  typeof value === "string" && value.length >= 8 && value.length <= 128 && !bcrypt.truncates(value);
 const validCurrentPassword = (value) =>
   typeof value === "string" && value.length > 0 && value.length <= 128;
 const forgotPasswordMessage =
@@ -44,6 +48,37 @@ const forgotPasswordMessage =
 const requestSecurityMetadata = (req) => ({
   ip: req.ip,
   userAgent: req.get("user-agent"),
+});
+
+authRouter.post("/register", requireFrontendOrigin, registrationRateLimiter, async (req, res, next) => {
+  const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+  const email = normalizeEmail(req.body?.email);
+  const password = req.body?.password;
+
+  if (!validUsername(username) || !validEmail(email) || email.length > 100 || !validPassword(password)) {
+    securityLog("REGISTER_FAILED", {
+      ...requestSecurityMetadata(req),
+      reason: "invalid_request",
+    });
+    return res.status(400).json({
+      message: "Username, email, or password is invalid",
+    });
+  }
+
+  try {
+    const userId = await registerLocalAccount({ username, email, password });
+    securityLog("REGISTER_SUCCESS", { userId, ...requestSecurityMetadata(req) });
+    return res.status(201).json({ message: "Account created. Please sign in." });
+  } catch (error) {
+    if (error.code === "ER_DUP_ENTRY") {
+      securityLog("REGISTER_FAILED", {
+        ...requestSecurityMetadata(req),
+        reason: "duplicate_account",
+      });
+      return res.status(409).json({ message: "Email or username is already in use" });
+    }
+    return next(error);
+  }
 });
 
 authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
@@ -347,7 +382,7 @@ authRouter.post(
       const currentPassword = req.body?.currentPassword;
       const newPassword = req.body?.newPassword;
       if (!validCurrentPassword(currentPassword) || !validPassword(newPassword)) {
-        return res.status(400).json({ message: "Passwords must be between 8 and 128 characters" });
+        return res.status(400).json({ message: "New password must be 8–128 characters and at most 72 UTF-8 bytes" });
       }
 
       const result = await changePassword(req.user.id, currentPassword, newPassword);
@@ -397,7 +432,7 @@ authRouter.post("/reset-password", resetPasswordRateLimiter, async (req, res, ne
       return res.status(400).json({ message: "Reset token is invalid or expired" });
     }
     if (!validPassword(newPassword)) {
-      return res.status(400).json({ message: "Passwords must be between 8 and 128 characters" });
+      return res.status(400).json({ message: "New password must be 8–128 characters and at most 72 UTF-8 bytes" });
     }
 
     const result = await resetPassword(token, newPassword);

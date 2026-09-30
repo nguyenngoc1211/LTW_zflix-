@@ -25,6 +25,25 @@ test("login rejects a missing email and password before querying the database", 
   assert.equal(response.body.message, "A valid email and password are required");
 });
 
+test("registration requires the configured origin and validates input", async () => {
+  const missingOrigin = await request(app)
+    .post("/api/v1/auth/register")
+    .send({ username: "new_user", email: "new@example.test", password: "password-123" });
+  assert.equal(missingOrigin.status, 403);
+
+  const invalid = await request(app)
+    .post("/api/v1/auth/register")
+    .set("Origin", process.env.FRONTEND_ORIGIN)
+    .send({ username: "x", email: "invalid", password: "short" });
+  assert.equal(invalid.status, 400);
+
+  const truncatedByBcrypt = await request(app)
+    .post("/api/v1/auth/register")
+    .set("Origin", process.env.FRONTEND_ORIGIN)
+    .send({ username: "new_user", email: "new@example.test", password: "a".repeat(73) });
+  assert.equal(truncatedByBcrypt.status, 400);
+});
+
 test("admin endpoint rejects requests without an access token", async () => {
   const response = await request(app).get("/api/v1/admin/check");
   assert.equal(response.status, 401);
@@ -87,6 +106,11 @@ test("password lifecycle endpoints validate input and rate-limit forgot-password
     .post("/api/v1/auth/reset-password")
     .send({ token: "", newPassword: "valid-password" });
   assert.equal(malformedReset.status, 400);
+
+  const truncatedResetPassword = await request(app)
+    .post("/api/v1/auth/reset-password")
+    .send({ token: "test-token", newPassword: "a".repeat(73) });
+  assert.equal(truncatedResetPassword.status, 400);
 });
 
 test("login rate limit returns 429 without account-specific information", async () => {

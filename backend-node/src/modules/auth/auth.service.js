@@ -27,6 +27,16 @@ const hashToken = (token) => crypto.createHash("sha256").update(token).digest("h
 const newRefreshToken = () => crypto.randomBytes(48).toString("base64url");
 const newPasswordResetToken = () => crypto.randomBytes(32).toString("base64url");
 
+export const registerLocalAccount = async ({ username, email, password }) => {
+  const passwordHash = await bcrypt.hash(password, bcryptCost);
+  const [result] = await pool.execute(
+    `INSERT INTO users (username, email, password, role, provider, status)
+     VALUES (?, ?, ?, 'user', 'local', 'active')`,
+    [username, email, passwordHash],
+  );
+  return result.insertId;
+};
+
 const publicUser = (row) => ({
   id: row.id,
   username: row.username,

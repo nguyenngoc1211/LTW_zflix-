@@ -60,6 +60,10 @@ export const securityConfig = Object.freeze({
     windowMs: positiveInteger(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
     max: positiveInteger(process.env.LOGIN_RATE_LIMIT_MAX, 10),
   }),
+  registrationRateLimit: Object.freeze({
+    windowMs: positiveInteger(process.env.REGISTRATION_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+    max: positiveInteger(process.env.REGISTRATION_RATE_LIMIT_MAX, 5),
+  }),
   refreshRateLimit: Object.freeze({
     windowMs: positiveInteger(process.env.REFRESH_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
     max: positiveInteger(process.env.REFRESH_RATE_LIMIT_MAX, 120),

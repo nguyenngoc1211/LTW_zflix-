@@ -64,9 +64,69 @@ const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
   );
 };
 
+const ChangePasswordSection = ({ changePassword }) => {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) {
+      setError("New passwords do not match.");
+      return;
+    }
+    if (new TextEncoder().encode(newPassword).length > 72) {
+      setError("Password must be at most 72 UTF-8 bytes.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      window.location.replace("/login?passwordChanged=1");
+    } catch (requestError) {
+      setError(requestError.message || "Could not change password.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-xl font-bold text-slate-900">Change password</h2>
+      <p className="mt-2 text-sm text-slate-600">Changing your password signs out all sessions.</p>
+      <form className="mt-5 space-y-4" onSubmit={submit}>
+        <label className="block text-sm font-medium text-slate-700">
+          Current password
+          <input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} maxLength={128} required />
+        </label>
+        <label className="block text-sm font-medium text-slate-700">
+          New password
+          <input className={inputClass} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} maxLength={128} required />
+        </label>
+        <p className="text-xs text-slate-500">Use 8–128 characters, up to 72 UTF-8 bytes.</p>
+        <label className="block text-sm font-medium text-slate-700">
+          Confirm new password
+          <input className={inputClass} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} maxLength={128} required />
+        </label>
+        <ErrorMessage>{error}</ErrorMessage>
+        <button className={primaryButton} type="submit" disabled={submitting}>
+          {submitting ? "Changing password..." : "Change password"}
+        </button>
+      </form>
+    </section>
+  );
+};
+
 const AccountSecurityPage = () => {
   const {
     apiRequest,
+    changePassword,
     clearAuthState,
     getSessions,
     logoutAll,
@@ -295,6 +355,7 @@ const AccountSecurityPage = () => {
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <h1 className="text-3xl font-bold text-slate-900">Account Security</h1>
+      <ChangePasswordSection changePassword={changePassword} />
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-xl font-bold text-slate-900">Two-factor authentication</h2>
         {status && (

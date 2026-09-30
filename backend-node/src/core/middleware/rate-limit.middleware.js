@@ -12,6 +12,9 @@ const authenticationRateLimiter = ({ windowMs, max }) =>
   });
 
 export const loginRateLimiter = authenticationRateLimiter(securityConfig.loginRateLimit);
+export const registrationRateLimiter = authenticationRateLimiter(
+  securityConfig.registrationRateLimit,
+);
 export const refreshRateLimiter = authenticationRateLimiter(securityConfig.refreshRateLimit);
 export const forgotPasswordRateLimiter = authenticationRateLimiter(
   securityConfig.forgotPasswordRateLimit,
