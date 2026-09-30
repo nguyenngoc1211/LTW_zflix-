@@ -63,3 +63,6 @@ env/
 # --- DOCKER DATA (Dữ liệu DB cục bộ) ---
 db_data/
 mysql_data/
+
+# Local-only runbook
+/docs/LOCAL_DOCKER_GUIDE.md

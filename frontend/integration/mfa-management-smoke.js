@@ -94,7 +94,7 @@ try {
   await enrollmentPage.goto(`${baseUrl}/account/security`);
   await enrollmentPage.getByText("Disabled", { exact: true }).waitFor();
   await enrollmentPage.getByRole("button", { name: "Enable two-factor authentication" }).click();
-  await enrollmentPage.getByLabel("Current password").fill("abc123");
+  await enrollmentPage.getByRole("heading", { name: "Two-factor authentication" }).locator("..").getByLabel("Current password").fill("abc123");
   await enrollmentPage.getByRole("button", { name: "Continue" }).click();
   await enrollmentPage.getByRole("img", { name: "Authenticator QR code" }).waitFor();
   await enrollmentPage.getByLabel("2. Enter the six-digit code").fill("000000");
@@ -116,7 +116,7 @@ try {
   await managementPage.getByRole("button", { name: "Regenerate recovery codes" }).click();
   await managementPage.getByRole("button", { name: "Regenerate codes" }).click();
   assert.equal(counters.regenerationRequests(), 0);
-  await managementPage.getByLabel("Current password").fill("abc123");
+  await managementPage.getByRole("heading", { name: "Two-factor authentication" }).locator("..").getByLabel("Current password").fill("abc123");
   await managementPage.getByLabel("Authenticator code").fill("654321");
   await managementPage.getByRole("button", { name: "Regenerate codes" }).click();
   await managementPage.getByText(regeneratedCodes[0], { exact: true }).waitFor();
@@ -128,7 +128,7 @@ try {
   await managementPage.getByRole("button", { name: "Disable two-factor authentication" }).click();
   await managementPage.getByRole("button", { name: "Disable MFA and sign out" }).click();
   assert.equal(counters.disableRequests(), 0);
-  await managementPage.getByLabel("Current password").fill("abc123");
+  await managementPage.getByRole("heading", { name: "Two-factor authentication" }).locator("..").getByLabel("Current password").fill("abc123");
   await managementPage.getByLabel("Authenticator code").fill("111222");
   await managementPage.getByRole("button", { name: "Disable MFA and sign out" }).click();
   await managementPage.waitForURL("**/login");

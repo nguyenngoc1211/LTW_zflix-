@@ -10,7 +10,7 @@ import {
 } from "@ant-design/icons";
 import { Layout, Menu, Dropdown, Space, Avatar } from "antd";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
-import React, { useState, memo } from "react";
+import React, { useEffect, useState, memo } from "react";
 import Logo from "../components/Logo";
 import Logo_Icon from "../assets/react.svg";
 import { useAuth } from "../hooks/useAuth.js";
@@ -80,9 +80,24 @@ MemoizedContent.displayName = "MemoizedContent";
 
 const AdminPage = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const [accessStatus, setAccessStatus] = useState("checking");
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, apiRequest } = useAuth();
+
+  useEffect(() => {
+    let active = true;
+    apiRequest("/api/v1/admin/check")
+      .then(() => {
+        if (active) setAccessStatus("allowed");
+      })
+      .catch((error) => {
+        if (active) setAccessStatus(error.status === 403 ? "denied" : "error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiRequest]);
   const getActiveMenuKey = () => {
     const pathSegments = location.pathname.split("/");
     const lastSegment = pathSegments.pop() || pathSegments.pop(); // Xử lý trường hợp trailing slash
@@ -126,6 +141,22 @@ const AdminPage = () => {
     await logout();
     navigate("/login", { replace: true });
   };
+
+  if (accessStatus !== "allowed") {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-100 px-4">
+        <div className="rounded-xl bg-white p-8 text-center shadow-sm">
+          <h1 className="text-xl font-semibold text-slate-900">
+            {accessStatus === "checking" ? "Checking admin access..." :
+              accessStatus === "denied" ? "Admin access denied" : "Could not verify admin access"}
+          </h1>
+          {accessStatus !== "checking" && (
+            <Link className="mt-4 inline-block text-red-600 hover:underline" to="/">Back to homepage</Link>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <Layout style={{ minHeight: "100vh" }}>

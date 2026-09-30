@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 
 const LoginPage = () => {
@@ -60,6 +60,16 @@ const LoginPage = () => {
             ? "Enter your authenticator code or a recovery code."
             : "Use your email and password to continue."}
         </p>
+        {(new URLSearchParams(location.search).has("passwordChanged") || location.state?.passwordReset) && (
+          <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
+            Password updated. Please sign in again.
+          </p>
+        )}
+        {location.state?.registered && (
+          <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
+            Account created. Please sign in.
+          </p>
+        )}
 
         <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
           {mfaChallenge ? (
@@ -127,6 +137,12 @@ const LoginPage = () => {
             </button>
           )}
         </form>
+        {!mfaChallenge && (
+          <div className="mt-5 space-y-2 text-center text-sm">
+            <p><Link className="font-medium text-red-600 hover:underline" to="/forgot-password">Forgot password?</Link></p>
+            <p>New to MovieHub? <Link className="font-medium text-red-600 hover:underline" to="/register">Create an account</Link></p>
+          </div>
+        )}
       </section>
     </main>
   );

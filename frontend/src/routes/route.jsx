@@ -8,6 +8,9 @@ import Test2 from "../admin/content/Test";
 import Test3 from "../admin/community/Test";
 import LoginPage from "../modules/auth/LoginPage";
 import AccountSecurityPage from "../modules/auth/AccountSecurityPage";
+import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
+import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
+import RegisterPage from "../modules/auth/RegisterPage";
 import ProtectedRoute from "./ProtectedRoute";
 
 export const router = createBrowserRouter([
@@ -33,6 +36,18 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     element: <LoginPage />,
+  },
+  {
+    path: "/register",
+    element: <RegisterPage />,
+  },
+  {
+    path: "/forgot-password",
+    element: <ForgotPasswordPage />,
+  },
+  {
+    path: "/reset-password",
+    element: <ResetPasswordPage />,
   },
   {
     element: <ProtectedRoute allowedRoles={["admin"]} />,

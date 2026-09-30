@@ -4,17 +4,17 @@ Ngày rà soát source và Git gần nhất: 2026-09-30
 Current branch: `Du`  
 Current latest security commit: `8988504`
 Mốc source hiện tại: `8988504 security: add auth logging and cleanup phase 6`
-Current latest documentation commit: `2156329 docs: reconcile auth security roadmap`
-Current uncommitted security phase: `Phase 7 audit documentation only`
+Current latest documentation commit: `56253a9 docs: record final auth security audit`
+Current uncommitted security phase: `Post-audit auth UI and local registration follow-up`
 
 Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
 
 ## Current working tree expectation
 
-Phase 6 implementation và tài liệu hậu kiểm đã được commit. Trước Phase 7, `git status` ngày 2026-09-30 xác nhận clean. Sau audit, chỉ file này thay đổi để ghi kết quả Phase 7; chưa commit.
+Phase 7 audit và tài liệu đã được commit. Trước follow-up UI này, `.gitignore` đã có thay đổi từ công việc khác của user; phải giữ nguyên thay đổi đó. Follow-up hiện có thay đổi frontend, backend auth và file tài liệu này; chưa commit.
 
 ```text
-git status -> docs/AUTH_SECURITY_PROGRESS.md modified only
+git status -> kiểm tra trực tiếp trước mọi công việc tiếp theo
 ```
 
 Nếu `git status` khác trạng thái ghi nhận trên, phải kiểm tra và bảo toàn mọi thay đổi hiện hữu trước khi làm việc tiếp. Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
@@ -149,13 +149,28 @@ Các checkpoint trên đều đã commit đến hết Phase 6. Working tree đư
 - **Kiểm thử thực chạy:** backend unit `14/14` pass; live MySQL `npm run test:integration` pass cả auth, password lifecycle và MFA; `npm run test:cleanup` pass, xóa đúng 3 session cũ, 2 reset token, 2 MFA challenge, 1 used recovery code và giữ record hợp lệ; frontend lint/build pass; `test:ui`, `test:ui:mfa`, `test:ui:mfa-management`, `test:ui:sessions` đều pass; `npm audit --audit-level=low` cho backend/frontend báo 0 vulnerability; `git diff --check` pass. Vite báo warning chunk >500 kB, không phải finding bảo mật.
 - **Giới hạn bằng chứng:** test integration chạy trên MySQL dev trong Docker; audit không xác nhận cấu hình/deployment production, external log transport, scheduler hoặc email provider. Dependency check là npm advisory audit cho lockfile hiện tại, không phải scan container image.
 - **Not applicable hiện tại:** authorization/IDOR cho profile update, comments, favorites, history, ratings, watching party, premium/subscriptions và admin CRUD vì backend chưa có các API đó. Phải rà soát ownership, mass assignment, entitlement và admin policy khi API tương ứng xuất hiện.
-- **Kết luận:** auth module sẵn sàng đóng theo scope API hiện tại; deferred controls bên dưới vẫn deferred. Chỉ tài liệu audit Phase 7 là thay đổi chờ review/commit.
+- **Kết luận:** auth module sẵn sàng đóng theo scope API tại thời điểm audit; deferred controls bên dưới vẫn deferred. Tài liệu audit Phase 7 đã commit tại `56253a9`; follow-up UI bên dưới là thay đổi riêng chưa commit.
+
+### Hậu kiểm Phase 7 — giao diện password lifecycle
+
+- **Lý do:** sau khi test local, user không thấy đổi mật khẩu và quên mật khẩu vì Phase 3 mới có backend API và helper `AuthContext.changePassword`; frontend chưa có form/link/route tương ứng. Đây là thiếu sót UX, không phải API backend bị thiếu.
+- **Frontend:** thêm form đổi mật khẩu trong `/account/security`, link quên mật khẩu từ `/login`, trang `/forgot-password`, trang `/reset-password` đọc token từ link rồi xóa token khỏi thanh địa chỉ. Chỉ gọi ba API thật `change-password`, `forgot-password`, `reset-password`; không thêm backend API hay thay đổi chính sách token.
+- **Giới hạn:** local development chỉ giữ reset link/token trong memory của backend phục vụ test tự động; không gửi email hoặc trả raw token qua API. Form quên mật khẩu gửi yêu cầu và hiển thị phản hồi generic, nhưng user không thể hoàn tất reset thủ công nếu không có kênh nhận link. Production email delivery tiếp tục deferred.
+- **Xác minh:** frontend lint/build pass; smoke UI mới cho forgot/reset/change pass; MFA login, MFA management và session management UI smoke pass sau khi selector MFA được giới hạn đúng khu vực; `git diff --check` pass. Backend password lifecycle integration đã pass ở Phase 7; không sửa backend trong follow-up này.
+
+### Hậu kiểm Phase 7 — đăng ký local và kiểm tra giao diện auth
+
+- **Phạm vi:** theo yêu cầu mới của user, bổ sung đăng ký đầy đủ backend + UI. Chỉ rà soát và sửa giao diện thuộc đăng nhập/đăng xuất/bảo mật; không triển khai UI hay API cho business, premium hoặc admin CRUD.
+- **Backend:** thêm `POST /api/v1/auth/register` với Origin check, rate limit mặc định `5/15 phút`, kiểm tra username/email/password, chuẩn hóa email, hash bcrypt cost `12`, tạo account cố định `role=user`, `provider=local`, `status=active`; không auto-login hoặc cấp token. Trùng username/email trả `409` generic; không tin các field đặc quyền từ client. Không cần schema migration.
+- **Password policy:** password mới dài 8–128 ký tự và không vượt 72 byte UTF-8 để bcrypt không âm thầm cắt phần cuối. Áp dụng chung tại registration, change-password và reset-password; login vẫn nhận password cũ theo giới hạn request trước đây.
+- **Frontend:** thêm `/register` và link từ `/login`; thành công chuyển về login. Admin shell kiểm tra thêm API thật `GET /api/v1/admin/check` trước khi hiển thị, nhưng backend RBAC vẫn là security boundary. Password lifecycle, MFA và session UI hiện có được giữ trong phạm vi auth.
+- **Xác minh:** backend unit `15/15`; full auth/password/MFA/registration integration trên MySQL thật pass; cleanup integration pass; frontend lint/build pass; auth, MFA login, MFA management, sessions, password lifecycle và registration UI smoke đều pass. Kiểm tra `git diff --check` sau khi hoàn tất chỉnh sửa. Không commit.
 
 ## Security controls hiện có
 
 - Password dùng bcrypt cost `12`; không dùng SHA-256 để hash password.
-- Password mới dài 8–128 ký tự; không trim và không bắt buộc composition.
-- Rate limit: login `10/15 phút`, forgot `5/15 phút`, reset `10/15 phút`, refresh `120/15 phút`.
+- Password mới dài 8–128 ký tự và tối đa 72 byte UTF-8; không trim và không bắt buộc composition.
+- Rate limit: registration `5/15 phút`, login `10/15 phút`, forgot `5/15 phút`, reset `10/15 phút`, refresh `120/15 phút`.
 - Sai password 5 lần khóa tạm 5 phút; login đúng reset counter.
 - User status `active/disabled` được kiểm tra từ database ở login, refresh và mọi `requireAuth`.
 - JWT verify allow-list `HS256`; production từ chối secret thiếu/yếu.
@@ -189,6 +204,7 @@ Chỉ liệt kê route thực sự có trong source.
 | Method | Route | Policy hiện tại |
 |---|---|---|
 | GET | `/` | Public health |
+| POST | `/api/v1/auth/register` | Public; Origin, validation, rate limit, cố định local/active/user, không cấp credential |
 | POST | `/api/v1/auth/login` | Public; validation, rate limit, local/active policy, lock tracking |
 | POST | `/api/v1/auth/mfa/setup` | `requireAuth`; Origin; current-password reauthentication; trả enrollment secret/URI một lần |
 | GET | `/api/v1/auth/mfa/status` | `requireAuth`; chỉ trả enabled, enabledAt và số recovery code còn lại |
@@ -230,7 +246,6 @@ Các khái niệm có thể xuất hiện trong schema/frontend nhưng chưa có
 - Premium entitlement hoặc premium enforcement backend
 - Subscription/transaction
 - Admin user/content/community CRUD và moderation
-- User registration
 
 Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm ownership, IDOR/BOLA, mass-assignment hoặc premium test khi resource API tương ứng thực sự được triển khai.
 
