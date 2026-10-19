@@ -1,13 +1,11 @@
-import { Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 
 const App = () => {
   return (
-    <div>
-      {/* Header chung cho mọi trang */}
-      <h1 className="text-3xl font-bold underline text-red-500">Header</h1>
-
-      {/* Outlet là nơi các trang con (Home, About...) sẽ được render vào */}
+    <div className="app">
+      <header className="site-header"><Link to="/" className="brand">Z<span>FLIX</span></Link><nav><NavLink to="/">Khám phá</NavLink><NavLink to="/library">Thư viện</NavLink><NavLink to="/history">Lịch sử</NavLink><NavLink to="/notifications">Thông báo</NavLink></nav></header>
       <Outlet />
+      <footer>© 2026 Zflix · Movie streaming platform</footer>
     </div>
   );
 };

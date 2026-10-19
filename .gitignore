@@ -9,6 +9,10 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+.env
+**/.env
+!.env.example
+!**/.env.example
 
 
 # --- DEPENDENCIES (Thư viện tải về) ---
