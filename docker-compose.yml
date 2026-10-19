@@ -13,6 +13,29 @@ services:
       - db_data:/var/lib/mysql
       - ./database:/docker-entrypoint-initdb.d
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.5
+    container_name: zflix_elasticsearch
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
   # Backend Node (JS)
   backend-node:
@@ -23,9 +46,14 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: mysql://root:rootpassword@db:3306/movie_streaming_db
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      FRONTEND_ORIGIN: http://localhost:5173
       PORT: 3000
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     volumes:
       - ./backend-node:/app
       - /app/node_modules
@@ -67,3 +95,4 @@ services:
 
 volumes:
   db_data:
+  elastic_data:

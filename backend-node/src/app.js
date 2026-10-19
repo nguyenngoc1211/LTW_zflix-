@@ -1,18 +1,25 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import { discoveryRouter } from "./modules/discovery/discovery.routes.js";
+import { communityRouter } from "./modules/community/community.routes.js";
+import { streamingRouter } from "./modules/streaming/streaming.routes.js";
 
-dotenv.config();
+export const createApp = () => {
+  const app = express();
+  app.use(cors({ origin: process.env.FRONTEND_ORIGIN || "http://localhost:5173", credentials: true }));
+  app.use(express.json({ limit: "32kb" }));
+  app.get("/", (req, res) => res.json({ message: "Zflix API", status: "ok" }));
+  app.use("/api/v1", discoveryRouter);
+  app.use("/api/v1", communityRouter);
+  app.use("/api/v1", streamingRouter);
+  app.use((req, res) => res.status(404).json({ message: "Route not found" }));
+  app.use((error, req, res, next) => {
+    console.error(error);
+    if (res.headersSent) return next(error);
+    return res.status(error.status || 500).json({ message: error.status ? error.message : "Internal server error" });
+  });
+  return app;
+};
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-app.get("/", (req, res) => {
-  res.send("Hello from Movie Streaming Backend!");
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+export default createApp();
