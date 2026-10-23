@@ -1,0 +1,24 @@
+# --- GLOBAL & OS FILES ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# --- DEPENDENCIES ---
+node_modules/
+**/node_modules/
+
+# --- BUILD ARTIFACTS ---
+/frontend/dist/
+/frontend/dist-ssr/
+/frontend/*.local
+
+# --- ENV & SECRETS ---
+.env
+**/.env
+*.env.local
+
+# --- DOCKER DATA ---
+db_data/
+mysql_data/
