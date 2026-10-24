@@ -1,4 +1,6 @@
 import "dotenv/config";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -19,6 +21,10 @@ import { pool } from "./core/database/pool.js";
 
 export const createApp = () => {
   const app = express();
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+  // Ảnh người dùng chụp khi quét (cần public khi deploy để SerpAPI đọc)
+  app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
   app.use(
     helmet({
