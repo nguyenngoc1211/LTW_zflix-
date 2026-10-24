@@ -112,11 +112,17 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
   );
 };
 
+const formatVnd = (raw) => {
+  const vnd = Math.round(Number(raw || 0) / 100000);
+  return vnd > 0 ? new Intl.NumberFormat("vi-VN").format(vnd) + "₫" : null;
+};
+
 // ---------------------------------------------------------------------------
 // Thẻ kết quả quét hiện ngay trên video
 // ---------------------------------------------------------------------------
-const LensResult = ({ result, photo, onBuy, onClose }) => {
+const LensResult = ({ result, photo, onBuy, onBuyShopeeItem, onClose }) => {
   const items = result.items || [];
+  const shopeeItems = result.shopeeItems || [];
   return (
     <div className="lens-result">
       <div className="lens-result-head">
@@ -132,6 +138,21 @@ const LensResult = ({ result, photo, onBuy, onClose }) => {
             {item.category && <small>{item.category}</small>}
           </div>
           <button type="button" onClick={() => onBuy(item)}>Mua qua Shopee</button>
+        </div>
+      ))}
+      {shopeeItems.length > 0 && <p className="lens-shopee-head">Gợi ý từ Shopee</p>}
+      {shopeeItems.map((item) => (
+        <div key={`${item.itemId}-${item.shopId}`} className="lens-product-card shopee-item">
+          {item.imageUrl && <img className="lens-item-img" src={item.imageUrl} alt="" loading="lazy" />}
+          <div className="lens-product-info">
+            <strong>{item.name}</strong>
+            <small>
+              {formatVnd(item.price)}
+              {item.commissionRate != null ? ` · HH ${Number(item.commissionRate).toFixed(1)}%` : ""}
+              {item.sales != null ? ` · ${item.sales} đã bán` : ""}
+            </small>
+          </div>
+          <button type="button" onClick={() => onBuyShopeeItem(item)}>Mua</button>
         </div>
       ))}
     </div>
@@ -243,6 +264,16 @@ const PlayerPage = () => {
   };
   if (!episode) return <main className="page-shell"><p className="empty">Đang tải tập phim...</p></main>;
 
+  // Mua sản phẩm Shopee thật (kết quả Open API): short link lúc click
+  const buyShopeeItem = async (item) => {
+    try {
+      const data = await apiRequest("/api/v1/shopping/shopee/buy-link", { method: "POST", body: JSON.stringify({ itemUrl: item.itemUrl }) });
+      window.open(data.buyUrl, "_blank", "noopener");
+    } catch {
+      window.open(item.itemUrl, "_blank", "noopener");
+    }
+  };
+
   // Bấm mua từ thẻ kết quả quét: tạo affiliate link tại thời điểm này
   const buyFromLens = async (product) => {
     try {
@@ -269,6 +300,7 @@ const PlayerPage = () => {
               result={lensCard.result}
               photo={lensCard.photo}
               onBuy={buyFromLens}
+              onBuyShopeeItem={buyShopeeItem}
               onClose={() => setLensCard(null)}
             />
           )}
