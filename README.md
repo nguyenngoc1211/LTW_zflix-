@@ -36,11 +36,28 @@ docker-compose.yml   MySQL 8 + Elasticsearch 8 + backend + 2 service Python + fr
 Trang đăng nhập quản trị **ẩn** với người dùng thường — không có link nào từ giao diện
 người dùng; truy cập trực tiếp: **`/admin-login`** (vd `http://localhost:5173/admin-login`).
 
-- Tài khoản không phải admin đăng nhập tại đây sẽ bị **từ chối và thu hồi phiên ngay**.
-- Sau khi đăng nhập: `/admin` (Tổng quan), `/admin/users`, `/admin/movies`, `/admin/views`.
+- Tài khoản không phải admin/moderator đăng nhập tại đây sẽ bị **từ chối và thu hồi phiên ngay**.
+- Sau khi đăng nhập: `/admin` (Tổng quan), `/admin/movies`, `/admin/community`, `/admin/parties`,
+  `/admin/views`, `/admin/users`, `/admin/subscriptions`, `/admin/security`, `/admin/settings`.
 - Người dùng thường vào `/admin` sẽ bị chuyển hướng về trang chủ.
-- API: `GET /api/v1/admin/{stats,users,views}`, `PATCH /api/v1/admin/{users/:id,productions/:id}` —
-  tất cả yêu cầu JWT + role `admin`.
+
+**Chức năng theo trang:**
+
+| Trang | Chức năng |
+| --- | --- |
+| Tổng quan | Thẻ số liệu toàn hệ thống + người dùng mới nhất |
+| Quản lý phim | Thêm/sửa/xóa phim + thể loại, quản lý tập (thêm tập tự gửi thông báo người quan tâm), toggle VIP/trạng thái, nút reindex Elasticsearch |
+| Cộng đồng | Duyệt/xóa bình luận & đánh giá, gửi thông báo hàng loạt |
+| Watch Party | Theo dõi phòng, kết thúc/xóa phòng vi phạm |
+| Thống kê lượt xem | Biểu đồ 30 ngày, người dùng hoạt động/mới, top phim, pie thể loại |
+| Quản lý người dùng | Tìm kiếm, phân trang, đổi role (user/moderator/admin), khóa/mở khóa |
+| VIP & Doanh thu | Doanh thu theo tháng, đăng ký VIP, kích hoạt VIP thủ công (ghi giao dịch + thông báo) |
+| Nhật ký bảo mật | Log đăng nhập/MFA/khóa tài khoản từ bảng `security_events` |
+| Cài đặt | Chọn phim nổi bật làm banner trang chủ, export CSV (users/transactions) |
+
+**Phân quyền:** `admin` toàn quyền; `moderator` chỉ quản lý nội dung (phim, cộng đồng,
+watch party, thống kê) — không xem được người dùng, doanh thu, nhật ký, cài đặt.
+Cấp moderator trong trang Quản lý người dùng. Migration: `database/migrate-ngoc.sql`.
 
 Dữ liệu mẫu có sẵn tài khoản `admin@moviehub.com` nhưng mật khẩu trong dump đã hash. Để đặt
 lại mật khẩu admin trên máy bạn (ví dụ `Admin@12345`):
