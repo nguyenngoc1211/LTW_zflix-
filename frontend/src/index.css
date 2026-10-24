@@ -172,3 +172,6 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
 .lens-product-card.shopee-item { background: #1a1410; border-color: #4a3524; }
 .lens-item-img { width: 44px; height: 44px; border-radius: .4rem; object-fit: cover; flex-shrink: 0; background: #242833; }
 .lens-ai-badge { margin: .6rem 0 0; padding: .4rem .6rem; border-radius: .5rem; background: rgba(124,58,237,.18); border: 1px solid rgba(124,58,237,.45); color: #c4b5fd; font-size: .8rem; }
+.lens-ai-pending { margin: .6rem 0 0; padding: .45rem .6rem; border-radius: .5rem; background: rgba(124,58,237,.12); color: #a5b4fc; font-size: .8rem; display: flex; align-items: center; gap: .45rem; }
+.lens-spinner { width: .8rem; height: .8rem; border: 2px solid rgba(165,180,252,.35); border-top-color: #a5b4fc; border-radius: 50%; animation: lens-spin .8s linear infinite; }
+@keyframes lens-spin { to { transform: rotate(360deg); } }
