@@ -9,13 +9,14 @@ const provider = (process.env.VISION_PROVIDER || "none").trim().toLowerCase();
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
 const GEMINI_MODEL = (process.env.GEMINI_MODEL || "gemini-3.8-flash").trim();
 const SERPAPI_KEY = (process.env.SERPAPI_KEY || "").trim();
-// SerpAPI cần URL ảnh công khai trên internet — chạy local không dùng được trừ khi
-// deploy có domain (điền PUBLIC_BASE_URL=https://... để bật).
+// SerpAPI cần URL ảnh công khai. Hai cách:
+//   a) Deploy có domain: điền PUBLIC_BASE_URL=https://... -> dùng ảnh tại /uploads/<file>
+//   b) Local: tự upload ảnh lên tmpfiles.org (host miễn phí không cần key, link sống 60 phút)
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").trim().replace(/\/$/u, "");
 
 export const visionConfigured = () => {
   if (provider === "gemini") return Boolean(GEMINI_API_KEY);
-  if (provider === "serpapi") return Boolean(SERPAPI_KEY && PUBLIC_BASE_URL);
+  if (provider === "serpapi") return Boolean(SERPAPI_KEY);
   return false;
 };
 
@@ -70,13 +71,30 @@ const identifyWithGemini = async (base64Jpeg) => {
 };
 
 // SerpAPI Google Lens: yêu cầu URL ảnh công khai (không nhận base64).
+// Upload ảnh tạm lên tmpfiles.org (free, không key, link sống 60 phút) cho SerpAPI đọc
+const uploadTempImage = async (buffer) => {
+  const fd = new FormData();
+  fd.append("file", new Blob([buffer], { type: "image/jpeg" }), `lens-${Date.now()}.jpg`);
+  const response = await fetch("https://tmpfiles.org/api/v1/upload", {
+    method: "POST",
+    body: fd,
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error(`tmpfiles ${response.status}`);
+  const json = await response.json();
+  const pageUrl = json?.data?.url;
+  if (!pageUrl) throw new Error("tmpfiles không trả URL");
+  // Trang hiển thị -> link tải trực tiếp
+  return pageUrl.replace("tmpfiles.org/", "tmpfiles.org/dl/");
+};
+
 const identifyWithSerpapi = async (publicImageUrl) => {
   const params = new URLSearchParams({ engine: "google_lens", url: publicImageUrl, api_key: SERPAPI_KEY });
   const response = await fetch(`https://serpapi.com/search.json?${params}`, { signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error(`SerpAPI ${response.status}`);
   const json = await response.json();
   const matches = json?.visual_matches || [];
-  const first = matches[0]?.title || matches[0]?.source?.name;
+  const first = matches[0]?.title || matches[0]?.source?.name || json?.knowledge_graph?.[0]?.title;
   return first ? { keyword: String(first).slice(0, 255), category: null } : null;
 };
 
@@ -87,8 +105,13 @@ export const identifyProduct = async (base64Jpeg, publicImagePath) => {
     if (provider === "gemini" && GEMINI_API_KEY && base64Jpeg) {
       return await identifyWithGemini(base64Jpeg);
     }
-    if (provider === "serpapi" && SERPAPI_KEY && PUBLIC_BASE_URL && publicImagePath) {
-      return await identifyWithSerpapi(`${PUBLIC_BASE_URL}/uploads/${publicImagePath}`);
+    if (provider === "serpapi" && SERPAPI_KEY && base64Jpeg) {
+      // Deploy có domain: dùng ảnh trên server của ta; local: upload tạm tmpfiles.org
+      const publicUrl =
+        PUBLIC_BASE_URL && publicImagePath
+          ? `${PUBLIC_BASE_URL}/uploads/${publicImagePath}`
+          : await uploadTempImage(Buffer.from(base64Jpeg, "base64"));
+      return await identifyWithSerpapi(publicUrl);
     }
     return null;
   } catch (error) {
