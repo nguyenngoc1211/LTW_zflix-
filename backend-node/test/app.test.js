@@ -14,7 +14,7 @@ const { default: app } = await import("../src/app.js");
 test("health endpoint reports an operational API", async () => {
   const response = await request(app).get("/");
   assert.equal(response.status, 200);
-  assert.deepEqual(response.body, { message: "Movie Streaming Backend", status: "ok" });
+  assert.deepEqual(response.body, { message: "Zflix API", status: "ok" });
   assert.equal(response.headers["x-content-type-options"], "nosniff");
   assert.equal(response.headers["content-security-policy"], undefined);
 });

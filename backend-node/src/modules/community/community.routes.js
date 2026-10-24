@@ -18,7 +18,7 @@ communityRouter.get("/favorites", requireAuth, asyncHandler(async (req, res) => 
 communityRouter.put("/favorites/:productionId", requireAuth, asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
   await ensureProduction(productionId);
-  const note = typeof req.body.note === "string" ? req.body.note.trim().slice(0, 1000) : null;
+  const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 1000) : null;
   await pool.execute(`INSERT INTO bookmarks (user_id, production_id, note, notify_new_episode) VALUES (?, ?, ?, 0) ON DUPLICATE KEY UPDATE note=VALUES(note)`, [req.user.id, productionId, note]);
   res.status(200).json({ productionId, isFavorite: true });
 }));
