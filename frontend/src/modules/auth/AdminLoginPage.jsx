@@ -17,7 +17,7 @@ const AdminLoginPage = () => {
   }
 
   if (user) {
-    return <Navigate to={user.role === "admin" ? "/admin" : "/"} replace />;
+    return <Navigate to={["admin", "moderator"].includes(user.role) ? "/admin" : "/"} replace />;
   }
 
   const submit = async (event) => {

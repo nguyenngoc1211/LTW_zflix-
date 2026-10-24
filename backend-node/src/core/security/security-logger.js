@@ -73,3 +73,17 @@ export const securityLog = (event, metadata = {}) => {
 export const setSecurityLogSinkForTests = (testSink) => {
   sink = typeof testSink === "function" ? testSink : defaultSink;
 };
+
+// Gắn sink production: lưu log vào bảng security_events, vẫn giữ sink hiện tại (console)
+export const setSecurityLogSink = (customSink) => {
+  if (typeof customSink !== "function") throw new TypeError("sink must be a function");
+  const previous = sink;
+  sink = (line) => {
+    previous(line);
+    try {
+      customSink(line);
+    } catch {
+      // log transport phụ không được làm gián đoạn auth
+    }
+  };
+};

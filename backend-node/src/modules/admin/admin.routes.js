@@ -1,18 +1,34 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
-import { requireAuth, requireRole } from "../../core/middleware/auth.middleware.js";
+import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 
 export const adminRouter = Router();
 
-// Toàn bộ router yêu cầu đăng nhập + role admin
-adminRouter.use(requireAuth, requireRole("admin"));
+// Toàn bộ router yêu cầu đăng nhập; mỗi nhóm endpoint kiểm tra role riêng:
+// - admin: mọi thứ; moderator: chỉ nội dung (phim/tập, stats, views)
+adminRouter.use(requireAuth);
+
+const requireAdmin = (req, res, next) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ message: "You do not have permission to access this resource" });
+  }
+  next();
+};
+
+const requireStaff = (req, res, next) => {
+  if (!["admin", "moderator"].includes(req.user?.role)) {
+    return res.status(403).json({ message: "You do not have permission to access this resource" });
+  }
+  next();
+};
 
 // ---------------------------------------------------------------------------
 // GET /stats — số liệu tổng quan cho dashboard
 // ---------------------------------------------------------------------------
 adminRouter.get(
   "/stats",
+  requireStaff,
   asyncHandler(async (req, res) => {
     const [[users], [productions], [episodes], [views], [ratings], [comments], [watchTime], [revenue], [recentUsers]] =
       await Promise.all([
@@ -48,6 +64,7 @@ adminRouter.get(
 // ---------------------------------------------------------------------------
 adminRouter.get(
   "/users",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const { page, limit, offset } = clampPagination(req.query);
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
@@ -82,6 +99,7 @@ adminRouter.get(
 // ---------------------------------------------------------------------------
 adminRouter.patch(
   "/users/:id",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const userId = parsePositiveInt(req.params.id, "user id");
     const { role, status } = req.body || {};
@@ -121,6 +139,7 @@ adminRouter.patch(
 // ---------------------------------------------------------------------------
 adminRouter.get(
   "/productions",
+  requireStaff,
   asyncHandler(async (req, res) => {
     const { page, limit, offset } = clampPagination(req.query);
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
@@ -157,6 +176,7 @@ adminRouter.get(
 // ---------------------------------------------------------------------------
 adminRouter.patch(
   "/productions/:id",
+  requireStaff,
   asyncHandler(async (req, res) => {
     const productionId = parsePositiveInt(req.params.id, "production id");
     const { is_premium, isPremium, status } = req.body || {};
@@ -185,6 +205,7 @@ adminRouter.patch(
 // ---------------------------------------------------------------------------
 adminRouter.get(
   "/views",
+  requireStaff,
   asyncHandler(async (req, res) => {
     const [daily] = await pool.execute(
       `SELECT stat_date, total_views, new_users, active_users, total_watch_time, new_subscriptions, total_revenue

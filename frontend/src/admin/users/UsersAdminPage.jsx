@@ -44,7 +44,7 @@ const UsersAdminPage = () => {
     setError("");
     try {
       await apiRequest(`/api/v1/admin/users/${target.id}`, { method: "PATCH", body: JSON.stringify({ role }) });
-      setMessage(`Đã đổi vai trò của "${target.username}" thành ${role === "admin" ? "admin" : "người dùng"}.`);
+      setMessage(`Đã đổi vai trò của "${target.username}" thành ${role}.`);
       load();
     } catch (e) {
       setError(e.message);
@@ -135,6 +135,7 @@ const UsersAdminPage = () => {
                       onChange={(event) => changeRole(item, event.target.value)}
                     >
                       <option value="user">Người dùng</option>
+                      <option value="moderator">Moderator</option>
                       <option value="admin">Admin</option>
                     </select>
                   </td>

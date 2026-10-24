@@ -10,7 +10,11 @@ import { communityRouter } from "./modules/community/community.routes.js";
 import { streamingRouter } from "./modules/streaming/streaming.routes.js";
 import { watchPartyRouter } from "./modules/watch-party/watch-party.routes.js";
 import { adminRouter } from "./modules/admin/admin.routes.js";
-import { requireAuth, requireRole } from "./core/middleware/auth.middleware.js";
+import { adminContentRouter } from "./modules/admin/admin.content.routes.js";
+import { adminModerationRouter } from "./modules/admin/admin.moderation.routes.js";
+import { adminSystemRouter } from "./modules/admin/admin.system.routes.js";
+import { requireAuth } from "./core/middleware/auth.middleware.js";
+import { pool } from "./core/database/pool.js";
 
 export const createApp = () => {
   const app = express();
@@ -38,11 +42,36 @@ export const createApp = () => {
   app.use("/api/v1", streamingRouter);
   app.use("/api/v1", watchPartyRouter);
   app.use("/api/v1/admin", adminRouter);
+  app.use("/api/v1/admin", adminContentRouter);
+  app.use("/api/v1/admin", adminModerationRouter);
+  app.use("/api/v1/admin", adminSystemRouter);
 
+  // Banner phim nổi bật trên trang chủ (công khai, đọc từ app_settings)
+  app.get("/api/v1/settings/featured", async (req, res) => {
+    try {
+      const [rows] = await pool.execute("SELECT setting_value FROM app_settings WHERE setting_key = 'featured_production_id' LIMIT 1");
+      if (!rows.length) return res.json({ featuredProductionId: null, production: null });
+      const productionId = Number(rows[0].setting_value);
+      const [productions] = await pool.execute(
+        "SELECT id, title, description, banner_url, poster_url, release_year, type FROM productions WHERE id = ? LIMIT 1",
+        [productionId],
+      );
+      res.json({ featuredProductionId: productionId, production: productions[0] || null });
+    } catch {
+      res.json({ featuredProductionId: null, production: null });
+    }
+  });
+
+  // Kiểm tra quyền vào hệ quản trị: admin hoặc moderator
   app.get(
     "/api/v1/admin/check",
     requireAuth,
-    requireRole("admin"),
+    (req, res, next) => {
+      if (!["admin", "moderator"].includes(req.user?.role)) {
+        return res.status(403).json({ message: "You do not have permission to access this resource" });
+      }
+      return next();
+    },
     (req, res) => res.json({ message: "Admin access granted", user: req.user }),
   );
 
