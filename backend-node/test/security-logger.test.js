@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+
+// Test luôn chạy môi trường test, bất kể .env đặt NODE_ENV ra sao
+process.env.NODE_ENV = "test";
+
 import {
   securityLog,
   setSecurityLogSinkForTests,

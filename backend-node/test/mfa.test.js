@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+// Test luôn chạy môi trường test, bất kể .env.local đặt NODE_ENV ra sao
+process.env.NODE_ENV = "test";
+
 process.env.JWT_ACCESS_SECRET ||= "test-only-secret-with-at-least-thirty-two-characters";
 process.env.FRONTEND_ORIGIN ||= "http://localhost:5173";
 process.env.MFA_ENCRYPTION_KEY ||= Buffer.alloc(32, 11).toString("base64");
