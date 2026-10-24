@@ -17,6 +17,9 @@ import LibraryPage from "../modules/community/LibraryPage";
 import HistoryPage from "../modules/streaming/HistoryPage";
 import NotificationsPage from "../modules/community/NotificationsPage";
 import PlayerPage from "../modules/streaming/PlayerPage";
+import PartyList from "../pages/PartyList.jsx";
+import CreateParty from "../pages/CreateParty.jsx";
+import PartyRoom from "../pages/PartyRoom.jsx";
 
 export const router = createBrowserRouter([
   {
@@ -29,12 +32,15 @@ export const router = createBrowserRouter([
       },
       { path: "movies/:id", element: <MovieDetailPage /> },
       { path: "watch/:episodeId", element: <PlayerPage /> },
+      { path: "watch-party", element: <PartyList /> },
       {
         element: <ProtectedRoute />,
         children: [
           { path: "library", element: <LibraryPage /> },
           { path: "history", element: <HistoryPage /> },
           { path: "notifications", element: <NotificationsPage /> },
+          { path: "watch-party/create", element: <CreateParty /> },
+          { path: "watch-party/room/:partyId", element: <PartyRoom /> },
           {
             path: "account/security",
             element: <AccountSecurityPage />,
