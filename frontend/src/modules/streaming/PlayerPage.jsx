@@ -2,15 +2,150 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest } from "../../services/api.js";
 
-const ShoppingPanel = ({ episode, position, videoRef }) => {
-  const [products, setProducts] = useState([]);
-  const [snapshotResult, setSnapshotResult] = useState(null);
-  const [snapshotImage, setSnapshotImage] = useState(null);
-  const [keyword, setKeyword] = useState("");
+// ---------------------------------------------------------------------------
+// Overlay quét đồ vật kiểu Google Lens: kéo chuột khoanh vùng trên video
+// ---------------------------------------------------------------------------
+const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
+  const containerRef = useRef(null);
+  const [rect, setRect] = useState(null);
+  const dragStartRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  // Danh sách sản phẩm của phim (public)
+  useEffect(() => {
+    const video = videoRef.current;
+    const wasPlaying = video && !video.paused;
+    video?.pause();
+    return () => {
+      if (wasPlaying) video?.play().catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const localPoint = (clientX, clientY) => {
+    const bounds = containerRef.current.getBoundingClientRect();
+    return {
+      x: Math.min(Math.max(clientX - bounds.left, 0), bounds.width),
+      y: Math.min(Math.max(clientY - bounds.top, 0), bounds.height),
+    };
+  };
+
+  const startDrag = (clientX, clientY) => {
+    dragStartRef.current = localPoint(clientX, clientY);
+  };
+  const moveDrag = (clientX, clientY) => {
+    const start = dragStartRef.current;
+    if (!start) return;
+    const point = localPoint(clientX, clientY);
+    setRect({
+      x: Math.min(start.x, point.x),
+      y: Math.min(start.y, point.y),
+      w: Math.abs(point.x - start.x),
+      h: Math.abs(point.y - start.y),
+    });
+  };
+
+  const scanRegion = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      let photo = null;
+      // Crop vùng đã khoanh từ frame hiện tại (nếu canvas không bị CORS taint)
+      try {
+        const video = videoRef.current;
+        const container = containerRef.current;
+        if (video?.videoWidth && rect && rect.w > 8 && rect.h > 8) {
+          const scaleX = video.videoWidth / container.clientWidth;
+          const scaleY = video.videoHeight / container.clientHeight;
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(2, Math.round(rect.w * scaleX));
+          canvas.height = Math.max(2, Math.round(rect.h * scaleY));
+          canvas
+            .getContext("2d")
+            .drawImage(video, Math.round(rect.x * scaleX), Math.round(rect.y * scaleY), canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+          photo = canvas.toDataURL("image/jpeg", 0.75);
+        }
+      } catch {
+        // video domain khác làm canvas tainted — vẫn quét theo thời điểm
+      }
+      const result = await apiRequest("/api/v1/shopping/match", {
+        method: "POST",
+        body: JSON.stringify({ episodeId: episode.id, position: Math.floor(position), photo }),
+      });
+      onResult(result, photo);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="lens-overlay"
+      onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
+      onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
+      onMouseUp={() => { dragStartRef.current = null; }}
+      onTouchStart={(e) => { const t = e.touches[0]; startDrag(t.clientX, t.clientY); }}
+      onTouchMove={(e) => { const t = e.touches[0]; moveDrag(t.clientX, t.clientY); }}
+      onTouchEnd={() => { dragStartRef.current = null; }}
+    >
+      <div className="lens-toolbar">
+        <strong>🔍 Quét đồ vật</strong>
+        <span>{rect && rect.w > 8 ? "Đã khoanh vùng — bấm Quét" : "Kéo chuột khoanh vùng món đồ"}</span>
+        <button type="button" disabled={busy || !rect || rect.w < 8} onClick={scanRegion}>
+          {busy ? "Đang quét..." : "Quét vùng này"}
+        </button>
+        <button type="button" className="secondary" onClick={onClose}>Hủy</button>
+      </div>
+      {error && <p className="lens-error">{error}</p>}
+      {rect && (
+        <div
+          className="lens-rect"
+          style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
+        >
+          <span className="lens-rect-size">{Math.round(rect.w)}×{Math.round(rect.h)}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Thẻ kết quả quét hiện ngay trên video
+// ---------------------------------------------------------------------------
+const LensResult = ({ result, photo, onBuy, onClose }) => {
+  const items = result.items || [];
+  return (
+    <div className="lens-result">
+      <div className="lens-result-head">
+        <strong>{items.length > 0 ? `Tìm thấy ${items.length} món đồ` : "Không nhận diện được món đồ"}</strong>
+        <button type="button" className="lens-close" onClick={onClose}>✕</button>
+      </div>
+      {photo && <img className="lens-result-photo" src={photo} alt="Vùng đã quét" />}
+      {items.length === 0 && <p className="lens-result-note">{result.note || "Thử khoanh vùng khác hoặc tìm theo từ khoá."}</p>}
+      {items.map((item) => (
+        <div key={item.id} className="lens-product-card">
+          <div className="lens-product-info">
+            <strong>{item.productName}</strong>
+            {item.category && <small>{item.category}</small>}
+          </div>
+          <button type="button" onClick={() => onBuy(item)}>Mua qua Shopee</button>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Panel mua sắm bên cạnh player
+// ---------------------------------------------------------------------------
+const ShoppingPanel = ({ episode, position, onOpenLens }) => {
+  const [products, setProducts] = useState([]);
+  const [keyword, setKeyword] = useState("");
+  const [error, setError] = useState("");
+
   useEffect(() => {
     apiRequest(`/api/v1/shopping/productions/${episode.production_id}/products`)
       .then((data) => setProducts(data.items))
@@ -22,35 +157,13 @@ const ShoppingPanel = ({ episode, position, videoRef }) => {
     (item) => position >= item.timestampStart && position <= item.timestampEnd,
   );
 
-  // Chụp khung hình hiện tại rồi gửi lên server match theo thời điểm
-  const capture = async () => {
-    setError("");
-    setBusy(true);
+  // Bấm mua: tạo link affiliate lúc này rồi mới điều hướng sang Shopee
+  const openBuy = async (product) => {
     try {
-      let photo = null;
-      // Video domain khác có thể làm canvas tainted (CORS) — chụp thất bại thì vẫn match theo thời điểm
-      try {
-        const video = videoRef.current;
-        if (video && video.videoWidth) {
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.min(video.videoWidth, 640);
-          canvas.height = Math.round((canvas.width / video.videoWidth) * video.videoHeight);
-          canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-          photo = canvas.toDataURL("image/jpeg", 0.7);
-          setSnapshotImage(photo);
-        }
-      } catch {
-        setSnapshotImage(null);
-      }
-      const result = await apiRequest("/api/v1/shopping/match", {
-        method: "POST",
-        body: JSON.stringify({ episodeId: episode.id, position: Math.floor(position), photo, keyword: "" }),
-      });
-      setSnapshotResult(result);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
+      const data = await apiRequest(`/api/v1/shopping/products/${product.id}/buy`, { method: "POST" });
+      window.open(data.buyUrl, "_blank", "noopener");
+    } catch {
+      window.open(`https://shopee.vn/search?keyword=${encodeURIComponent(product.shopeeKeyword || "")}`, "_blank", "noopener");
     }
   };
 
@@ -59,73 +172,35 @@ const ShoppingPanel = ({ episode, position, videoRef }) => {
     if (!keyword.trim()) return;
     setError("");
     try {
-      const result = await apiRequest("/api/v1/shopping/match", {
+      const data = await apiRequest("/api/v1/shopping/affiliate-link", {
         method: "POST",
-        body: JSON.stringify({ episodeId: episode.id, position: Math.floor(position), keyword: keyword.trim() }),
+        body: JSON.stringify({ keyword: keyword.trim() }),
       });
-      setSnapshotResult(result);
+      window.open(data.buyUrl, "_blank", "noopener");
     } catch (e) {
       setError(e.message);
     }
   };
 
-  const openBuy = async (product) => {
-    try {
-      await apiRequest(`/api/v1/shopping/products/${product.id}/click`, { method: "POST" });
-    } catch {
-      // vẫn mở link kể cả khi không ghi được thống kê
-    }
-    window.open(product.shopeeUrl, "_blank", "noopener");
-  };
-
-  const openUrl = (url) => window.open(url, "_blank", "noopener");
-
   return (
     <aside className="shopping-panel">
       <h2>🛒 Mua sắm trong phim</h2>
-      <p className="shopping-hint">Thấy món đồ hay? Chụp khung hình để tìm sản phẩm đang xuất hiện, hoặc tìm nhanh theo từ khoá.</p>
+      <p className="shopping-hint">
+        Thấy món đồ hay trong phim? Bấm quét và <strong>khoanh vùng món đồ</strong> như Google
+        Lens — kết quả hiện ngay trên màn hình để bạn chọn mua.
+      </p>
 
       <div className="shopping-actions">
-        <button type="button" onClick={capture} disabled={busy}>
-          {busy ? "Đang xử lý..." : "📸 Chụp khung hình"}
-        </button>
+        <button type="button" onClick={onOpenLens}>🔍 Quét đồ vật trên video</button>
         <form onSubmit={quickSearch} className="shopping-search">
-          <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Ví dụ: đồng hồ nam..." />
-          <button type="submit" className="secondary">Tìm Shopee</button>
+          <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Hoặc tìm nhanh: đồng hồ nam..." />
+          <button type="submit" className="secondary">Tìm</button>
         </form>
       </div>
       {error && <p className="alert">{error}</p>}
 
-      {snapshotImage && <img className="shopping-snapshot" src={snapshotImage} alt="Khung hình vừa chụp" />}
-      {snapshotResult && (
-        <div className="shopping-result">
-          {snapshotResult.items?.length > 0 ? (
-            <>
-              <p className="shopping-found">Tìm thấy {snapshotResult.items.length} sản phẩm ở giây {snapshotResult.position}:</p>
-              {snapshotResult.items.map((item) => (
-                <div key={item.id} className="shopping-item">
-                  <div>
-                    <strong>{item.productName}</strong>
-                    {item.category && <small> · {item.category}</small>}
-                  </div>
-                  <button type="button" onClick={() => openBuy(item)}>Mua trên Shopee</button>
-                </div>
-              ))}
-            </>
-          ) : (
-            <p className="shopping-note">{snapshotResult.note}</p>
-          )}
-          {snapshotResult.quickSearch && (
-            <div className="shopping-item">
-              <div><strong>Tìm nhanh: “{snapshotResult.quickSearch.keyword}”</strong></div>
-              <button type="button" onClick={() => openUrl(snapshotResult.quickSearch.shopeeUrl)}>Mở Shopee</button>
-            </div>
-          )}
-        </div>
-      )}
-
       <h3>Đang xuất hiện ({activeProducts.length})</h3>
-      {activeProducts.length === 0 && <p className="shopping-note">Không có sản phẩm nào được gắn ở thời điểm này.</p>}
+      {activeProducts.length === 0 && <p className="shopping-note">Không có sản phẩm nào ở thời điểm này.</p>}
       {activeProducts.map((item) => (
         <div key={item.id} className="shopping-item active">
           <div>
@@ -133,7 +208,7 @@ const ShoppingPanel = ({ episode, position, videoRef }) => {
             {item.category && <small> · {item.category}</small>}
             <small> · giây {item.timestampStart}–{item.timestampEnd}</small>
           </div>
-          <button type="button" onClick={() => openBuy(item)}>Mua trên Shopee</button>
+          <button type="button" onClick={() => openBuy(item)}>Mua qua Shopee</button>
         </div>
       ))}
 
@@ -147,6 +222,7 @@ const ShoppingPanel = ({ episode, position, videoRef }) => {
           <button type="button" className="secondary" onClick={() => openBuy(item)}>Xem</button>
         </div>
       ))}
+
     </aside>
   );
 };
@@ -157,6 +233,8 @@ const PlayerPage = () => {
   const [position, setPosition] = useState(0);
   const videoRef = useRef(null);
   const lastSaved = useRef(0);
+  const [lensCard, setLensCard] = useState(null); // { result, photo }
+  const [lensOpen, setLensOpen] = useState(false);
   useEffect(() => { apiRequest(`/api/v1/episodes/${episodeId}`).then(setEpisode); }, [episodeId]);
   const save = (seconds) => {
     if (Math.abs(seconds - lastSaved.current) < 10) return;
@@ -164,23 +242,56 @@ const PlayerPage = () => {
     apiRequest(`/api/v1/history/${episodeId}`, { method: "PUT", body: JSON.stringify({ position: seconds }) }).catch(() => {});
   };
   if (!episode) return <main className="page-shell"><p className="empty">Đang tải tập phim...</p></main>;
+
+  // Bấm mua từ thẻ kết quả quét: tạo affiliate link tại thời điểm này
+  const buyFromLens = async (product) => {
+    try {
+      const data = await apiRequest(`/api/v1/shopping/products/${product.id}/buy`, { method: "POST" });
+      window.open(data.buyUrl, "_blank", "noopener");
+    } catch {
+      window.open(`https://shopee.vn/search?keyword=${encodeURIComponent(product.shopeeKeyword || "")}`, "_blank", "noopener");
+    }
+  };
+
   return (
     <main className="page-shell player-page">
       <div className="player-main">
         <Link to={`/movies/${episode.production_id}`}>← {episode.production_title}</Link>
         <h1>Tập {episode.episode_number}: {episode.title}</h1>
-        {episode.video_url ? (
-          <video ref={videoRef} controls autoPlay src={episode.video_url} onTimeUpdate={(e) => { setPosition(e.currentTarget.currentTime); save(Math.floor(e.currentTarget.currentTime)); }} onPause={(e) => save(Math.floor(e.currentTarget.currentTime))} />
-        ) : (
-          <div className="video-placeholder"><span>▶</span><p>Chưa có URL video trong dữ liệu mẫu.</p></div>
-        )}
+        <div className="player-stage">
+          {episode.video_url ? (
+            <video ref={videoRef} controls autoPlay src={episode.video_url} onTimeUpdate={(e) => { setPosition(e.currentTarget.currentTime); save(Math.floor(e.currentTarget.currentTime)); }} onPause={(e) => save(Math.floor(e.currentTarget.currentTime))} />
+          ) : (
+            <div className="video-placeholder"><span>▶</span><p>Chưa có URL video trong dữ liệu mẫu.</p></div>
+          )}
+          {lensCard && (
+            <LensResult
+              result={lensCard.result}
+              photo={lensCard.photo}
+              onBuy={buyFromLens}
+              onClose={() => setLensCard(null)}
+            />
+          )}
+          {lensOpen && (
+            <LensOverlay
+              episode={episode}
+              position={position}
+              videoRef={videoRef}
+              onClose={() => setLensOpen(false)}
+              onResult={(result, photo) => {
+                setLensCard({ result, photo });
+                setLensOpen(false);
+              }}
+            />
+          )}
+        </div>
         <div className="manual-progress">
           <label>Vị trí xem thử: {Math.floor(position)} giây</label>
           <input type="range" min="0" max={episode.duration} value={position} onChange={(e) => setPosition(Number(e.target.value))} />
           <button onClick={() => save(Math.floor(position))}>Lưu vị trí xem</button>
         </div>
       </div>
-      <ShoppingPanel episode={episode} position={position} videoRef={videoRef} />
+      <ShoppingPanel episode={episode} position={position} onOpenLens={() => setLensOpen(true)} />
     </main>
   );
 };
