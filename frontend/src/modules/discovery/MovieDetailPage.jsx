@@ -5,6 +5,7 @@ import { apiRequest } from "../../services/api.js";
 const MovieDetailPage = () => {
   const { id } = useParams();
   const [movie, setMovie] = useState(null);
+  const [products, setProducts] = useState([]);
   const [comments, setComments] = useState([]);
   const [ratings, setRatings] = useState([]);
   const [comment, setComment] = useState("");
@@ -17,6 +18,7 @@ const MovieDetailPage = () => {
   ]), [id]);
   useEffect(() => {
     apiRequest(`/api/v1/productions/${id}`).then(setMovie).catch((e) => setMessage(e.message));
+    apiRequest(`/api/v1/shopping/productions/${id}/products`).then((data) => setProducts(data.items)).catch(() => {});
     reloadCommunity().catch((e) => setMessage(e.message));
   }, [id, reloadCommunity]);
   const action = async (path, method, body) => {
@@ -33,6 +35,18 @@ const MovieDetailPage = () => {
         {message && <p className="status-message">{message}</p>}
       </div>
     </section>
+    {products.length > 0 && (
+      <section>
+        <div className="section-title"><h2>🛒 Sản phẩm trong phim</h2><span>bấm để mở Shopee</span></div>
+        <div className="chips" style={{ gap: ".6rem" }}>
+          {products.map((item) => (
+            <a key={item.id} className="button-link" style={{ textDecoration: "none", fontSize: ".8rem", padding: ".5rem .8rem", display: "inline-block" }} href={item.shopeeUrl} target="_blank" rel="noopener noreferrer">
+              {item.productName} ↗
+            </a>
+          ))}
+        </div>
+      </section>
+    )}
     <section><div className="section-title"><h2>Tập phim</h2></div><div className="episode-list">{movie.episodes.map((episode) => <Link key={episode.id} to={`/watch/${episode.id}`}><strong>Tập {episode.episode_number}</strong><span>{episode.title}</span><small>{Math.ceil(episode.duration / 60)} phút</small></Link>)}</div></section>
     <div className="community-grid">
       <section className="panel"><h2>Đánh giá</h2><form onSubmit={async (e) => { e.preventDefault(); await action(`/api/v1/productions/${id}/rating`, "PUT", { rating: Number(score) }); reloadCommunity(); }}><label>Điểm của bạn <select value={score} onChange={(e) => setScore(e.target.value)}>{[5,4,3,2,1].map((n) => <option key={n} value={n}>{n} sao</option>)}</select></label><button>Gửi đánh giá</button></form><div className="feed">{ratings.map((item) => <article key={item.user_id}><b>{item.username}</b><span>{"★".repeat(item.rating)}</span>{item.review_content && <p>{item.review_content}</p>}</article>)}</div></section>
