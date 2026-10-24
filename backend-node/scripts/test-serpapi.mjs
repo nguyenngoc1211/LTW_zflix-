@@ -13,9 +13,9 @@ if (!key) {
   process.exit(1);
 }
 
-// Ảnh công khai mẫu (Wikimedia, URL sạch không ký tự đặc biệt)
+// Ảnh công khai mẫu (Wikimedia, đã curl xác minh HTTP 200)
 const testImage =
-  "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Golde33443.jpg/640px-Golde33443.jpg";
+  "https://upload.wikimedia.org/wikipedia/commons/6/6e/Golde33443.jpg";
 
 console.log("Đang gọi SerpAPI Google Lens...");
 const t0 = Date.now();
