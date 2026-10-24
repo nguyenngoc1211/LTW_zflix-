@@ -83,13 +83,16 @@
 }
 
 /* ===== App styles (branch Hai + auth header của Du) ===== */
-:root { color: #f5f7fb; background: #080a0f; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-synthesis: none; }
+/* Màu chữ/nền tối chỉ áp dụng trong shell .app; các trang auth (card trắng, ngoài .app)
+   giữ nguyên thiết kế Tailwind gốc để không bị trắng-trên-trắng. */
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-synthesis: none; }
+.app { color: #f5f7fb; background: #080a0f; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 80% 0%, #251020 0, #080a0f 35rem); }
-a { color: inherit; text-decoration: none; }
+.app a { color: inherit; text-decoration: none; }
 button, input, select, textarea { font: inherit; }
-button, .button-link { border: 0; border-radius: .7rem; padding: .72rem 1.05rem; color: white; background: #e50914; cursor: pointer; font-weight: 700; }
-button:hover, .button-link:hover { filter: brightness(1.13); }
+.app button, .app .button-link { border: 0; border-radius: .7rem; padding: .72rem 1.05rem; color: white; background: #e50914; cursor: pointer; font-weight: 700; }
+.app button:hover, .app .button-link:hover { filter: brightness(1.13); }
 .secondary { background: #272b35; }
 .site-header { position: sticky; top: 0; z-index: 10; height: 4.25rem; display: flex; align-items: center; justify-content: space-between; padding: 0 max(1.25rem, calc((100% - 1200px)/2)); background: rgba(8,10,15,.88); border-bottom: 1px solid #252936; backdrop-filter: blur(16px); }
 .brand { font-size: 1.55rem; font-weight: 900; letter-spacing: -.08em; }.brand span { color: #e50914; }
@@ -105,7 +108,7 @@ button:hover, .button-link:hover { filter: brightness(1.13); }
 .page-shell { max-width: 1200px; min-height: 65vh; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
 .filter-panel { margin-top: -6rem; margin-bottom: 2.5rem; padding: 1.25rem; border: 1px solid #292d38; border-radius: 1rem; background: rgba(20,23,31,.96); box-shadow: 0 1.5rem 4rem #0008; }
 .search-row { display: grid; grid-template-columns: 1fr auto; gap: .7rem; }.filter-grid { display: grid; grid-template-columns: repeat(6,1fr); gap: .7rem; margin-top: .7rem; }
-input, select, textarea { width: 100%; border: 1px solid #353946; border-radius: .7rem; padding: .75rem; color: white; background: #101219; outline: none; } input:focus, select:focus, textarea:focus { border-color: #e50914; }
+.app input, .app select, .app textarea { width: 100%; border: 1px solid #353946; border-radius: .7rem; padding: .75rem; color: white; background: #101219; outline: none; } .app input:focus, .app select:focus, .app textarea:focus { border-color: #e50914; }
 .section-title { display: flex; align-items: center; justify-content: space-between; margin: 2rem 0 1rem; }.section-title h1,.section-title h2 { margin: 0; }.section-title span { color: #9da3b2; }
 .movie-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 1.25rem; }.movie-card { overflow: hidden; border: 1px solid #252936; border-radius: .9rem; background: #13161e; transition: transform .2s; }.movie-card:hover { transform: translateY(-5px); }
 .poster-wrap { position: relative; display: block; aspect-ratio: 2/3; overflow: hidden; background: linear-gradient(150deg,#40202d,#17243e); }.poster-wrap img { position: absolute; z-index: 1; width:100%;height:100%;object-fit:cover; }.poster-fallback { position:absolute;inset:0;display:grid;place-items:center;font-size:5rem;font-weight:900;color:#ffffff18; }.premium { position:absolute;z-index:2;top:.6rem;right:.6rem;padding:.2rem .45rem;border-radius:.3rem;background:#f5c542;color:#17120a;font-size:.7rem;font-weight:900; }
