@@ -84,21 +84,21 @@ try {
 
   await page.goto(`${baseUrl}/account/security`);
   await page.getByRole("heading", { name: "Active sessions" }).waitFor();
-  await page.getByText("Current session", { exact: true }).waitFor();
+  await page.getByText("Phiên hiện tại", { exact: true }).waitFor();
   await page.getByText("Other browser one", { exact: true }).waitFor();
 
   const firstOther = page.getByRole("listitem").filter({ hasText: "Other browser one" });
-  await firstOther.getByRole("button", { name: "Sign out" }).click();
+  await firstOther.getByRole("button", { name: "Đăng xuất" }).click();
   await page.getByText("Other browser one", { exact: true }).waitFor({ state: "detached" });
   assert.equal(new URL(page.url()).pathname, "/account/security");
-  await page.getByText("Current session", { exact: true }).waitFor();
+  await page.getByText("Phiên hiện tại", { exact: true }).waitFor();
 
-  await page.getByRole("button", { name: "Sign out other sessions" }).click();
+  await page.getByRole("button", { name: "Đăng xuất các phiên khác" }).click();
   await page.getByText("Other browser two", { exact: true }).waitFor({ state: "detached" });
   assert.deepEqual(sessions.map((session) => session.id), ["current-session"]);
   assert.equal(new URL(page.url()).pathname, "/account/security");
 
-  await page.getByRole("button", { name: "Sign out all sessions" }).click();
+  await page.getByRole("button", { name: "Đăng xuất tất cả phiên" }).click();
   await page.waitForURL("**/login");
   assert.equal(revoked, true);
 

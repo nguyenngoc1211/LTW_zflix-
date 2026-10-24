@@ -16,7 +16,7 @@ try {
 
   await page.getByLabel("Email").fill("admin@moviehub.com");
   await page.getByLabel("Password").fill("abc123");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Đăng nhập" }).click();
   await page.waitForURL("**/admin");
   assert.equal(new URL(page.url()).pathname, "/admin");
   await page.getByText("admin", { exact: true }).waitFor();
@@ -45,17 +45,17 @@ try {
 
   await page.getByLabel("Email").fill("admin@moviehub.com");
   await page.getByLabel("Password").fill("abc123");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Đăng nhập" }).click();
   await page.waitForURL("**/admin");
   await page.getByText("admin", { exact: true }).click();
-  await page.getByText("Log out", { exact: true }).click();
+  await page.getByText("Đăng xuất", { exact: true }).click();
   await page.waitForURL("**/login");
 
   await page.goto(`${baseUrl}/admin`);
   await page.waitForURL("**/login");
   await page.getByLabel("Email").fill("john.doe@email.com");
   await page.getByLabel("Password").fill("abc123");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Đăng nhập" }).click();
   await page.waitForURL(baseUrl + "/");
   assert.equal(new URL(page.url()).pathname, "/");
 
@@ -98,9 +98,9 @@ try {
   await mfaPage.goto(`${baseUrl}/login`);
   await mfaPage.getByLabel("Email").fill("john.doe@email.com");
   await mfaPage.getByLabel("Password").fill("abc123");
-  await mfaPage.getByRole("button", { name: "Sign in" }).click();
+  await mfaPage.getByRole("button", { name: "Đăng nhập" }).click();
   await mfaPage.getByLabel("Authentication or recovery code").fill("AAAA-BBBB-CCCC-DDDD");
-  await mfaPage.getByRole("button", { name: "Verify code" }).click();
+  await mfaPage.getByRole("button", { name: "Xác nhận mã" }).click();
   await mfaPage.waitForURL(baseUrl + "/");
   assert.deepEqual(submittedChallenge, {
     challengeToken: "browser-memory-only-challenge",

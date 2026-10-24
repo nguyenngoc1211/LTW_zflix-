@@ -45,9 +45,9 @@ try {
   await page.goto(`${baseUrl}/login`);
   await page.getByLabel("Email").fill("john.doe@email.com");
   await page.getByLabel("Password").fill("abc123");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Đăng nhập" }).click();
   await page.getByLabel("Authentication or recovery code").fill("AAAA-BBBB-CCCC-DDDD");
-  await page.getByRole("button", { name: "Verify code" }).click();
+  await page.getByRole("button", { name: "Xác nhận mã" }).click();
   await page.waitForURL(baseUrl + "/");
   assert.deepEqual(submittedChallenge, {
     challengeToken: "browser-memory-only-challenge",

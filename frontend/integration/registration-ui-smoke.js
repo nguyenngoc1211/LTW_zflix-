@@ -23,7 +23,7 @@ try {
         body: JSON.stringify({
           message: duplicate
             ? "Email or username is already in use"
-            : "Account created. Please sign in.",
+            : "Đã tạo tài khoản. Vui lòng đăng nhập.",
         }),
       });
     }
@@ -35,25 +35,25 @@ try {
   });
 
   await page.goto(`${frontendUrl}/login`);
-  await page.getByRole("link", { name: "Create an account" }).click();
+  await page.getByRole("link", { name: "Đăng ký ngay" }).click();
   await page.waitForURL("**/register");
   await page.getByLabel("Username").fill("new_user");
   await page.getByLabel("Email").fill("taken@example.test");
   await page.getByLabel("Password", { exact: true }).fill("valid-password-123");
   await page.getByLabel("Confirm password").fill("different-password");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await page.getByRole("alert").getByText("Passwords do not match.").waitFor();
+  await page.getByRole("button", { name: "Đăng ký" }).click();
+  await page.getByRole("alert").getByText("Mật khẩu nhập lại không khớp.").waitFor();
   assert.equal(submitted.length, 0);
 
   await page.getByLabel("Confirm password").fill("valid-password-123");
-  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Đăng ký" }).click();
   await page.getByRole("alert").getByText("Email or username is already in use").waitFor();
   assert.equal(submitted.length, 1);
 
   await page.getByLabel("Email").fill("new@example.test");
-  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByRole("button", { name: "Đăng ký" }).click();
   await page.waitForURL("**/login");
-  await page.getByText("Account created. Please sign in.").waitFor();
+  await page.getByText("Đã tạo tài khoản. Vui lòng đăng nhập.").waitFor();
   assert.deepEqual(submitted[1], {
     username: "new_user",
     email: "new@example.test",

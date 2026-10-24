@@ -17,11 +17,11 @@ const RegisterPage = () => {
     event.preventDefault();
     setError("");
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError("Mật khẩu nhập lại không khớp.");
       return;
     }
     if (new TextEncoder().encode(password).length > 72) {
-      setError("Password must be at most 72 UTF-8 bytes.");
+      setError("Mật khẩu tối đa 72 byte UTF-8.");
       return;
     }
     setSubmitting(true);
@@ -34,7 +34,7 @@ const RegisterPage = () => {
       setConfirmPassword("");
       navigate("/login", { replace: true, state: { registered: true } });
     } catch (requestError) {
-      setError(requestError.message || "Could not create account.");
+      setError(requestError.message || "Không tạo được tài khoản.");
     } finally {
       setSubmitting(false);
     }
@@ -43,12 +43,12 @@ const RegisterPage = () => {
   return (
     <main className="grid min-h-screen place-items-center bg-slate-950 px-4">
       <section className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
-        <p className="text-sm font-semibold uppercase tracking-widest text-red-600">MovieHub</p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-900">Create account</h1>
-        <p className="mt-2 text-sm text-slate-600">Create a local account, then sign in.</p>
+        <p className="text-sm font-semibold uppercase tracking-widest text-red-600">ZFLIX</p>
+        <h1 className="mt-2 text-3xl font-bold text-slate-900">Đăng ký</h1>
+        <p className="mt-2 text-sm text-slate-600">Tạo tài khoản Zflix, sau đó đăng nhập để sử dụng.</p>
         <form className="mt-6 space-y-4" onSubmit={submit}>
           <label className="block text-sm font-medium text-slate-700">
-            Username
+            Tên đăng nhập
             <input className={inputClass} type="text" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} pattern="[A-Za-z0-9_]{3,50}" minLength={3} maxLength={50} required />
           </label>
           <label className="block text-sm font-medium text-slate-700">
@@ -56,21 +56,21 @@ const RegisterPage = () => {
             <input className={inputClass} type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={100} required />
           </label>
           <label className="block text-sm font-medium text-slate-700">
-            Password
+            Mật khẩu
             <input className={inputClass} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} maxLength={128} required />
           </label>
-          <p className="text-xs text-slate-500">Use 8–128 characters, up to 72 UTF-8 bytes.</p>
+          <p className="text-xs text-slate-500">Dùng 8–128 ký tự, tối đa 72 byte UTF-8.</p>
           <label className="block text-sm font-medium text-slate-700">
-            Confirm password
+            Nhập lại mật khẩu
             <input className={inputClass} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} maxLength={128} required />
           </label>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>}
           <button className="w-full rounded-lg bg-red-600 px-4 py-2.5 font-semibold text-white hover:bg-red-700 disabled:opacity-60" type="submit" disabled={submitting}>
-            {submitting ? "Creating account..." : "Create account"}
+            {submitting ? "Đang tạo tài khoản..." : "Đăng ký"}
           </button>
         </form>
         <p className="mt-6 text-center text-sm">
-          Already have an account? <Link className="font-medium text-red-600 hover:underline" to="/login">Sign in</Link>
+          Đã có tài khoản? <Link className="font-medium text-red-600 hover:underline" to="/login">Đăng nhập</Link>
         </p>
       </section>
     </main>

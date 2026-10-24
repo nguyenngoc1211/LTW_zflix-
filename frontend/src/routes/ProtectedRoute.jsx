@@ -6,7 +6,7 @@ const ProtectedRoute = ({ allowedRoles }) => {
   const location = useLocation();
 
   if (loading) {
-    return <div className="grid min-h-screen place-items-center text-slate-600">Checking session...</div>;
+    return <div className="grid min-h-screen place-items-center text-slate-600">Đang kiểm tra phiên đăng nhập...</div>;
   }
 
   if (!user) {
