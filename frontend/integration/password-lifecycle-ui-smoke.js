@@ -52,10 +52,10 @@ try {
   });
 
   await page.goto(`${frontendUrl}/login`);
-  await page.getByRole("link", { name: "Forgot password?" }).click();
+  await page.getByRole("link", { name: "Quên mật khẩu?" }).click();
   await page.waitForURL("**/forgot-password");
   await page.getByLabel("Email").fill(user.email);
-  await page.getByRole("button", { name: "Request reset" }).click();
+  await page.getByRole("button", { name: "Gửi yêu cầu" }).click();
   await page.getByRole("status").waitFor();
   assert.deepEqual(forgotRequest, { email: user.email });
 
@@ -63,9 +63,9 @@ try {
   await page.getByLabel("New password", { exact: true }).fill("new-password-123");
   await page.getByLabel("Confirm new password").fill("new-password-123");
   assert.equal(new URL(page.url()).search, "", "reset token should leave the address bar");
-  await page.getByRole("button", { name: "Reset password" }).click();
+  await page.getByRole("button", { name: "Đặt lại mật khẩu" }).click();
   await page.waitForURL("**/login");
-  await page.getByText("Password updated. Please sign in again.").waitFor();
+  await page.getByText("Đã cập nhật mật khẩu. Vui lòng đăng nhập lại.").waitFor();
   assert.deepEqual(resetRequest, {
     token: "ui-test-reset-token",
     newPassword: "new-password-123",
@@ -73,13 +73,13 @@ try {
 
   signedIn = true;
   await page.goto(`${frontendUrl}/account/security`);
-  await page.getByRole("heading", { name: "Change password" }).waitFor();
+  await page.getByRole("heading", { name: "Đổi mật khẩu" }).waitFor();
   await page.getByLabel("Current password").first().fill("current-password-123");
   await page.getByLabel("New password", { exact: true }).fill("next-password-123");
   await page.getByLabel("Confirm new password").fill("next-password-123");
-  await page.getByRole("button", { name: "Change password" }).click();
+  await page.getByRole("button", { name: "Đổi mật khẩu" }).click();
   await page.waitForURL("**/login?passwordChanged=1");
-  await page.getByText("Password updated. Please sign in again.").waitFor();
+  await page.getByText("Đã cập nhật mật khẩu. Vui lòng đăng nhập lại.").waitFor();
   assert.deepEqual(changeRequest, {
     currentPassword: "current-password-123",
     newPassword: "next-password-123",

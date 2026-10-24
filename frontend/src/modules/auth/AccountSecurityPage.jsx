@@ -18,7 +18,7 @@ const ErrorMessage = ({ children }) =>
   ) : null;
 
 const formatDate = (value) =>
-  value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Not yet";
+  value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Chưa có";
 
 const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
   const [acknowledged, setAcknowledged] = useState(false);
@@ -31,9 +31,9 @@ const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
 
   return (
     <section className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-5">
-      <h2 className="text-xl font-bold text-slate-900">Save your recovery codes</h2>
+      <h2 className="text-xl font-bold text-slate-900">Lưu mã khôi phục của bạn</h2>
       <p className="mt-2 text-sm text-slate-700">
-        Save these somewhere safe. Each code works once, and they will not be shown again.
+        Hãy lưu những mã này ở nơi an toàn. Mỗi mã chỉ dùng được một lần và sẽ không hiển thị lại.
       </p>
       <ul className="mt-4 grid gap-2 rounded-lg bg-white p-4 font-mono text-sm sm:grid-cols-2">
         {codes.map((code) => (
@@ -41,7 +41,7 @@ const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
         ))}
       </ul>
       <button type="button" className={`${secondaryButton} mt-4`} onClick={copyAll}>
-        {copied ? "Copied" : "Copy all"}
+        {copied ? "Đã copy" : "Copy tất cả"}
       </button>
       <label className="mt-5 flex items-start gap-2 text-sm text-slate-700">
         <input
@@ -50,7 +50,7 @@ const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
           checked={acknowledged}
           onChange={(event) => setAcknowledged(event.target.checked)}
         />
-        I have saved my recovery codes
+        Tôi đã lưu mã khôi phục
       </label>
       <button
         type="button"
@@ -58,7 +58,7 @@ const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
         disabled={!acknowledged}
         onClick={onDone}
       >
-        {afterEnrollment ? "Done and sign in again" : "Done"}
+        {afterEnrollment ? "Xong và đăng nhập lại" : "Xong"}
       </button>
     </section>
   );
@@ -75,11 +75,11 @@ const ChangePasswordSection = ({ changePassword }) => {
     event.preventDefault();
     setError("");
     if (newPassword !== confirmPassword) {
-      setError("New passwords do not match.");
+      setError("Mật khẩu mới nhập lại không khớp.");
       return;
     }
     if (new TextEncoder().encode(newPassword).length > 72) {
-      setError("Password must be at most 72 UTF-8 bytes.");
+      setError("Mật khẩu tối đa 72 byte UTF-8.");
       return;
     }
     setSubmitting(true);
@@ -90,7 +90,7 @@ const ChangePasswordSection = ({ changePassword }) => {
       setConfirmPassword("");
       window.location.replace("/login?passwordChanged=1");
     } catch (requestError) {
-      setError(requestError.message || "Could not change password.");
+      setError(requestError.message || "Không đổi được mật khẩu.");
     } finally {
       setSubmitting(false);
     }
@@ -98,25 +98,25 @@ const ChangePasswordSection = ({ changePassword }) => {
 
   return (
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-bold text-slate-900">Change password</h2>
-      <p className="mt-2 text-sm text-slate-600">Changing your password signs out all sessions.</p>
+      <h2 className="text-xl font-bold text-slate-900">Đổi mật khẩu</h2>
+      <p className="mt-2 text-sm text-slate-600">Đổi mật khẩu sẽ đăng xuất toàn bộ phiên đăng nhập.</p>
       <form className="mt-5 space-y-4" onSubmit={submit}>
         <label className="block text-sm font-medium text-slate-700">
-          Current password
+          Mật khẩu hiện tại
           <input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} maxLength={128} required />
         </label>
         <label className="block text-sm font-medium text-slate-700">
-          New password
+          Mật khẩu mới
           <input className={inputClass} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} maxLength={128} required />
         </label>
-        <p className="text-xs text-slate-500">Use 8–128 characters, up to 72 UTF-8 bytes.</p>
+        <p className="text-xs text-slate-500">Dùng 8–128 ký tự, tối đa 72 byte UTF-8.</p>
         <label className="block text-sm font-medium text-slate-700">
-          Confirm new password
+          Nhập lại mật khẩu mới
           <input className={inputClass} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} maxLength={128} required />
         </label>
         <ErrorMessage>{error}</ErrorMessage>
         <button className={primaryButton} type="submit" disabled={submitting}>
-          {submitting ? "Changing password..." : "Change password"}
+          {submitting ? "Đang đổi mật khẩu..." : "Đổi mật khẩu"}
         </button>
       </form>
     </section>
@@ -158,7 +158,7 @@ const AccountSecurityPage = () => {
       setSessions(await getSessions());
       setSessionsError("");
     } catch {
-      setSessionsError("Could not load active sessions.");
+      setSessionsError("Không tải được danh sách phiên đăng nhập.");
     } finally {
       setSessionsLoading(false);
     }
@@ -171,7 +171,7 @@ const AccountSecurityPage = () => {
         if (active) setStatus(data);
       })
       .catch(() => {
-        if (active) setError("Could not load two-factor authentication status.");
+        if (active) setError("Không tải được trạng thái xác thực hai bước.");
       });
     return () => {
       active = false;
@@ -185,7 +185,7 @@ const AccountSecurityPage = () => {
         if (active) setSessions(data);
       })
       .catch(() => {
-        if (active) setSessionsError("Could not load active sessions.");
+        if (active) setSessionsError("Không tải được danh sách phiên đăng nhập.");
       })
       .finally(() => {
         if (active) setSessionsLoading(false);
@@ -206,7 +206,7 @@ const AccountSecurityPage = () => {
       }
       await loadSessions();
     } catch {
-      setSessionsError("Could not sign out that session.");
+      setSessionsError("Không đăng xuất được phiên đó.");
     } finally {
       setSessionAction("");
     }
@@ -219,7 +219,7 @@ const AccountSecurityPage = () => {
       await logoutOtherSessions();
       await loadSessions();
     } catch {
-      setSessionsError("Could not sign out other sessions.");
+      setSessionsError("Không đăng xuất được các phiên khác.");
     } finally {
       setSessionAction("");
     }
@@ -232,7 +232,7 @@ const AccountSecurityPage = () => {
       await logoutAll();
       navigate("/login", { replace: true });
     } catch {
-      setSessionsError("Could not sign out all sessions.");
+      setSessionsError("Không đăng xuất được toàn bộ phiên.");
     } finally {
       setSessionAction("");
     }
@@ -263,7 +263,7 @@ const AccountSecurityPage = () => {
       setCurrentPassword("");
       setAction("setup");
     } catch {
-      setError("Could not start two-factor authentication setup.");
+      setError("Không bắt đầu được cấu hình xác thực hai bước.");
     } finally {
       setSubmitting(false);
     }
@@ -284,7 +284,7 @@ const AccountSecurityPage = () => {
       setRecovery({ codes: data.recoveryCodes, afterEnrollment: true });
       setAction(null);
     } catch {
-      setError("Invalid authentication code.");
+      setError("Mã xác thực không đúng.");
     } finally {
       setSubmitting(false);
     }
@@ -303,7 +303,7 @@ const AccountSecurityPage = () => {
       setRecovery({ codes: data.recoveryCodes, afterEnrollment: false });
       setAction(null);
     } catch {
-      setError("Could not regenerate recovery codes.");
+      setError("Không tạo lại được mã khôi phục.");
     } finally {
       setSubmitting(false);
     }
@@ -321,20 +321,20 @@ const AccountSecurityPage = () => {
       clearAuthState();
       navigate("/login", { replace: true });
     } catch {
-      setError("Could not disable two-factor authentication.");
+      setError("Không tắt được xác thực hai bước.");
     } finally {
       setSubmitting(false);
     }
   };
 
   if (!status && !error) {
-    return <main className="grid min-h-[60vh] place-items-center text-slate-600">Loading security settings...</main>;
+    return <main className="grid min-h-[60vh] place-items-center text-slate-600">Đang tải cài đặt bảo mật...</main>;
   }
 
   if (recovery) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-3xl font-bold text-slate-900">Account Security</h1>
+        <h1 className="text-3xl font-bold text-slate-900">Bảo mật tài khoản</h1>
         <RecoveryCodes
           codes={recovery.codes}
           afterEnrollment={recovery.afterEnrollment}
@@ -354,44 +354,44 @@ const AccountSecurityPage = () => {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-3xl font-bold text-slate-900">Account Security</h1>
+      <h1 className="text-3xl font-bold text-slate-900">Bảo mật tài khoản</h1>
       <ChangePasswordSection changePassword={changePassword} />
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold text-slate-900">Two-factor authentication</h2>
+        <h2 className="text-xl font-bold text-slate-900">Xác thực hai bước (2FA)</h2>
         {status && (
           <p className="mt-2 text-sm text-slate-600">
-            Status: <strong>{status.enabled ? "Enabled" : "Disabled"}</strong>
-            {status.enabled ? ` · ${status.recoveryCodesRemaining} recovery codes remaining` : ""}
+            Trạng thái: <strong>{status.enabled ? "Bật" : "Tắt"}</strong>
+            {status.enabled ? ` · còn ${status.recoveryCodesRemaining} mã khôi phục` : ""}
           </p>
         )}
         <div className="mt-5 flex flex-wrap gap-3">
           {status?.enabled ? (
             <>
               <button type="button" className={primaryButton} onClick={() => { resetForm(); setAction("regenerate"); }}>
-                Regenerate recovery codes
+                Tạo lại mã khôi phục
               </button>
               <button type="button" className={secondaryButton} onClick={() => { resetForm(); setAction("disable"); }}>
-                Disable two-factor authentication
+                Tắt xác thực hai bước
               </button>
             </>
           ) : (
             <button type="button" className={primaryButton} onClick={() => { resetForm(); setAction("enable"); }}>
-              Enable two-factor authentication
+              Bật xác thực hai bước
             </button>
           )}
         </div>
 
         {action === "enable" && (
           <form className="mt-6 space-y-4 border-t border-slate-200 pt-6" onSubmit={beginSetup}>
-            <h3 className="font-semibold text-slate-900">Confirm your password</h3>
+            <h3 className="font-semibold text-slate-900">Xác nhận mật khẩu của bạn</h3>
             <label className="block text-sm font-medium text-slate-700">
-              Current password
+              Mật khẩu hiện tại
               <input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
             </label>
             <ErrorMessage>{error}</ErrorMessage>
             <div className="flex gap-3">
-              <button className={primaryButton} type="submit" disabled={submitting}>Continue</button>
-              <button className={secondaryButton} type="button" onClick={cancelAction}>Cancel</button>
+              <button className={primaryButton} type="submit" disabled={submitting}>Tiếp tục</button>
+              <button className={secondaryButton} type="button" onClick={cancelAction}>Hủy</button>
             </div>
           </form>
         )}
@@ -399,54 +399,54 @@ const AccountSecurityPage = () => {
         {action === "setup" && setup && (
           <form className="mt-6 space-y-5 border-t border-slate-200 pt-6" onSubmit={confirmSetup}>
             <div>
-              <h3 className="font-semibold text-slate-900">1. Scan the QR code</h3>
-              <div className="mt-4 inline-block rounded-lg border border-slate-200 bg-white p-4" role="img" aria-label="Authenticator QR code">
+              <h3 className="font-semibold text-slate-900">1. Quét mã QR</h3>
+              <div className="mt-4 inline-block rounded-lg border border-slate-200 bg-white p-4" role="img" aria-label="Mã QR xác thực">
                 <QRCodeSVG value={setup.otpauthUrl} size={200} />
               </div>
-              <p className="mt-3 text-sm text-slate-600">Manual setup key:</p>
+              <p className="mt-3 text-sm text-slate-600">Khóa cài đặt thủ công:</p>
               <code className="mt-1 block break-all rounded bg-slate-100 p-3 text-sm">{setup.secret}</code>
             </div>
             <label className="block text-sm font-medium text-slate-700">
-              2. Enter the six-digit code
+              2. Nhập mã 6 chữ số
               <input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required />
             </label>
             <ErrorMessage>{error}</ErrorMessage>
             <div className="flex gap-3">
-              <button className={primaryButton} type="submit" disabled={submitting}>Verify and enable</button>
-              <button className={secondaryButton} type="button" onClick={cancelAction}>Cancel</button>
+              <button className={primaryButton} type="submit" disabled={submitting}>Xác nhận và bật</button>
+              <button className={secondaryButton} type="button" onClick={cancelAction}>Hủy</button>
             </div>
           </form>
         )}
 
         {action === "regenerate" && (
           <form className="mt-6 space-y-4 border-t border-slate-200 pt-6" onSubmit={regenerate}>
-            <h3 className="font-semibold text-slate-900">Regenerate recovery codes</h3>
-            <p className="text-sm text-slate-600">Your old recovery codes will stop working.</p>
-            <label className="block text-sm font-medium text-slate-700">Current password<input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
-            <label className="block text-sm font-medium text-slate-700">Authenticator code<input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></label>
+            <h3 className="font-semibold text-slate-900">Tạo lại mã khôi phục</h3>
+            <p className="text-sm text-slate-600">Các mã khôi phục cũ sẽ hết hiệu lực.</p>
+            <label className="block text-sm font-medium text-slate-700">Mật khẩu hiện tại<input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
+            <label className="block text-sm font-medium text-slate-700">Mã xác thực<input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></label>
             <ErrorMessage>{error}</ErrorMessage>
-            <div className="flex gap-3"><button className={primaryButton} type="submit" disabled={submitting}>Regenerate codes</button><button className={secondaryButton} type="button" onClick={cancelAction}>Cancel</button></div>
+            <div className="flex gap-3"><button className={primaryButton} type="submit" disabled={submitting}>Tạo lại mã</button><button className={secondaryButton} type="button" onClick={cancelAction}>Hủy</button></div>
           </form>
         )}
 
         {action === "disable" && (
           <form className="mt-6 space-y-4 border-t border-slate-200 pt-6" onSubmit={disable}>
-            <h3 className="font-semibold text-slate-900">Disable two-factor authentication</h3>
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Disabling two-factor authentication reduces account security and will sign you out.</p>
-            <label className="block text-sm font-medium text-slate-700">Current password<input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
-            <label className="block text-sm font-medium text-slate-700">Authenticator code<input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></label>
+            <h3 className="font-semibold text-slate-900">Tắt xác thực hai bước</h3>
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Tắt xác thực hai bước làm giảm bảo mật tài khoản và sẽ đăng xuất bạn khỏi hệ thống.</p>
+            <label className="block text-sm font-medium text-slate-700">Mật khẩu hiện tại<input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
+            <label className="block text-sm font-medium text-slate-700">Mã xác thực<input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></label>
             <ErrorMessage>{error}</ErrorMessage>
-            <div className="flex gap-3"><button className={primaryButton} type="submit" disabled={submitting}>Disable MFA and sign out</button><button className={secondaryButton} type="button" onClick={cancelAction}>Cancel</button></div>
+            <div className="flex gap-3"><button className={primaryButton} type="submit" disabled={submitting}>Tắt MFA và đăng xuất</button><button className={secondaryButton} type="button" onClick={cancelAction}>Hủy</button></div>
           </form>
         )}
       </section>
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold text-slate-900">Active sessions</h2>
+        <h2 className="text-xl font-bold text-slate-900">Phiên đăng nhập</h2>
         <p className="mt-2 text-sm text-slate-600">
-          Last used is the most recent session refresh recorded by the authentication system.
+          "Dùng gần nhất" là lần làm mới phiên mới nhất được hệ thống xác thực ghi lại.
         </p>
         {sessionsLoading ? (
-          <p className="mt-5 text-sm text-slate-600">Loading active sessions...</p>
+          <p className="mt-5 text-sm text-slate-600">Đang tải phiên đăng nhập...</p>
         ) : (
           <ul className="mt-5 space-y-3">
             {sessions.map((session) => (
@@ -455,19 +455,19 @@ const AccountSecurityPage = () => {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="break-all font-medium text-slate-900">
-                        {session.userAgent || "Unknown browser or device"}
+                        {session.userAgent || "Trình duyệt/thiết bị không rõ"}
                       </p>
                       {session.current && (
                         <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">
-                          Current session
+                          Phiên hiện tại
                         </span>
                       )}
                     </div>
                     <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
-                      <div><dt className="inline font-medium">IP: </dt><dd className="inline">{session.ipAddress || "Unavailable"}</dd></div>
-                      <div><dt className="inline font-medium">Created: </dt><dd className="inline">{formatDate(session.createdAt)}</dd></div>
-                      <div><dt className="inline font-medium">Last used: </dt><dd className="inline">{formatDate(session.lastUsedAt)}</dd></div>
-                      <div><dt className="inline font-medium">Idle expiry: </dt><dd className="inline">{formatDate(session.expiresAt)}</dd></div>
+                      <div><dt className="inline font-medium">IP: </dt><dd className="inline">{session.ipAddress || "Không có"}</dd></div>
+                      <div><dt className="inline font-medium">Tạo lúc: </dt><dd className="inline">{formatDate(session.createdAt)}</dd></div>
+                      <div><dt className="inline font-medium">Dùng gần nhất: </dt><dd className="inline">{formatDate(session.lastUsedAt)}</dd></div>
+                      <div><dt className="inline font-medium">Hết hạn nếu Idle: </dt><dd className="inline">{formatDate(session.expiresAt)}</dd></div>
                     </dl>
                   </div>
                   {!session.current && (
@@ -477,7 +477,7 @@ const AccountSecurityPage = () => {
                       disabled={Boolean(sessionAction)}
                       onClick={() => signOutSession(session)}
                     >
-                      {sessionAction === session.id ? "Signing out..." : "Sign out"}
+                      {sessionAction === session.id ? "Đang đăng xuất..." : "Đăng xuất"}
                     </button>
                   )}
                 </div>
@@ -488,10 +488,10 @@ const AccountSecurityPage = () => {
         <ErrorMessage>{sessionsError}</ErrorMessage>
         <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-200 pt-5">
           <button type="button" className={secondaryButton} disabled={Boolean(sessionAction)} onClick={signOutOthers}>
-            {sessionAction === "others" ? "Signing out..." : "Sign out other sessions"}
+            {sessionAction === "others" ? "Đang đăng xuất..." : "Đăng xuất các phiên khác"}
           </button>
           <button type="button" className={primaryButton} disabled={Boolean(sessionAction)} onClick={signOutAll}>
-            {sessionAction === "all" ? "Signing out..." : "Sign out all sessions"}
+            {sessionAction === "all" ? "Đang đăng xuất..." : "Đăng xuất tất cả phiên"}
           </button>
         </div>
       </section>

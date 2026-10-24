@@ -14,7 +14,7 @@ const LoginPage = () => {
   const [submitting, setSubmitting] = useState(false);
 
   if (loading) {
-    return <div className="grid min-h-screen place-items-center text-slate-600">Checking session...</div>;
+    return <div className="grid min-h-screen place-items-center text-slate-600">Đang kiểm tra phiên đăng nhập...</div>;
   }
 
   if (!loading && user) {
@@ -44,7 +44,7 @@ const LoginPage = () => {
             : "/";
       navigate(destination, { replace: true });
     } catch (requestError) {
-      setError(requestError.message || "Unable to sign in");
+      setError(requestError.message || "Không thể đăng nhập");
     } finally {
       setSubmitting(false);
     }
@@ -53,28 +53,28 @@ const LoginPage = () => {
   return (
     <main className="grid min-h-screen place-items-center bg-slate-950 px-4">
       <section className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
-        <p className="text-sm font-semibold uppercase tracking-widest text-red-600">MovieHub</p>
-        <h1 className="mt-2 text-3xl font-bold text-slate-900">Sign in</h1>
+        <p className="text-sm font-semibold uppercase tracking-widest text-red-600">ZFLIX</p>
+        <h1 className="mt-2 text-3xl font-bold text-slate-900">Đăng nhập</h1>
         <p className="mt-2 text-sm text-slate-500">
           {mfaChallenge
-            ? "Enter your authenticator code or a recovery code."
-            : "Use your email and password to continue."}
+            ? "Nhập mã xác thực (TOTP) hoặc mã khôi phục."
+            : "Dùng email và mật khẩu để tiếp tục."}
         </p>
         {(new URLSearchParams(location.search).has("passwordChanged") || location.state?.passwordReset) && (
           <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
-            Password updated. Please sign in again.
+            Đã cập nhật mật khẩu. Vui lòng đăng nhập lại.
           </p>
         )}
         {location.state?.registered && (
           <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
-            Account created. Please sign in.
+            Đã tạo tài khoản. Vui lòng đăng nhập.
           </p>
         )}
 
         <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
           {mfaChallenge ? (
             <label className="block text-sm font-medium text-slate-700">
-              Authentication or recovery code
+              Mã xác thực hoặc mã khôi phục
               <input
                 className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
                 type="text"
@@ -99,7 +99,7 @@ const LoginPage = () => {
                 />
               </label>
               <label className="block text-sm font-medium text-slate-700">
-                Password
+                Mật khẩu
                 <input
                   className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
                   type="password"
@@ -121,7 +121,7 @@ const LoginPage = () => {
             type="submit"
             disabled={submitting}
           >
-            {submitting ? "Signing in..." : mfaChallenge ? "Verify code" : "Sign in"}
+            {submitting ? "Đang đăng nhập..." : mfaChallenge ? "Xác nhận mã" : "Đăng nhập"}
           </button>
           {mfaChallenge && (
             <button
@@ -133,14 +133,14 @@ const LoginPage = () => {
                 setError("");
               }}
             >
-              Back to password sign in
+              Quay lại đăng nhập bằng mật khẩu
             </button>
           )}
         </form>
         {!mfaChallenge && (
           <div className="mt-5 space-y-2 text-center text-sm">
-            <p><Link className="font-medium text-red-600 hover:underline" to="/forgot-password">Forgot password?</Link></p>
-            <p>New to MovieHub? <Link className="font-medium text-red-600 hover:underline" to="/register">Create an account</Link></p>
+            <p><Link className="font-medium text-red-600 hover:underline" to="/forgot-password">Quên mật khẩu?</Link></p>
+            <p>Chưa có tài khoản? <Link className="font-medium text-red-600 hover:underline" to="/register">Đăng ký ngay</Link></p>
           </div>
         )}
       </section>
