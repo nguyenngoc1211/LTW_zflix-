@@ -136,6 +136,16 @@ npm run dev                 # chạy tại http://localhost:5173
 Không có API key bên thứ ba nào được nhúng trong code. Các giá trị bí mật chỉ nằm trong
 `.env` (đã liệt kê trong `.gitignore`).
 
+**Chống lộ secret:** repo có hook chặn commit file `.env` — bật cho máy của bạn sau khi
+clone (1 lần):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Nếu lỡ tay commit secret thật: **revoke/đổi key ngay** ở nhà cung cấp (Gemini/Shopee...),
+rồi dọn history bằng `git filter-repo` trước khi force-push (cần đồng ý cả nhóm).
+
 ## 🧪 Kiểm thử
 
 ```bash

@@ -1,0 +1,20 @@
+#!/bin/sh
+# Chặn commit file env nhạy cảm (.env.example được phép)
+PATTERN='(^|/)\.env$|\.env\.(local|production|development)$'
+FILES=$(git diff --cached --name-only)
+BLOCKED=$(echo "$FILES" | grep -E "$PATTERN")
+if [ -n "$BLOCKED" ]; then
+  echo "❌ TU CHOI COMMIT: file env nhay cam khong duoc commit:"
+  echo "$BLOCKED"
+  echo "   Dung .env.example cho template. Secret chi giu local."
+  exit 1
+fi
+# Cảnh báo key nhạy cảm trong nội dung file staged
+SECRET_SCAN=$(git diff --cached | grep -inE "AIza[A-Za-z0-9_-]{30,}|AQ[.][A-Za-z0-9_-]{40,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA |EC )?PRIVATE KEY" | head -5)
+if [ -n "$SECRET_SCAN" ]; then
+  echo "⚠️  PHAT HIEN key co the la secret trong commit:"
+  echo "$SECRET_SCAN"
+  echo "   Neu chac chan khong phai secret: commit lai voi --no-verify"
+  exit 1
+fi
+exit 0
