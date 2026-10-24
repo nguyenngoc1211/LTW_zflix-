@@ -11,6 +11,7 @@ import PartiesAdminPage from "../admin/community/PartiesAdminPage.jsx";
 import SubscriptionsAdminPage from "../admin/subscriptions/SubscriptionsAdminPage.jsx";
 import SecurityAdminPage from "../admin/security/SecurityAdminPage.jsx";
 import SettingsAdminPage from "../admin/settings/SettingsAdminPage.jsx";
+import ShoppingAdminPage from "../admin/shopping/ShoppingAdminPage.jsx";
 import AdminLoginPage from "../modules/auth/AdminLoginPage.jsx";
 import LoginPage from "../modules/auth/LoginPage";
 import AccountSecurityPage from "../modules/auth/AccountSecurityPage";
@@ -89,6 +90,7 @@ export const router = createBrowserRouter([
           { path: "/admin/movies", element: <MoviesAdminPage /> },
           { path: "/admin/community", element: <CommunityAdminPage /> },
           { path: "/admin/parties", element: <PartiesAdminPage /> },
+          { path: "/admin/shopping", element: <ShoppingAdminPage /> },
           { path: "/admin/views", element: <ViewsPage /> },
           {
             element: <ProtectedRoute allowedRoles={["admin"]} />,

@@ -12,6 +12,7 @@ import {
   DollarOutlined,
   SafetyOutlined,
   SettingOutlined,
+  ShoppingOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Dropdown, Space, Avatar } from "antd";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
@@ -115,6 +116,7 @@ const AdminPage = () => {
       parties: "parties",
       subscriptions: "subscriptions",
       views: "views",
+      shopping: "shopping",
       security: "security",
       settings: "settings",
     };
@@ -143,6 +145,11 @@ const AdminPage = () => {
       label: <Link to="/admin/parties">Watch Party</Link>,
       key: "parties",
       icon: <ExceptionOutlined />,
+    },
+    {
+      label: <Link to="/admin/shopping">Mua sắm trong phim</Link>,
+      key: "shopping",
+      icon: <ShoppingOutlined />,
     },
     {
       label: <Link to="/admin/views">Thống kê lượt xem</Link>,

@@ -75,6 +75,49 @@ CREATE TABLE `app_settings` (
   PRIMARY KEY (`setting_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Table structure for table `production_products`
+--
+
+DROP TABLE IF EXISTS `production_products`;
+CREATE TABLE `production_products` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `production_id` int NOT NULL,
+  `episode_id` int DEFAULT NULL,
+  `timestamp_start` int NOT NULL DEFAULT 0,
+  `timestamp_end` int NOT NULL DEFAULT 0,
+  `product_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `category` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `image_url` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `shopee_keyword` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `click_count` int NOT NULL DEFAULT 0,
+  `created_by` int DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pp_production` (`production_id`),
+  KEY `idx_pp_episode` (`episode_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Table structure for table `product_snapshots`
+--
+
+DROP TABLE IF EXISTS `product_snapshots`;
+CREATE TABLE `product_snapshots` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` int DEFAULT NULL,
+  `episode_id` int DEFAULT NULL,
+  `position` int NOT NULL DEFAULT 0,
+  `image_path` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `matched_product_id` int DEFAULT NULL,
+  `keyword_used` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ps_user` (`user_id`),
+  KEY `idx_ps_episode` (`episode_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Dumping data for table `actors`
 --
 

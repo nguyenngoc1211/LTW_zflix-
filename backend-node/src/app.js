@@ -13,6 +13,7 @@ import { adminRouter } from "./modules/admin/admin.routes.js";
 import { adminContentRouter } from "./modules/admin/admin.content.routes.js";
 import { adminModerationRouter } from "./modules/admin/admin.moderation.routes.js";
 import { adminSystemRouter } from "./modules/admin/admin.system.routes.js";
+import { shoppingRouter } from "./modules/shopping/shopping.routes.js";
 import { requireAuth } from "./core/middleware/auth.middleware.js";
 import { pool } from "./core/database/pool.js";
 
@@ -41,6 +42,7 @@ export const createApp = () => {
   app.use("/api/v1", communityRouter);
   app.use("/api/v1", streamingRouter);
   app.use("/api/v1", watchPartyRouter);
+  app.use("/api/v1", shoppingRouter);
   app.use("/api/v1/admin", adminRouter);
   app.use("/api/v1/admin", adminContentRouter);
   app.use("/api/v1/admin", adminModerationRouter);
