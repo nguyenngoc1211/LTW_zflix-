@@ -259,6 +259,8 @@ const PlayerPage = () => {
   const lastSaved = useRef(0);
   const [lensCard, setLensCard] = useState(null); // { result, photo }
   const [lensOpen, setLensOpen] = useState(false);
+  // Bật crossOrigin để chụp khung hình cho AI; host video không CORS sẽ fallback tắt nó
+  const [videoNoCors, setVideoNoCors] = useState(false);
   useEffect(() => { apiRequest(`/api/v1/episodes/${episodeId}`).then(setEpisode); }, [episodeId]);
   const save = (seconds) => {
     if (Math.abs(seconds - lastSaved.current) < 10) return;
@@ -294,7 +296,16 @@ const PlayerPage = () => {
         <h1>Tập {episode.episode_number}: {episode.title}</h1>
         <div className="player-stage">
           {episode.video_url ? (
-            <video ref={videoRef} controls autoPlay src={episode.video_url} onTimeUpdate={(e) => { setPosition(e.currentTarget.currentTime); save(Math.floor(e.currentTarget.currentTime)); }} onPause={(e) => save(Math.floor(e.currentTarget.currentTime))} />
+            <video
+              ref={videoRef}
+              controls
+              autoPlay
+              src={episode.video_url}
+              {...(videoNoCors ? {} : { crossOrigin: "anonymous" })}
+              onError={() => { if (!videoNoCors) setVideoNoCors(true); }}
+              onTimeUpdate={(e) => { setPosition(e.currentTarget.currentTime); save(Math.floor(e.currentTarget.currentTime)); }}
+              onPause={(e) => save(Math.floor(e.currentTarget.currentTime))}
+            />
           ) : (
             <div className="video-placeholder"><span>▶</span><p>Chưa có URL video trong dữ liệu mẫu.</p></div>
           )}
