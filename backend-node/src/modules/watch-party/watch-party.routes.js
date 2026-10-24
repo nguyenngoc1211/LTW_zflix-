@@ -96,7 +96,7 @@ watchPartyRouter.post(
   "/watch-party",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { title, episodeId, password, maxParticipants } = req.body;
+    const { title, episodeId, password, maxParticipants } = req.body || {};
     if (!title || typeof title !== "string" || !title.trim()) {
       return res.status(400).json({ message: "title is required" });
     }
@@ -182,7 +182,7 @@ watchPartyRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { partyId } = req.params;
-    const { password } = req.body;
+    const { password } = req.body || {};
 
     const [parties] = await pool.execute(
       "SELECT id, password, max_participants, status FROM watch_parties WHERE id = ? LIMIT 1",
@@ -272,7 +272,7 @@ watchPartyRouter.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { partyId } = req.params;
-    const { status } = req.body;
+    const { status } = req.body || {};
 
     const allowed = ["waiting", "playing", "paused", "ended"];
     if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid status" });
@@ -299,7 +299,7 @@ watchPartyRouter.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { partyId } = req.params;
-    const { currentPosition, isPlaying } = req.body;
+    const { currentPosition, isPlaying } = req.body || {};
 
     const [parts] = await pool.execute(
       "SELECT role, can_control_playback FROM watch_party_participants WHERE party_id = ? AND user_id = ?",
@@ -337,7 +337,7 @@ watchPartyRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { partyId } = req.params;
-    const content = typeof req.body.message === "string" ? req.body.message.trim() : "";
+    const content = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     if (!content || content.length > 1000) {
       return res.status(400).json({ message: "Message is required and must not exceed 1000 characters" });
     }
@@ -364,7 +364,7 @@ watchPartyRouter.post(
       return res.status(403).json({ message: "Chat is disabled in this party" });
     }
 
-    const timestampInVideo = Number(req.body.timestampInVideo) || 0;
+    const timestampInVideo = Number(req.body?.timestampInVideo) || 0;
 
     const [result] = await pool.execute(
       `INSERT INTO watch_party_chats (party_id, user_id, message, timestamp_in_video, is_system_message)
@@ -401,7 +401,7 @@ watchPartyRouter.patch(
       return res.status(403).json({ message: "Only host can manage participants" });
     }
 
-    const { action } = req.body;
+    const { action } = req.body || {};
 
     switch (action) {
       case "mute": {
