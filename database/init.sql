@@ -42,6 +42,39 @@ CREATE TABLE `actors` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+--
+-- Table structure for table `security_events`
+--
+
+DROP TABLE IF EXISTS `security_events`;
+CREATE TABLE `security_events` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `event` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user_id` int DEFAULT NULL,
+  `session_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ip` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `reason` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `factor` varchar(16) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_se_event` (`event`),
+  KEY `idx_se_user` (`user_id`),
+  KEY `idx_se_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Table structure for table `app_settings`
+--
+
+DROP TABLE IF EXISTS `app_settings`;
+CREATE TABLE `app_settings` (
+  `setting_key` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `setting_value` text COLLATE utf8mb4_unicode_ci,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`setting_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Dumping data for table `actors`
 --
 
@@ -717,7 +750,7 @@ CREATE TABLE `users` (
   `email` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `password` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `avatar_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '/default-avatar.png',
-  `role` enum('admin','user') COLLATE utf8mb4_unicode_ci DEFAULT 'user',
+  `role` enum('user','moderator','admin') COLLATE utf8mb4_unicode_ci DEFAULT 'user',
   `vip_expires_at` datetime DEFAULT NULL,
   `auto_renew` tinyint(1) DEFAULT '0',
   `provider` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'local',

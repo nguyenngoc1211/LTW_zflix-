@@ -8,6 +8,10 @@ import {
   LogoutOutlined,
   HomeOutlined,
   BarChartOutlined,
+  ExceptionOutlined,
+  DollarOutlined,
+  SafetyOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Dropdown, Space, Avatar } from "antd";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
@@ -107,7 +111,12 @@ const AdminPage = () => {
       admin: "analytics",
       users: "users",
       movies: "movies",
+      community: "community",
+      parties: "parties",
+      subscriptions: "subscriptions",
       views: "views",
+      security: "security",
+      settings: "settings",
     };
     return keyMap[lastSegment] || "analytics";
   };
@@ -121,20 +130,49 @@ const AdminPage = () => {
       icon: <AppstoreOutlined />,
     },
     {
-      label: <Link to="/admin/users">Quản lý người dùng</Link>,
-      key: "users",
-      icon: <UserOutlined />,
-    },
-    {
       label: <Link to="/admin/movies">Quản lý phim</Link>,
       key: "movies",
       icon: <PlaySquareOutlined />,
+    },
+    {
+      label: <Link to="/admin/community">Cộng đồng</Link>,
+      key: "community",
+      icon: <TeamOutlined />,
+    },
+    {
+      label: <Link to="/admin/parties">Watch Party</Link>,
+      key: "parties",
+      icon: <ExceptionOutlined />,
     },
     {
       label: <Link to="/admin/views">Thống kê lượt xem</Link>,
       key: "views",
       icon: <BarChartOutlined />,
     },
+    ...(user?.role === "admin"
+      ? [
+          {
+            label: <Link to="/admin/users">Quản lý người dùng</Link>,
+            key: "users",
+            icon: <UserOutlined />,
+          },
+          {
+            label: <Link to="/admin/subscriptions">VIP & Doanh thu</Link>,
+            key: "subscriptions",
+            icon: <DollarOutlined />,
+          },
+          {
+            label: <Link to="/admin/security">Nhật ký bảo mật</Link>,
+            key: "security",
+            icon: <SafetyOutlined />,
+          },
+          {
+            label: <Link to="/admin/settings">Cài đặt hệ thống</Link>,
+            key: "settings",
+            icon: <SettingOutlined />,
+          },
+        ]
+      : []),
   ];
 
   const handleToggle = () => setCollapsed(!collapsed);

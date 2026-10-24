@@ -6,6 +6,11 @@ import DashboardPage from "../admin/analytics/DashboardPage.jsx";
 import UsersAdminPage from "../admin/users/UsersAdminPage.jsx";
 import MoviesAdminPage from "../admin/content/MoviesAdminPage.jsx";
 import ViewsPage from "../admin/analytics/ViewsPage.jsx";
+import CommunityAdminPage from "../admin/community/CommunityAdminPage.jsx";
+import PartiesAdminPage from "../admin/community/PartiesAdminPage.jsx";
+import SubscriptionsAdminPage from "../admin/subscriptions/SubscriptionsAdminPage.jsx";
+import SecurityAdminPage from "../admin/security/SecurityAdminPage.jsx";
+import SettingsAdminPage from "../admin/settings/SettingsAdminPage.jsx";
 import AdminLoginPage from "../modules/auth/AdminLoginPage.jsx";
 import LoginPage from "../modules/auth/LoginPage";
 import AccountSecurityPage from "../modules/auth/AccountSecurityPage";
@@ -71,7 +76,7 @@ export const router = createBrowserRouter([
     element: <AdminLoginPage />,
   },
   {
-    element: <ProtectedRoute allowedRoles={["admin"]} />,
+    element: <ProtectedRoute allowedRoles={["admin", "moderator"]} />,
     children: [
       {
         path: "/admin",
@@ -81,17 +86,18 @@ export const router = createBrowserRouter([
             index: true,
             element: <DashboardPage />,
           },
+          { path: "/admin/movies", element: <MoviesAdminPage /> },
+          { path: "/admin/community", element: <CommunityAdminPage /> },
+          { path: "/admin/parties", element: <PartiesAdminPage /> },
+          { path: "/admin/views", element: <ViewsPage /> },
           {
-            path: "/admin/users",
-            element: <UsersAdminPage />,
-          },
-          {
-            path: "/admin/movies",
-            element: <MoviesAdminPage />,
-          },
-          {
-            path: "/admin/views",
-            element: <ViewsPage />,
+            element: <ProtectedRoute allowedRoles={["admin"]} />,
+            children: [
+              { path: "/admin/users", element: <UsersAdminPage /> },
+              { path: "/admin/subscriptions", element: <SubscriptionsAdminPage /> },
+              { path: "/admin/security", element: <SecurityAdminPage /> },
+              { path: "/admin/settings", element: <SettingsAdminPage /> },
+            ],
           },
         ],
       },
