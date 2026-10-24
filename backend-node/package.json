@@ -10,7 +10,8 @@
     "test": "node --test",
     "test:integration": "node integration/auth-smoke.js && node integration/password-lifecycle-smoke.js && node integration/mfa-smoke.js && node integration/registration-smoke.js",
     "test:registration": "node integration/registration-smoke.js",
-    "test:cleanup": "node integration/auth-cleanup-smoke.js"
+    "test:cleanup": "node integration/auth-cleanup-smoke.js",
+    "test:serpapi": "node scripts/test-serpapi.mjs"
   },
   "keywords": [],
   "author": "",
