@@ -130,6 +130,9 @@ const LensResult = ({ result, photo, onBuy, onBuyShopeeItem, onClose }) => {
         <button type="button" className="lens-close" onClick={onClose}>✕</button>
       </div>
       {photo && <img className="lens-result-photo" src={photo} alt="Vùng đã quét" />}
+      {result.aiKeyword && (
+        <p className="lens-ai-badge">🤖 AI nhận diện: “{result.aiKeyword}”{result.aiCategory ? ` · ${result.aiCategory}` : ""}</p>
+      )}
       {items.length === 0 && <p className="lens-result-note">{result.note || "Thử khoanh vùng khác hoặc tìm theo từ khoá."}</p>}
       {items.map((item) => (
         <div key={item.id} className="lens-product-card">

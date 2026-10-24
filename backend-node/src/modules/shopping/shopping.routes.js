@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { pool } from "../../core/database/pool.js";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { shopeeAffiliateConfigured, generateShortLink, searchProducts } from "./shopee.affiliate.js";
+import { visionConfigured, identifyProduct } from "./vision.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 
 export const shoppingRouter = Router();
@@ -98,6 +99,20 @@ shoppingRouter.post(
       return res.status(400).json({ message: "episodeId là bắt buộc" });
     }
 
+    // Lưu ảnh chụp + chuẩn bị base64 cho AI (nếu cấu hình provider)
+    let imagePath = null;
+    let imageBase64 = null;
+    if (photo) {
+      const base64 = photo.split(",")[1] || "";
+      if (base64.length > 4_000_000) return res.status(413).json({ message: "Ảnh quá lớn (tối đa ~3MB)" });
+      imageBase64 = base64;
+      imagePath = `snapshot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      fs.promises.writeFile(path.join(UPLOAD_DIR, imagePath), Buffer.from(base64, "base64")).catch(() => {});
+    }
+
+    // AI nhận diện món đồ (Gemini/SerpAPI nếu cấu hình) — từ khoá tiếng Việt
+    const ai = photo && visionConfigured() ? await identifyProduct(imageBase64, imagePath) : null;
+
     // Match sản phẩm theo mốc thời gian của tập đang xem
     const [matches] = await pool.execute(
       `SELECT pp.* FROM production_products pp
@@ -106,33 +121,28 @@ shoppingRouter.post(
       [episodeId, episodeId, position],
     );
 
-    // Lưu snapshot (ảnh chụp + kết quả match) để đối chiếu / huấn luyện AI sau này
-    let imagePath = null;
-    if (photo) {
-      const base64 = photo.split(",")[1] || "";
-      if (base64.length > 4_000_000) return res.status(413).json({ message: "Ảnh quá lớn (tối đa ~3MB)" });
-      imagePath = `snapshot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-      fs.promises.writeFile(path.join(UPLOAD_DIR, imagePath), Buffer.from(base64, "base64")).catch(() => {});
-    }
-    if (photo || keyword) {
-      await pool.execute(
-        "INSERT INTO product_snapshots (user_id, episode_id, position, image_path, matched_product_id, keyword_used) VALUES (?, ?, ?, ?, ?, ?)",
-        [req.user?.id ?? null, episodeId, position, imagePath, matches[0]?.id ?? null, keyword || null],
-      ).catch(() => {});
-    }
+    const usedKeyword = keyword || ai?.keyword || null;
+    await pool.execute(
+      "INSERT INTO product_snapshots (user_id, episode_id, position, image_path, matched_product_id, keyword_used) VALUES (?, ?, ?, ?, ?, ?)",
+      [req.user?.id ?? null, episodeId, position, imagePath, matches[0]?.id ?? null, usedKeyword],
+    ).catch(() => {});
 
     // Có từ khoá thủ công thì trả luôn link Shopee tìm với từ khoá đó
-    const quickSearch = keyword ? { keyword, shopeeUrl: buildShopeeLink(keyword) } : null;
+    const quickSearch = usedKeyword ? { keyword: usedKeyword, shopeeUrl: buildShopeeLink(usedKeyword) } : null;
 
-    // Có Shopee Open API: tìm sản phẩm SHOPEE THẬT theo từ khoá của sản phẩm khớp
-    // (ảnh/giá/hoa hồng hiển thị trực tiếp trên thẻ quét)
+    // Có Shopee Open API: tìm sản phẩm SHOPEE THẬT — ưu tiên keyword AI, fallback từ sản phẩm khớp mốc
     let shopeeItems = [];
-    if (shopeeAffiliateConfigured() && matches.length) {
+    if (shopeeAffiliateConfigured()) {
       try {
-        const searchLists = await Promise.all(
-          matches.slice(0, 3).map((match) => searchProducts(match.shopee_keyword, 3).catch(() => [])),
-        );
-        shopeeItems = [...new Map(searchLists.flat().map((item) => [item.itemId, item])).values()].slice(0, 6);
+        const searchLists = [];
+        if (ai?.keyword) searchLists.push(searchProducts(ai.keyword, 4).catch(() => []));
+        if (matches.length) {
+          searchLists.push(
+            ...matches.slice(0, 3).map((match) => searchProducts(match.shopee_keyword, 3).catch(() => [])),
+          );
+        }
+        const all = (await Promise.all(searchLists)).flat();
+        shopeeItems = [...new Map(all.map((item) => [item.itemId, item])).values()].slice(0, 6);
       } catch (error) {
         console.warn("Shopee search_product thất bại:", error.message);
       }
@@ -142,11 +152,15 @@ shoppingRouter.post(
       position,
       items: matches.map(toProductView),
       shopeeItems,
+      aiKeyword: ai?.keyword || null,
+      aiCategory: ai?.category || null,
       quickSearch,
       affiliateEnabled: affiliateConfigured(),
       note: matches.length
         ? null
-        : "Chưa có sản phẩm nào được gắn ở thời điểm này — dùng tìm nhanh theo từ khoá hoặc quay lại sau.",
+        : ai?.keyword
+          ? `AI nhận diện: "${ai.keyword}" — bấm tìm nhanh để xem trên Shopee.`
+          : "Chưa có sản phẩm nào được gắn ở thời điểm này — dùng tìm nhanh theo từ khoá hoặc quay lại sau.",
     });
   }),
 );

@@ -171,3 +171,4 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
 .lens-shopee-head { margin: .7rem 0 0; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: #ff8a3d; }
 .lens-product-card.shopee-item { background: #1a1410; border-color: #4a3524; }
 .lens-item-img { width: 44px; height: 44px; border-radius: .4rem; object-fit: cover; flex-shrink: 0; background: #242833; }
+.lens-ai-badge { margin: .6rem 0 0; padding: .4rem .6rem; border-radius: .5rem; background: rgba(124,58,237,.18); border: 1px solid rgba(124,58,237,.45); color: #c4b5fd; font-size: .8rem; }
