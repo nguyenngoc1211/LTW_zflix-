@@ -4,6 +4,9 @@ import { spawnSync } from "node:child_process";
 import jwt from "jsonwebtoken";
 import request from "supertest";
 
+// Test luôn chạy môi trường test, bất kể .env.local đặt NODE_ENV ra sao
+process.env.NODE_ENV = "test";
+
 process.env.DATABASE_URL ||= "mysql://root:rootpassword@127.0.0.1:3306/movie_streaming_db";
 process.env.JWT_ACCESS_SECRET ||= "test-only-secret-with-at-least-thirty-two-characters";
 process.env.FRONTEND_ORIGIN ||= "http://localhost:5173";

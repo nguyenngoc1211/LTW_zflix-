@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+// Test luôn chạy môi trường test, bất kể .env.local đặt NODE_ENV ra sao
+process.env.NODE_ENV = "test";
+
 const root = new URL("../../", import.meta.url);
 const [freshSchema, migrationRunner, phase4Migration] = await Promise.all([
   readFile(new URL("database/init.sql", root), "utf8"),

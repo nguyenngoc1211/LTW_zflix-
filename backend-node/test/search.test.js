@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+// Test luôn chạy môi trường test, bất kể .env.local đặt NODE_ENV ra sao
+process.env.NODE_ENV = "test";
+
 process.env.DATABASE_URL ||= "mysql://root:rootpassword@localhost:3306/movie_streaming_db";
 
 const { buildElasticQuery } = await import("../src/modules/discovery/search.service.js");

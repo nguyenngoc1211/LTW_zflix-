@@ -19,15 +19,21 @@ if (isProduction && insecureProductionSecret) {
   throw new Error("JWT_ACCESS_SECRET must be a strong, non-demo value in production");
 }
 
-const configuredOrigin = process.env.FRONTEND_ORIGIN?.trim();
-if (isProduction && !configuredOrigin) {
+const configuredOriginList = (process.env.FRONTEND_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+if (isProduction && configuredOriginList.length === 0) {
   throw new Error("FRONTEND_ORIGIN is required in production");
 }
 
-const originUrl = new URL(configuredOrigin || "http://localhost:5173");
-if (!["http:", "https:"].includes(originUrl.protocol)) {
-  throw new Error("FRONTEND_ORIGIN must use http or https");
-}
+const frontendOriginList = configuredOriginList.map((origin) => {
+  const originUrl = new URL(origin);
+  if (!["http:", "https:"].includes(originUrl.protocol)) {
+    throw new Error("FRONTEND_ORIGIN must use http or https");
+  }
+  return originUrl.origin;
+});
 
 const positiveInteger = (value, fallback) => {
   const parsed = Number(value);
@@ -55,7 +61,8 @@ export const securityConfig = Object.freeze({
   isProduction,
   jwtAccessSecret,
   jwtAlgorithms: Object.freeze(["HS256"]),
-  frontendOrigin: originUrl.origin,
+  frontendOrigin: frontendOriginList[0],
+  frontendOrigins: frontendOriginList,
   loginRateLimit: Object.freeze({
     windowMs: positiveInteger(process.env.LOGIN_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
     max: positiveInteger(process.env.LOGIN_RATE_LIMIT_MAX, 10),
