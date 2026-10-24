@@ -9,6 +9,7 @@ import { discoveryRouter } from "./modules/discovery/discovery.routes.js";
 import { communityRouter } from "./modules/community/community.routes.js";
 import { streamingRouter } from "./modules/streaming/streaming.routes.js";
 import { watchPartyRouter } from "./modules/watch-party/watch-party.routes.js";
+import { adminRouter } from "./modules/admin/admin.routes.js";
 import { requireAuth, requireRole } from "./core/middleware/auth.middleware.js";
 
 export const createApp = () => {
@@ -36,6 +37,7 @@ export const createApp = () => {
   app.use("/api/v1", communityRouter);
   app.use("/api/v1", streamingRouter);
   app.use("/api/v1", watchPartyRouter);
+  app.use("/api/v1/admin", adminRouter);
 
   app.get(
     "/api/v1/admin/check",

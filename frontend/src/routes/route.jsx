@@ -2,10 +2,11 @@ import { createBrowserRouter } from "react-router-dom";
 import App from "../App";
 import HomePage from "../modules/discovery/HomePage";
 import AdminPage from "../admin/AdminPage";
-import Test from "../admin/analytics/Test";
-import Test1 from "../admin/users/Test";
-import Test2 from "../admin/content/Test";
-import Test3 from "../admin/community/Test";
+import DashboardPage from "../admin/analytics/DashboardPage.jsx";
+import UsersAdminPage from "../admin/users/UsersAdminPage.jsx";
+import MoviesAdminPage from "../admin/content/MoviesAdminPage.jsx";
+import ViewsPage from "../admin/analytics/ViewsPage.jsx";
+import AdminLoginPage from "../modules/auth/AdminLoginPage.jsx";
 import LoginPage from "../modules/auth/LoginPage";
 import AccountSecurityPage from "../modules/auth/AccountSecurityPage";
 import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
@@ -66,6 +67,10 @@ export const router = createBrowserRouter([
     element: <ResetPasswordPage />,
   },
   {
+    path: "/admin-login",
+    element: <AdminLoginPage />,
+  },
+  {
     element: <ProtectedRoute allowedRoles={["admin"]} />,
     children: [
       {
@@ -74,19 +79,19 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Test />,
+            element: <DashboardPage />,
           },
           {
             path: "/admin/users",
-            element: <Test1 />,
+            element: <UsersAdminPage />,
           },
           {
-            path: "/admin/content",
-            element: <Test2 />,
+            path: "/admin/movies",
+            element: <MoviesAdminPage />,
           },
           {
-            path: "/admin/community",
-            element: <Test3 />,
+            path: "/admin/views",
+            element: <ViewsPage />,
           },
         ],
       },
