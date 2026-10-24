@@ -66,5 +66,8 @@ env/
 db_data/
 mysql_data/
 
+# Ảnh người dùng chụp khi quét đồ vật (runtime data)
+/backend-node/uploads/
+
 # Local-only runbook
 /docs/LOCAL_DOCKER_GUIDE.md
