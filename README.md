@@ -150,8 +150,11 @@ rồi dọn history bằng `git filter-repo` trước khi force-push (cần đ�
 
 ```bash
 cd backend-node
-npm test                    # 19 unit test (auth, MFA, schema consistency, search, security logger)
+npm test                    # 24 unit test (auth, MFA, schema, search, security logger, vision parser)
 npm run test:integration    # smoke test luồng auth (cần DB đang chạy)
+npm run seed:omdb           # nạp dữ liệu phim THẬT từ OMDb (cần OMDB_API_KEY, key free tại omdbapi.com/apikey.aspx)
+                            # + video hợp pháp: Blender open movies / Archive.org
+                            # Lưu ý: script xóa nội dung content tables, giữ nguyên users
 
 cd frontend
 npm run lint                # ESLint
