@@ -13,7 +13,7 @@ việc của nhiều thành viên trên các nhánh Git khác nhau (`dev`, `Du`,
 | **Community** | nhánh `Hai` | Yêu thích (bookmarks), quan tâm phim mới, đánh giá 1–5 sao, bình luận, thông báo |
 | **Streaming** | nhánh `Hai` | Lịch sử xem, lưu/tiếp tục vị trí xem, trình phát video |
 | **Watch Party** | nhánh `Khoa` | Xem phim cùng nhau real-time (Socket.IO): đồng bộ play/pause/nhảy thời gian, chat trong phòng, quản lý thành viên (mute/kick/promote), phòng có mật khẩu |
-| **Admin** | nhánh `Du`/`Hai` | Khung trang quản trị + API `POST /search/reindex`, `POST /productions/:id/episodes` (yêu cầu role `admin`) |
+| **Admin** | nhánh `Ngoc` | Hệ quản trị riêng cho admin: dashboard tổng quan, quản lý người dùng (tìm kiếm/đổi role/khóa tài khoản), quản lý phim (VIP/trạng thái), thống kê lượt xem (biểu đồ 30 ngày, top phim, theo thể loại). Đăng nhập qua URL ẩn `/admin-login` |
 | **AI / Video services** | nhánh `dev` | Hai service Python (FastAPI) dạng stub — chỉ có health-check, dành cho mở rộng sau |
 
 ## 🏗️ Kiến trúc
@@ -30,6 +30,26 @@ docker-compose.yml   MySQL 8 + Elasticsearch 8 + backend + 2 service Python + fr
 - `business-auth.bridge.js` là cầu nối: các module nghiệp vụ dùng chung middleware xác thực
   của module `auth` (đăng nhập bằng JWT; khi chưa đăng nhập API riêng tư trả 401).
 - Tìm kiếm dùng Elasticsearch nếu khả dụng, tự động fallback về MySQL LIKE khi ES tắt.
+
+## 🛡️ Hệ quản trị (Admin)
+
+Trang đăng nhập quản trị **ẩn** với người dùng thường — không có link nào từ giao diện
+người dùng; truy cập trực tiếp: **`/admin-login`** (vd `http://localhost:5173/admin-login`).
+
+- Tài khoản không phải admin đăng nhập tại đây sẽ bị **từ chối và thu hồi phiên ngay**.
+- Sau khi đăng nhập: `/admin` (Tổng quan), `/admin/users`, `/admin/movies`, `/admin/views`.
+- Người dùng thường vào `/admin` sẽ bị chuyển hướng về trang chủ.
+- API: `GET /api/v1/admin/{stats,users,views}`, `PATCH /api/v1/admin/{users/:id,productions/:id}` —
+  tất cả yêu cầu JWT + role `admin`.
+
+Dữ liệu mẫu có sẵn tài khoản `admin@moviehub.com` nhưng mật khẩu trong dump đã hash. Để đặt
+lại mật khẩu admin trên máy bạn (ví dụ `Admin@12345`):
+
+```bash
+cd backend-node
+node -e "const b=require('bcryptjs');console.log(b.hashSync('Admin@12345',12))"   # copy hash
+mysql -u root -p -e "UPDATE movie_streaming_db.users SET password='<hash>' WHERE email='admin@moviehub.com'"
+```
 
 ## 🚀 Chạy bằng Docker (khuyên dùng)
 
@@ -125,4 +145,5 @@ npm run build               # build production
 - `Du` — xác thực & bảo mật (login/register/MFA/reset password/session)
 - `Hai` — discovery (tìm kiếm/lọc phim), community, streaming
 - `Khoa` — watch party (Socket.IO real-time)
-- `Nam`, `Ngoc` — (chưa có code trên nhánh)
+- `Ngoc` — hệ quản trị admin (dashboard, quản lý user/phim, thống kê lượt xem)
+- `Nam` — (chưa có code trên nhánh)

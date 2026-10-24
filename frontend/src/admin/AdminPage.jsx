@@ -1,12 +1,13 @@
 import {
   AppstoreOutlined,
-  ExceptionOutlined,
+  PlaySquareOutlined,
   TeamOutlined,
   UserOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LogoutOutlined,
   HomeOutlined,
+  BarChartOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Dropdown, Space, Avatar } from "antd";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
@@ -20,13 +21,13 @@ const { Content, Sider, Header: AntHeader } = Layout;
 const MemoizedHeader = memo(({ collapsed, onToggle, username, onLogout }) => {
   const dropdownItems = [
     {
-      label: <Link to="/">Homepage</Link>,
+      label: <Link to="/">Về trang người dùng</Link>,
       key: "home",
       icon: <HomeOutlined />,
     },
     { type: "divider" },
     {
-      label: <span style={{ cursor: "pointer" }}>Log out</span>,
+      label: <span style={{ cursor: "pointer" }}>Đăng xuất</span>,
       key: "logout",
       icon: <LogoutOutlined />,
       danger: true,
@@ -105,8 +106,8 @@ const AdminPage = () => {
     const keyMap = {
       admin: "analytics",
       users: "users",
-      content: "content",
-      community: "community",
+      movies: "movies",
+      views: "views",
     };
     return keyMap[lastSegment] || "analytics";
   };
@@ -115,24 +116,24 @@ const AdminPage = () => {
 
   const menuItems = [
     {
-      label: <Link to="/admin">Analytics</Link>,
+      label: <Link to="/admin">Tổng quan</Link>,
       key: "analytics",
       icon: <AppstoreOutlined />,
     },
     {
-      label: <Link to="/admin/users">Users Management</Link>,
+      label: <Link to="/admin/users">Quản lý người dùng</Link>,
       key: "users",
       icon: <UserOutlined />,
     },
     {
-      label: <Link to="/admin/content">Content Management</Link>,
-      key: "content",
-      icon: <ExceptionOutlined />,
+      label: <Link to="/admin/movies">Quản lý phim</Link>,
+      key: "movies",
+      icon: <PlaySquareOutlined />,
     },
     {
-      label: <Link to="/admin/community">Community Management</Link>,
-      key: "community",
-      icon: <TeamOutlined />,
+      label: <Link to="/admin/views">Thống kê lượt xem</Link>,
+      key: "views",
+      icon: <BarChartOutlined />,
     },
   ];
 
@@ -147,11 +148,11 @@ const AdminPage = () => {
       <main className="grid min-h-screen place-items-center bg-slate-100 px-4">
         <div className="rounded-xl bg-white p-8 text-center shadow-sm">
           <h1 className="text-xl font-semibold text-slate-900">
-            {accessStatus === "checking" ? "Checking admin access..." :
-              accessStatus === "denied" ? "Admin access denied" : "Could not verify admin access"}
+            {accessStatus === "checking" ? "Đang kiểm tra quyền quản trị..." :
+              accessStatus === "denied" ? "Không có quyền quản trị" : "Không thể xác minh quyền quản trị"}
           </h1>
           {accessStatus !== "checking" && (
-            <Link className="mt-4 inline-block text-red-600 hover:underline" to="/">Back to homepage</Link>
+            <Link className="mt-4 inline-block text-red-600 hover:underline" to="/">Về trang chủ</Link>
           )}
         </div>
       </main>
