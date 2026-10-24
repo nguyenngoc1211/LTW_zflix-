@@ -1,6 +1,23 @@
 # 🎬 Movie Streaming Platform
 
-Hệ thống xem phim trực tuyến (Rophim Clone) xây dựng theo kiến trúc Modular Monorepo.
+Hệ thống xem phim trực tuyến xây dựng theo kiến trúc Modular Monorepo, gồm React,
+Express, MySQL, Elasticsearch và hai service Python.
+
+## ✨ Module trên branch `Hai`
+
+- Tìm kiếm phim bằng Elasticsearch, không phân biệt chữ hoa/chữ thường.
+- Lọc kết hợp theo thể loại, quốc gia, năm phát hành và rating; sắp xếp theo năm.
+- Trang danh sách, chi tiết phim, tập phim và trình phát.
+- Yêu thích, quan tâm phim mới và nhận thông báo khi có tập mới.
+- Lịch sử xem, lưu vị trí đang xem và tiếp tục phát.
+- Rating 1–5 sao, điểm trung bình và bình luận.
+- Kiểm tra ownership từ `req.user.id`; không nhận `userId` do client khai báo.
+
+Tài liệu:
+
+- [Cài đặt, vận hành và merge với branch Du](docs/HAI_MODULES_GUIDE.md)
+- [Danh sách API](docs/HAI_API_REFERENCE.md)
+- [Kết quả build và kiểm thử](docs/HAI_TEST_REPORT.md)
 
 ## 🚀 Yêu cầu cài đặt (Prerequisites)
 
@@ -18,14 +35,14 @@ Hệ thống xem phim trực tuyến (Rophim Clone) xây dựng theo kiến trú
 ### Bước 1: Clone mã nguồn
 Mở Terminal (hoặc Git Bash) và chạy:
 ```bash
-git clone <LINK_GITHUB_CUA_NHOM_O_DAY>
-cd CNPM
+git clone --branch Hai https://github.com/nguyenngoc1211/LTW_zflix-.git
+cd LTW_zflix-
 ```
 
 ### Bước 2: Khởi động hệ thống
 Mở Docker Desktop lên, sau đó chạy lệnh:
 ```bash
-docker compose up
+docker compose up -d
 ```
 
 Nếu là lần đầu tiên chạy hoặc vừa cài thêm thư viện mới, hãy dùng lệnh:
@@ -47,6 +64,7 @@ Sau khi khởi động xong, bạn có thể truy cập các dịch vụ tại:
 | **Backend Node** | `http://localhost:3000` | API chính (Express) |
 | **Video Service** | `http://localhost:8001` | Xử lý video (Python) |
 | **AI Service** | `http://localhost:8002` | Chatbot & Gợi ý (Python) |
+| **Elasticsearch** | `http://localhost:9200` | Tìm kiếm và lọc phim |
 | **Database** | `localhost:3306` | MySQL (User: `root` / Pass: `rootpassword`) |
 
 ---
@@ -76,6 +94,8 @@ Access token chỉ nên giữ trong bộ nhớ frontend. Refresh token nằm tro
 ---
 
 ## 👨‍💻 Quy trình làm việc (Workflow)
+
+> Module tìm kiếm, thư viện, lịch sử, đánh giá và thông báo của branch Hai: xem [docs/HAI_MODULES_GUIDE.md](docs/HAI_MODULES_GUIDE.md).
 
 ### 1. Code hàng ngày
 * **Frontend/Node.js:** Code có tính năng **Hot Reload**. Bạn cứ sửa file và Save (`Ctrl+S`), web sẽ tự cập nhật ngay lập tức mà không cần chạy lại Docker.

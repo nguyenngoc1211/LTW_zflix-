@@ -1,4 +1,4 @@
-import { Link, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth.js";
 
 const App = () => {
@@ -11,25 +11,32 @@ const App = () => {
   };
 
   return (
-    <div>
-      <header className="flex items-center justify-between bg-slate-950 px-6 py-4 text-white">
-        <Link to="/" className="text-xl font-bold text-red-500">MovieHub</Link>
-        <nav className="flex items-center gap-4 text-sm">
+    <div className="app">
+      <header className="site-header">
+        <Link to="/" className="brand">Z<span>FLIX</span></Link>
+        <nav>
+          <NavLink to="/">Khám phá</NavLink>
+          <NavLink to="/library">Thư viện</NavLink>
+          <NavLink to="/history">Lịch sử</NavLink>
+          <NavLink to="/notifications">Thông báo</NavLink>
+        </nav>
+        <div className="auth-nav">
           {user ? (
             <>
-              <span>{user.username} ({user.role})</span>
-              <Link to="/account/security">Security</Link>
+              <span className="auth-user">{user.username} ({user.role})</span>
+              <Link to="/account/security">Bảo mật</Link>
               {user.role === "admin" && <Link to="/admin">Admin</Link>}
-              <button type="button" onClick={handleLogout} className="rounded bg-red-600 px-3 py-2">
-                Log out
+              <button type="button" onClick={handleLogout} className="logout-button">
+                Đăng xuất
               </button>
             </>
           ) : (
-            <Link to="/login" className="rounded bg-red-600 px-3 py-2">Sign in</Link>
+            <Link to="/login" className="signin-button">Đăng nhập</Link>
           )}
-        </nav>
+        </div>
       </header>
       <Outlet />
+      <footer>© 2026 Zflix · Movie streaming platform</footer>
     </div>
   );
 };
