@@ -13,14 +13,14 @@ if (!key) {
   process.exit(1);
 }
 
-// Ảnh công khai mẫu: sản phẩm thời trang nam (Wikimedia, public domain)
+// Ảnh công khai mẫu (Wikimedia, URL sạch không ký tự đặc biệt)
 const testImage =
-  "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Mens_clothing_on_display%2C_H%26M_store%2C_Krak%C3%B3w_%282019%29.jpg/640px-Mens_clothing_on_display%2C_H%26M_store%2C_Krak%C3%B3w_%282019%29.jpg";
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Golde33443.jpg/640px-Golde33443.jpg";
 
 console.log("Đang gọi SerpAPI Google Lens...");
 const t0 = Date.now();
-const params = new URLSearchParams({ url: testImage, api_key: key });
-const response = await fetch(`https://serpapi.com/google-lens.json?${params}`, {
+const params = new URLSearchParams({ engine: "google_lens", url: testImage, api_key: key });
+const response = await fetch(`https://serpapi.com/search.json?${params}`, {
   signal: AbortSignal.timeout(30000),
 });
 const ms = ((Date.now() - t0) / 1000).toFixed(1);

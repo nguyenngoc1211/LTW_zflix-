@@ -71,8 +71,8 @@ const identifyWithGemini = async (base64Jpeg) => {
 
 // SerpAPI Google Lens: yêu cầu URL ảnh công khai (không nhận base64).
 const identifyWithSerpapi = async (publicImageUrl) => {
-  const params = new URLSearchParams({ url: publicImageUrl, api_key: SERPAPI_KEY });
-  const response = await fetch(`https://serpapi.com/google-lens.json?${params}`, { signal: AbortSignal.timeout(15000) });
+  const params = new URLSearchParams({ engine: "google_lens", url: publicImageUrl, api_key: SERPAPI_KEY });
+  const response = await fetch(`https://serpapi.com/search.json?${params}`, { signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error(`SerpAPI ${response.status}`);
   const json = await response.json();
   const matches = json?.visual_matches || [];
