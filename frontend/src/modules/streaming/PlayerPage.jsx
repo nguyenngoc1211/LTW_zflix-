@@ -49,8 +49,14 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
     setBusy(true);
     setError("");
     try {
+      // 1. Kết quả TỨC THỜI theo mốc thời gian — hiện ngay cho người dùng (<200ms)
+      const instant = await apiRequest("/api/v1/shopping/match", {
+        method: "POST",
+        body: JSON.stringify({ episodeId: episode.id, position: Math.floor(position) }),
+      });
+
+      // 2. Crop ảnh vùng khoanh (nếu canvas không bị CORS taint) — AI chạy nền sau
       let photo = null;
-      // Crop vùng đã khoanh từ frame hiện tại (nếu canvas không bị CORS taint)
       try {
         const video = videoRef.current;
         const container = containerRef.current;
@@ -58,21 +64,26 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
           const scaleX = video.videoWidth / container.clientWidth;
           const scaleY = video.videoHeight / container.clientHeight;
           const canvas = document.createElement("canvas");
-          canvas.width = Math.max(2, Math.round(rect.w * scaleX));
-          canvas.height = Math.max(2, Math.round(rect.h * scaleY));
+          let w = Math.max(2, Math.round(rect.w * scaleX));
+          let h = Math.max(2, Math.round(rect.h * scaleY));
+          // Thu nhỏ để AI xử lý nhanh hơn
+          if (w > 512) {
+            h = Math.round((512 / w) * h);
+            w = 512;
+          }
+          canvas.width = w;
+          canvas.height = h;
           canvas
             .getContext("2d")
-            .drawImage(video, Math.round(rect.x * scaleX), Math.round(rect.y * scaleY), canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-          photo = canvas.toDataURL("image/jpeg", 0.75);
+            .drawImage(video, Math.round(rect.x * scaleX), Math.round(rect.y * scaleY), Math.max(2, Math.round(rect.w * scaleX)), Math.max(2, Math.round(rect.h * scaleY)), 0, 0, w, h);
+          photo = canvas.toDataURL("image/jpeg", 0.7);
         }
       } catch {
-        // video domain khác làm canvas tainted — vẫn quét theo thời điểm
+        // video domain khác làm canvas tainted — không gửi ảnh được
       }
-      const result = await apiRequest("/api/v1/shopping/match", {
-        method: "POST",
-        body: JSON.stringify({ episodeId: episode.id, position: Math.floor(position), photo }),
-      });
-      onResult(result, photo);
+
+      // Kết quả tức thời lên màn hình NGAY, AI enrichment chạy nền ở PlayerPage
+      onResult(instant, photo, Math.floor(position));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -120,7 +131,7 @@ const formatVnd = (raw) => {
 // ---------------------------------------------------------------------------
 // Thẻ kết quả quét hiện ngay trên video
 // ---------------------------------------------------------------------------
-const LensResult = ({ result, photo, onBuy, onBuyShopeeItem, onClose }) => {
+const LensResult = ({ result, photo, aiState, onBuy, onBuyShopeeItem, onClose }) => {
   const items = result.items || [];
   const shopeeItems = result.shopeeItems || [];
   return (
@@ -130,6 +141,12 @@ const LensResult = ({ result, photo, onBuy, onBuyShopeeItem, onClose }) => {
         <button type="button" className="lens-close" onClick={onClose}>✕</button>
       </div>
       {photo && <img className="lens-result-photo" src={photo} alt="Vùng đã quét" />}
+      {aiState === "pending" && (
+        <p className="lens-ai-pending"><span className="lens-spinner" /> 🤖 Đang phân tích ảnh bằng AI...</p>
+      )}
+      {aiState === "failed" && (
+        <p className="lens-result-note">🤖 AI đang bận — đã hiển thị kết quả theo thời điểm xem.</p>
+      )}
       {result.aiKeyword && (
         <p className="lens-ai-badge">🤖 AI nhận diện: “{result.aiKeyword}”{result.aiCategory ? ` · ${result.aiCategory}` : ""}</p>
       )}
@@ -279,6 +296,29 @@ const PlayerPage = () => {
     }
   };
 
+  // Kết quả tức thời lên ngay; AI phân tích ảnh chạy nền, về thì cập nhật thêm
+  const handleLensResult = (instant, photo, scanPosition) => {
+    setLensOpen(false);
+    setLensCard({ result: instant, photo, aiState: photo ? "pending" : "none" });
+    if (!photo) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    apiRequest("/api/v1/shopping/match", {
+      method: "POST",
+      body: JSON.stringify({ episodeId: episode.id, position: scanPosition, photo }),
+      signal: controller.signal,
+    })
+      .then((aiResult) => {
+        setLensCard((current) =>
+          current ? { ...current, result: { ...current.result, ...aiResult }, aiState: "done" } : current,
+        );
+      })
+      .catch(() => {
+        setLensCard((current) => (current ? { ...current, aiState: "failed" } : current));
+      })
+      .finally(() => clearTimeout(timer));
+  };
+
   // Bấm mua từ thẻ kết quả quét: tạo affiliate link tại thời điểm này
   const buyFromLens = async (product) => {
     try {
@@ -313,6 +353,7 @@ const PlayerPage = () => {
             <LensResult
               result={lensCard.result}
               photo={lensCard.photo}
+              aiState={lensCard.aiState}
               onBuy={buyFromLens}
               onBuyShopeeItem={buyShopeeItem}
               onClose={() => setLensCard(null)}
@@ -324,10 +365,7 @@ const PlayerPage = () => {
               position={position}
               videoRef={videoRef}
               onClose={() => setLensOpen(false)}
-              onResult={(result, photo) => {
-                setLensCard({ result, photo });
-                setLensOpen(false);
-              }}
+              onResult={handleLensResult}
             />
           )}
         </div>
