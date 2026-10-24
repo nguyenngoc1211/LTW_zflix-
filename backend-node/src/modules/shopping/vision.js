@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 
 const provider = (process.env.VISION_PROVIDER || "none").trim().toLowerCase();
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
-const GEMINI_MODEL = (process.env.GEMINI_MODEL || "gemini-2.0-flash").trim();
+const GEMINI_MODEL = (process.env.GEMINI_MODEL || "gemini-3.8-flash").trim();
 const SERPAPI_KEY = (process.env.SERPAPI_KEY || "").trim();
 // SerpAPI cần URL ảnh công khai trên internet — chạy local không dùng được trừ khi
 // deploy có domain (điền PUBLIC_BASE_URL=https://... để bật).
@@ -50,10 +50,18 @@ const identifyWithGemini = async (base64Jpeg) => {
     contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: "image/jpeg", data: base64Jpeg } }] }],
     generationConfig: { temperature: 0.2, response_mime_type: "application/json" },
   };
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) },
-  );
+  const request = () =>
+    fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000) },
+    );
+  // Free tier hay gặp 503 quá tải — thử tối đa 2 lần
+  let response;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    response = await request();
+    if (response.ok || ![429, 503, 500].includes(response.status)) break;
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1600));
+  }
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     throw new Error(`Gemini ${response.status}: ${text.slice(0, 150)}`);
