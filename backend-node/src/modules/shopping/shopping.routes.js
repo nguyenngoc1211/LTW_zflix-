@@ -12,14 +12,28 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.join(__dirname, "../../../uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// Affiliate: cấu hình prefix (vd ACCESSTRADE/Shopee Affiliate wrapper) trong .env.
-// Để trống thì trả link Shopee search thường — ứng dụng vẫn chạy đầy đủ.
-const AFFILIATE_PREFIX = (process.env.SHOPEE_AFFILIATE_PREFIX || "").trim();
+// Affiliate: mô hình như các tool "hoàn tiền Shopee" (tiencuatui.site...):
+// đăng ký ACCESSTRADE -> wrap link Shopee bằng track link của campaign.
+// .env: SHOPEE_AFFILIATE_TRACK_BASE=https://track.accesstrade.vn/v1/tracking/<campaign_id>/click
+//       SHOPEE_AFFILIATE_SUB_ID=<định danh nguồn (tùy chọn)>
+// Không cấu hình thì trả link Shopee search thường — ứng dụng vẫn chạy đầy đủ.
+const AFFILIATE_TRACK_BASE = (process.env.SHOPEE_AFFILIATE_TRACK_BASE || "").trim().replace(/\/$/u, "");
+const AFFILIATE_PREFIX = (process.env.SHOPEE_AFFILIATE_PREFIX || "").trim(); // kiểu wrapper tùy chỉnh (giữ tương thích cũ)
+const AFFILIATE_SUB_ID = (process.env.SHOPEE_AFFILIATE_SUB_ID || "zflix").trim();
 
-export const buildShopeeLink = (keyword) => {
-  const searchUrl = `https://shopee.vn/search?keyword=${encodeURIComponent(keyword)}`;
-  return AFFILIATE_PREFIX ? `${AFFILIATE_PREFIX}${encodeURIComponent(searchUrl)}` : searchUrl;
+export const buildShopeeLink = (keyword) => `https://shopee.vn/search?keyword=${encodeURIComponent(keyword)}`;
+
+// Tạo link affiliate tại thời điểm người dùng bấm mua (không tạo sẵn trong danh sách)
+export const buildAffiliateLink = (shopeeUrl) => {
+  if (AFFILIATE_TRACK_BASE) {
+    const params = new URLSearchParams({ url: shopeeUrl, utm_source: "zflix", utm_medium: "aff", sub_id: AFFILIATE_SUB_ID });
+    return `${AFFILIATE_TRACK_BASE}?${params.toString()}`;
+  }
+  if (AFFILIATE_PREFIX) return `${AFFILIATE_PREFIX}${encodeURIComponent(shopeeUrl)}`;
+  return shopeeUrl;
 };
+
+export const affiliateConfigured = () => Boolean(AFFILIATE_TRACK_BASE || AFFILIATE_PREFIX);
 
 const toProductView = (row) => ({
   id: row.id,
@@ -33,7 +47,7 @@ const toProductView = (row) => ({
   shopeeKeyword: row.shopee_keyword,
   note: row.note,
   clickCount: row.click_count,
-  shopeeUrl: buildShopeeLink(row.shopee_keyword),
+  shopeeKeyword: row.shopee_keyword,
 });
 
 // ---------------------------------------------------------------------------
@@ -107,16 +121,35 @@ shoppingRouter.post(
 );
 
 // ---------------------------------------------------------------------------
-// POST /shopping/products/:id/click — ghi nhận lượt bấm mua (thống kê)
+// POST /shopping/products/:id/buy — người dùng bấm mua: tạo link affiliate lúc này
+// và ghi nhận lượt click + người mua (dữ liệu hoa hồng/thống kê)
 // ---------------------------------------------------------------------------
 shoppingRouter.post(
-  "/shopping/products/:id/click",
+  "/shopping/products/:id/buy",
   asyncHandler(async (req, res) => {
     const productId = parsePositiveInt(req.params.id, "product id");
-    await pool.execute("UPDATE production_products SET click_count = click_count + 1 WHERE id = ?", [productId]);
     const [rows] = await pool.execute("SELECT id, shopee_keyword, click_count FROM production_products WHERE id = ?", [productId]);
     if (!rows.length) return res.status(404).json({ message: "Product not found" });
-    res.json({ id: productId, shopeeUrl: buildShopeeLink(rows[0].shopee_keyword), clickCount: rows[0].click_count });
+    await pool.execute("UPDATE production_products SET click_count = click_count + 1 WHERE id = ?", [productId]);
+    const shopeeUrl = buildShopeeLink(rows[0].shopee_keyword);
+    res.json({
+      id: productId,
+      shopeeUrl,
+      buyUrl: buildAffiliateLink(shopeeUrl),
+      affiliate: affiliateConfigured(),
+      clickCount: rows[0].click_count + 1,
+    });
+  }),
+);
+
+// Tạo link affiliate cho từ khoá tự do (quick search)
+shoppingRouter.post(
+  "/shopping/affiliate-link",
+  asyncHandler(async (req, res) => {
+    const keyword = typeof req.body?.keyword === "string" ? req.body.keyword.trim().slice(0, 255) : "";
+    if (!keyword) return res.status(400).json({ message: "keyword là bắt buộc" });
+    const shopeeUrl = buildShopeeLink(keyword);
+    res.json({ keyword, shopeeUrl, buyUrl: buildAffiliateLink(shopeeUrl), affiliate: affiliateConfigured() });
   }),
 );
 

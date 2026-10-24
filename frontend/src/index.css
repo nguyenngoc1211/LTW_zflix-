@@ -144,3 +144,27 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
 .shopping-item small { color: #8f95a4; }
 .shopping-item button { white-space: nowrap; padding: .45rem .8rem; font-size: .78rem; }
 @media (max-width: 1000px) { .player-page { grid-template-columns: 1fr; } .shopping-panel { margin-top: 0; } }
+
+/* ===== Google Lens-style scan overlay ===== */
+.player-stage { position: relative; }
+.lens-overlay { position: absolute; inset: 0; z-index: 20; cursor: crosshair; background: rgba(3,4,8,.55); border-radius: 1rem; overflow: hidden; }
+.lens-toolbar { position: absolute; top: .7rem; left: .7rem; right: .7rem; z-index: 22; display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; padding: .55rem .8rem; border-radius: .7rem; background: rgba(10,12,18,.92); color: white; font-size: .85rem; }
+.lens-toolbar strong { color: #ff5861; }
+.lens-toolbar span { flex: 1; color: #b5bac7; min-width: 10rem; }
+.lens-toolbar button { padding: .4rem .9rem; font-size: .8rem; border-radius: .5rem; }
+.lens-toolbar button:disabled { opacity: .45; cursor: not-allowed; }
+.lens-toolbar button.secondary { background: #272b35; }
+.lens-rect { position: absolute; z-index: 21; border: 2px dashed #ff5861; background: rgba(229,9,20,.08); border-radius: .35rem; pointer-events: none; }
+.lens-rect-size { position: absolute; top: -1.5rem; left: 0; padding: .1rem .4rem; border-radius: .3rem; background: rgba(10,12,18,.9); color: #ff5861; font-size: .68rem; }
+.lens-error { position: absolute; bottom: .7rem; left: .7rem; right: .7rem; z-index: 22; margin: 0; padding: .5rem .7rem; border-radius: .5rem; background: #401a20; color: #ffc2c6; font-size: .82rem; }
+
+/* Thẻ kết quả quét nổi trên video */
+.lens-result { position: absolute; top: .7rem; right: .7rem; z-index: 19; width: min(320px, 90%); max-height: 92%; overflow-y: auto; padding: .9rem; border-radius: .9rem; background: rgba(10,12,18,.95); border: 1px solid #353946; box-shadow: 0 1rem 3rem #000c; }
+.lens-result-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; color: white; font-size: .92rem; }
+.lens-close { padding: .2rem .5rem !important; background: #272b35 !important; font-size: .8rem !important; }
+.lens-result-photo { display: block; width: 100%; margin-top: .6rem; border-radius: .5rem; border: 1px solid #3a3f4e; }
+.lens-result-note { margin: .6rem 0 0; color: #9da3b2; font-size: .82rem; line-height: 1.5; }
+.lens-product-card { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .6rem; padding: .6rem .7rem; border: 1px solid #292d38; border-radius: .6rem; background: #171b24; }
+.lens-product-card strong { display: block; font-size: .85rem; color: white; }
+.lens-product-card small { color: #8f95a4; }
+.lens-product-card button { padding: .45rem .8rem; font-size: .78rem; white-space: nowrap; }
