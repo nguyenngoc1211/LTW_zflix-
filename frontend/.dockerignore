@@ -1,4 +1,6 @@
 node_modules
 dist
-npm-debug.log
+npm-debug.log*
 .env
+.env.example
+integration

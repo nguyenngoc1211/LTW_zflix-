@@ -11,6 +11,8 @@ Thumbs.db
 *.sw?
 .env
 **/.env
+!.env.example
+!**/.env.example
 tmp/
 
 

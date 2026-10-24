@@ -12,6 +12,11 @@ import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
 import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
 import RegisterPage from "../modules/auth/RegisterPage";
 import ProtectedRoute from "./ProtectedRoute";
+import MovieDetailPage from "../modules/discovery/MovieDetailPage";
+import LibraryPage from "../modules/community/LibraryPage";
+import HistoryPage from "../modules/streaming/HistoryPage";
+import NotificationsPage from "../modules/community/NotificationsPage";
+import PlayerPage from "../modules/streaming/PlayerPage";
 
 export const router = createBrowserRouter([
   {
@@ -22,9 +27,14 @@ export const router = createBrowserRouter([
         index: true,
         element: <HomePage />,
       },
+      { path: "movies/:id", element: <MovieDetailPage /> },
+      { path: "watch/:episodeId", element: <PlayerPage /> },
       {
         element: <ProtectedRoute />,
         children: [
+          { path: "library", element: <LibraryPage /> },
+          { path: "history", element: <HistoryPage /> },
+          { path: "notifications", element: <NotificationsPage /> },
           {
             path: "account/security",
             element: <AccountSecurityPage />,
