@@ -186,12 +186,16 @@ const PlayerPage = () => {
           ) : (
             <div className="video-placeholder"><span>▶</span><p>Chưa có URL video trong dữ liệu mẫu.</p></div>
           )}
-          <SelectionOverlay
-            boundsRef={stageRef}
-            scanning={lensyState === "SCANNING"}
-            onScan={handleScanRegion}
-            onCancel={(message) => { setLensyError(message); if (lensyState !== "AWAKE") sleepLensy(); }}
-          />
+          {lensyState !== "SLEEPING" && (
+            <SelectionOverlay
+              boundsRef={stageRef}
+              scanning={lensyState === "SCANNING"}
+              onScan={handleScanRegion}
+              onCancel={sleepLensy}
+              onTooSmall={(message) => setLensyError(message)}
+              error={lensyError}
+            />
+          )}
         </div>
         <div className="manual-progress">
           <label>Vị trí xem thử: {Math.floor(position)} giây</label>

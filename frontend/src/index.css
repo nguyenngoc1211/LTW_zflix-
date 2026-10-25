@@ -236,3 +236,4 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
 .cinelens-find { padding: .4rem .7rem; font-size: .74rem; font-weight: 700; color: #cbd5e1; background: #273449; border: 1px solid rgba(148,163,184,.3); border-radius: .5rem; cursor: pointer; white-space: nowrap; }
 .cinelens-footer-note { margin: auto 1rem .8rem; padding-top: .6rem; border-top: 1px solid rgba(148,163,184,.15); color: #64748b; font-size: .68rem; }
 @media (max-width: 760px) { .cinelens-panel { left: .5rem; right: .5rem; top: auto; width: auto; max-height: 62%; } }
+.cinelens-hint-error { top: 3.2rem; background: rgba(127,29,29,.9) !important; border-color: rgba(248,113,113,.5) !important; color: #fecaca !important; }

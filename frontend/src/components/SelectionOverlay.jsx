@@ -2,13 +2,14 @@
 // (4 hướng), pointerup = góc B -> tự quét. Escape hủy, bỏ qua vùng < 20×20.
 import { useRectangleSelection } from "../hooks/useRectangleSelection.js";
 
-export default function SelectionOverlay({ boundsRef, scanning, minSize = 20, onScan, onCancel, hint }) {
+export default function SelectionOverlay({ boundsRef, scanning, minSize = 20, onScan, onCancel, onTooSmall, error, hint }) {
   const { rect, overlayHandlers } = useRectangleSelection({
     enabled: !scanning,
     boundsRef,
     minSize,
     onComplete: (rect) => onScan(rect),
-    onCancel: (message) => onCancel?.(message),
+    onCancel: () => onCancel?.(),
+    onTooSmall: (message) => onTooSmall?.(message),
   });
 
   return (
@@ -32,6 +33,7 @@ export default function SelectionOverlay({ boundsRef, scanning, minSize = 20, on
           {scanning && <div className="cinelens-laser" />}
         </div>
       )}
+      {error && !scanning && <div className="cinelens-hint cinelens-hint-error">{error}</div>}
       <div className="cinelens-hint">
         {scanning
           ? "🔍 Lensy đang tìm món đồ này..."
