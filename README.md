@@ -14,7 +14,7 @@ việc của nhiều thành viên trên các nhánh Git khác nhau (`dev`, `Du`,
 | **Streaming** | nhánh `Hai` | Lịch sử xem, lưu/tiếp tục vị trí xem, trình phát video |
 | **Watch Party** | nhánh `Khoa` | Xem phim cùng nhau real-time (Socket.IO): đồng bộ play/pause/nhảy thời gian, chat trong phòng, quản lý thành viên (mute/kick/promote), phòng có mật khẩu |
 | **Admin** | nhánh `Ngoc` | Hệ quản trị riêng cho admin: dashboard tổng quan, quản lý người dùng (tìm kiếm/đổi role/khóa tài khoản), quản lý phim (VIP/trạng thái), thống kê lượt xem (biểu đồ 30 ngày, top phim, theo thể loại). Đăng nhập qua URL ẩn `/admin-login` |
-| **AI / Video services** | nhánh `dev` | Hai service Python (FastAPI) dạng stub — chỉ có health-check, dành cho mở rộng sau |
+| **AI Visual Shopping** | nhánh `Ngoc` | Quét khoanh vùng món đồ trong khung hình -> **CLIP self-hosted** (ViT-B/32, Transformers.js/ONNX, load sẵn trong RAM) tạo embedding -> **HNSW index** tìm sản phẩm tương tự trong Local Catalog (import CSV/JSON) -> panel kết quả (ảnh, giá VND, % giống) -> affiliate redirect có ghi click. Vision LLM (Gemini/SerpAPI) chỉ là fallback tùy chọn. Timing riêng từng bước: crop/embed/search/rank |
 
 ## 🏗️ Kiến trúc
 
@@ -150,7 +150,8 @@ rồi dọn history bằng `git filter-repo` trước khi force-push (cần đ�
 
 ```bash
 cd backend-node
-npm test                    # 24 unit test (auth, MFA, schema, search, security logger, vision parser)
+npm test                    # 30 unit test
+npm run catalog:index       # tải catalog CSV, tạo CLIP embeddings + rebuild HNSW index (auth, MFA, schema, search, security logger, vision parser)
 npm run test:integration    # smoke test luồng auth (cần DB đang chạy)
 npm run seed:omdb           # nạp dữ liệu phim THẬT từ OMDb (cần OMDB_API_KEY, key free tại omdbapi.com/apikey.aspx)
                             # + video hợp pháp: Blender open movies / Archive.org
