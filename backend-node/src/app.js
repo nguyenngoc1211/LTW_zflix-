@@ -16,6 +16,7 @@ import { adminContentRouter } from "./modules/admin/admin.content.routes.js";
 import { adminModerationRouter } from "./modules/admin/admin.moderation.routes.js";
 import { adminSystemRouter } from "./modules/admin/admin.system.routes.js";
 import { shoppingRouter } from "./modules/shopping/shopping.routes.js";
+import { visualShoppingRouter } from "./modules/visual-shopping/visual-shopping.routes.js";
 import { requireAuth } from "./core/middleware/auth.middleware.js";
 import { pool } from "./core/database/pool.js";
 
@@ -36,6 +37,10 @@ export const createApp = () => {
     }),
   );
   app.use(cors({ origin: securityConfig.frontendOrigins, credentials: true }));
+  // Route ảnh base64 (visual shopping) cần limit lớn hơn — đặt TRƯỚC parser global;
+  // body-parser bỏ qua nếu req._body đã set, nên không parse 2 lần
+  app.use("/api/v1/visual-search", express.json({ limit: "5mb" }));
+  app.use("/api/v1/shopping/admin/catalog", express.json({ limit: "5mb" }));
   app.use(express.json({ limit: "32kb" }));
   app.use(cookieParser());
 
@@ -49,6 +54,7 @@ export const createApp = () => {
   app.use("/api/v1", streamingRouter);
   app.use("/api/v1", watchPartyRouter);
   app.use("/api/v1", shoppingRouter);
+  app.use("/api/v1", visualShoppingRouter);
   app.use("/api/v1/admin", adminRouter);
   app.use("/api/v1/admin", adminContentRouter);
   app.use("/api/v1/admin", adminModerationRouter);

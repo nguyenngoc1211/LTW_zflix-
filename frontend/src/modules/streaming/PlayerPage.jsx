@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { apiRequest } from "../../services/api.js";
+import { apiRequest, API_URL } from "../../services/api.js";
 
 // ---------------------------------------------------------------------------
 // Overlay quét đồ vật kiểu Google Lens: kéo chuột khoanh vùng trên video
@@ -48,14 +48,9 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
   const scanRegion = async () => {
     setBusy(true);
     setError("");
+    const cropStart = performance.now();
     try {
-      // 1. Kết quả TỨC THỜI theo mốc thời gian — hiện ngay cho người dùng (<200ms)
-      const instant = await apiRequest("/api/v1/shopping/match", {
-        method: "POST",
-        body: JSON.stringify({ episodeId: episode.id, position: Math.floor(position) }),
-      });
-
-      // 2. Crop ảnh vùng khoanh (nếu canvas không bị CORS taint) — AI chạy nền sau
+      // 1. Crop ảnh vùng khoanh từ frame video (nếu canvas không bị CORS taint)
       let photo = null;
       try {
         const video = videoRef.current;
@@ -82,8 +77,19 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
         // video domain khác làm canvas tainted — không gửi ảnh được
       }
 
-      // Kết quả tức thời lên màn hình NGAY, AI enrichment chạy nền ở PlayerPage
-      onResult(instant, photo, Math.floor(position));
+      // 2. CLIP embedding + HNSW vector search trên catalog (tức thời)
+      const cropMs = Math.round(performance.now() - cropStart);
+      const result = await apiRequest("/api/v1/visual-search", {
+        method: "POST",
+        body: JSON.stringify({
+          movieId: episode.production_id,
+          position: Math.floor(position),
+          image: photo,
+          cropMs,
+        }),
+      });
+
+      onResult(result, photo);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -123,65 +129,51 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
   );
 };
 
-const formatVnd = (raw) => {
-  const vnd = Math.round(Number(raw || 0) / 100000);
-  return vnd > 0 ? new Intl.NumberFormat("vi-VN").format(vnd) + "₫" : null;
-};
-
 // ---------------------------------------------------------------------------
 // Thẻ kết quả quét hiện ngay trên video
 // ---------------------------------------------------------------------------
-const LensResult = ({ result, photo, aiState, onBuy, onBuyShopeeItem, onClose }) => {
-  const items = result.items || [];
-  const shopeeItems = result.shopeeItems || [];
+const LensResult = ({ result, photo, onBuy, onFindShopee, onClose }) => {
+  const items = result.products || [];
+  const formatVnd = (raw) =>
+    raw ? new Intl.NumberFormat("vi-VN").format(Number(raw)) + "₫" : null;
   return (
     <div className="lens-result">
       <div className="lens-result-head">
-        <strong>{items.length > 0 ? `Tìm thấy ${items.length} món đồ` : "Không nhận diện được món đồ"}</strong>
+        <strong>{items.length > 0 ? `Tìm thấy ${items.length} sản phẩm` : "Không tìm thấy sản phẩm"}</strong>
         <button type="button" className="lens-close" onClick={onClose}>✕</button>
       </div>
       {photo && <img className="lens-result-photo" src={photo} alt="Vùng đã quét" />}
-      {aiState === "pending" && (
-        <p className="lens-ai-pending"><span className="lens-spinner" /> 🤖 Đang phân tích ảnh bằng AI...</p>
+      {items.length === 0 && (
+        <p className="lens-result-note">{result.message || "Thử khoanh vùng món đồ rõ hơn hoặc tìm theo từ khoá."}</p>
       )}
-      {aiState === "failed" && (
-        <p className="lens-result-note">🤖 AI đang bận — đã hiển thị kết quả theo thời điểm xem.</p>
-      )}
-      {result.aiKeyword && (
-        <p className="lens-ai-badge">🤖 AI nhận diện: “{result.aiKeyword}”{result.aiCategory ? ` · ${result.aiCategory}` : ""}</p>
-      )}
-      {items.length === 0 && <p className="lens-result-note">{result.note || "Thử khoanh vùng khác hoặc tìm theo từ khoá."}</p>}
       {items.map((item) => (
         <div key={item.id} className="lens-product-card">
-          <div className="lens-product-info">
-            <strong>{item.productName}</strong>
-            {item.category && <small>{item.category}</small>}
-          </div>
-          <button type="button" onClick={() => onBuy(item)}>Mua qua Shopee</button>
-        </div>
-      ))}
-      {shopeeItems.length > 0 && <p className="lens-shopee-head">Gợi ý từ Shopee</p>}
-      {shopeeItems.map((item) => (
-        <div key={`${item.itemId}-${item.shopId}`} className="lens-product-card shopee-item">
-          {item.imageUrl && <img className="lens-item-img" src={item.imageUrl} alt="" loading="lazy" />}
+          <img className="lens-item-img" src={item.imageUrl} alt="" loading="lazy" />
           <div className="lens-product-info">
             <strong>{item.name}</strong>
+            {item.category && <small>{item.category}</small>}
             <small>
-              {formatVnd(item.price)}
-              {item.commissionRate != null ? ` · HH ${Number(item.commissionRate).toFixed(1)}%` : ""}
-              {item.sales != null ? ` · ${item.sales} đã bán` : ""}
+              {item.price ? formatVnd(item.price) : "—"}
+              {item.similarity != null ? ` · giống ${(item.similarity * 100).toFixed(0)}%` : ""}
+              {` · ${item.marketplace === "catalog" ? "Zflix Catalog" : item.marketplace}`}
             </small>
           </div>
-          <button type="button" onClick={() => onBuyShopeeItem(item)}>Mua</button>
+          {item.hasAffiliate ? (
+            <button type="button" onClick={() => onBuy(item)}>Mua</button>
+          ) : (
+            <button type="button" className="secondary" onClick={() => onFindShopee(item.name)} title="Sản phẩm chưa gắn link affiliate">
+              Tìm Shopee
+            </button>
+          )}
         </div>
       ))}
+      <p className="lens-ai-note">
+        {result.timings ? `CLIP ${result.timings.embedMs}ms · tìm ${result.timings.searchMs}ms · tổng ${result.timings.totalMs}ms` : ""}
+      </p>
     </div>
   );
 };
 
-// ---------------------------------------------------------------------------
-// Panel mua sắm bên cạnh player
-// ---------------------------------------------------------------------------
 const ShoppingPanel = ({ episode, position, onOpenLens }) => {
   const [products, setProducts] = useState([]);
   const [keyword, setKeyword] = useState("");
@@ -286,47 +278,25 @@ const PlayerPage = () => {
   };
   if (!episode) return <main className="page-shell"><p className="empty">Đang tải tập phim...</p></main>;
 
-  // Mua sản phẩm Shopee thật (kết quả Open API): short link lúc click
-  const buyShopeeItem = async (item) => {
-    try {
-      const data = await apiRequest("/api/v1/shopping/shopee/buy-link", { method: "POST", body: JSON.stringify({ itemUrl: item.itemUrl }) });
-      window.open(data.buyUrl, "_blank", "noopener");
-    } catch {
-      window.open(item.itemUrl, "_blank", "noopener");
-    }
-  };
-
-  // Kết quả tức thời lên ngay; AI phân tích ảnh chạy nền, về thì cập nhật thêm
-  const handleLensResult = (instant, photo, scanPosition) => {
+  // Kết quả CLIP tức thời (backend đo timing riêng từng bước)
+  const handleLensResult = (instant, photo) => {
     setLensOpen(false);
-    setLensCard({ result: instant, photo, aiState: photo ? "pending" : "none" });
-    if (!photo) return;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
-    apiRequest("/api/v1/shopping/match", {
-      method: "POST",
-      body: JSON.stringify({ episodeId: episode.id, position: scanPosition, photo }),
-      signal: controller.signal,
-    })
-      .then((aiResult) => {
-        setLensCard((current) =>
-          current ? { ...current, result: { ...current.result, ...aiResult }, aiState: "done" } : current,
-        );
-      })
-      .catch(() => {
-        setLensCard((current) => (current ? { ...current, aiState: "failed" } : current));
-      })
-      .finally(() => clearTimeout(timer));
+    setLensCard({ result: instant, photo });
   };
 
-  // Bấm mua từ thẻ kết quả quét: tạo affiliate link tại thời điểm này
-  const buyFromLens = async (product) => {
-    try {
-      const data = await apiRequest(`/api/v1/shopping/products/${product.id}/buy`, { method: "POST" });
-      window.open(data.buyUrl, "_blank", "noopener");
-    } catch {
-      window.open(`https://shopee.vn/search?keyword=${encodeURIComponent(product.shopeeKeyword || "")}`, "_blank", "noopener");
-    }
+  // Mua: backend xác thực sản phẩm + ghi affiliate_clicks + 302 sang sàn
+  const buyFromLens = (product) => {
+    const searchId = lensCard?.result?.searchId;
+    window.open(
+      `${API_URL}/api/v1/affiliate/redirect/${product.id}${searchId ? `?searchId=${searchId}` : ""}`,
+      "_blank",
+      "noopener",
+    );
+  };
+
+  // Sản phẩm chưa gắn affiliate: mở Shopee search theo tên (tìm kiếm, không phải link hoa hồng)
+  const findOnShopee = (name) => {
+    window.open(`https://shopee.vn/search?keyword=${encodeURIComponent(name)}`, "_blank", "noopener");
   };
 
   return (
@@ -355,7 +325,7 @@ const PlayerPage = () => {
               photo={lensCard.photo}
               aiState={lensCard.aiState}
               onBuy={buyFromLens}
-              onBuyShopeeItem={buyShopeeItem}
+              onFindShopee={findOnShopee}
               onClose={() => setLensCard(null)}
             />
           )}
