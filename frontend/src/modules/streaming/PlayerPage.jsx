@@ -10,92 +10,6 @@ import ProductPanel from "../../components/ProductPanel.jsx";
 // ---------------------------------------------------------------------------
 // Overlay quét đồ vật kiểu Google Lens: kéo chuột khoanh vùng trên video
 // ---------------------------------------------------------------------------
-const ShoppingPanel = ({ episode, position, onOpenLens }) => {
-  const [products, setProducts] = useState([]);
-  const [keyword, setKeyword] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    apiRequest(`/api/v1/shopping/productions/${episode.production_id}/products`)
-      .then((data) => setProducts(data.items))
-      .catch(() => {});
-  }, [episode.production_id]);
-
-  // Sản phẩm đúng thời điểm hiện tại
-  const activeProducts = products.filter(
-    (item) => position >= item.timestampStart && position <= item.timestampEnd,
-  );
-
-  // Bấm mua: tạo link affiliate lúc này rồi mới điều hướng sang Shopee
-  const openBuy = async (product) => {
-    try {
-      const data = await apiRequest(`/api/v1/shopping/products/${product.id}/buy`, { method: "POST" });
-      window.open(data.buyUrl, "_blank", "noopener");
-    } catch {
-      window.open(`https://shopee.vn/search?keyword=${encodeURIComponent(product.shopeeKeyword || "")}`, "_blank", "noopener");
-    }
-  };
-
-  const quickSearch = async (event) => {
-    event.preventDefault();
-    if (!keyword.trim()) return;
-    setError("");
-    try {
-      const data = await apiRequest("/api/v1/shopping/affiliate-link", {
-        method: "POST",
-        body: JSON.stringify({ keyword: keyword.trim() }),
-      });
-      window.open(data.buyUrl, "_blank", "noopener");
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
-  return (
-    <aside className="shopping-panel">
-      <h2>🛒 Mua sắm trong phim</h2>
-      <p className="shopping-hint">
-        Thấy món đồ hay trong phim? Bấm quét và <strong>khoanh vùng món đồ</strong> như Google
-        Lens — kết quả hiện ngay trên màn hình để bạn chọn mua.
-      </p>
-
-      <div className="shopping-actions">
-        <button type="button" onClick={onOpenLens}>🔍 Quét với Lensy</button>
-        <form onSubmit={quickSearch} className="shopping-search">
-          <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Hoặc tìm nhanh: đồng hồ nam..." />
-          <button type="submit" className="secondary">Tìm</button>
-        </form>
-      </div>
-      {error && <p className="alert">{error}</p>}
-
-      <h3>Đang xuất hiện ({activeProducts.length})</h3>
-      {activeProducts.length === 0 && <p className="shopping-note">Không có sản phẩm nào ở thời điểm này.</p>}
-      {activeProducts.map((item) => (
-        <div key={item.id} className="shopping-item active">
-          <div>
-            <strong>{item.productName}</strong>
-            {item.category && <small> · {item.category}</small>}
-            <small> · giây {item.timestampStart}–{item.timestampEnd}</small>
-          </div>
-          <button type="button" onClick={() => openBuy(item)}>Mua qua Shopee</button>
-        </div>
-      ))}
-
-      <h3>Tất cả trong phim ({products.length})</h3>
-      {products.map((item) => (
-        <div key={item.id} className="shopping-item">
-          <div>
-            <strong>{item.productName}</strong>
-            {item.category && <small> · {item.category}</small>}
-          </div>
-          <button type="button" className="secondary" onClick={() => openBuy(item)}>Xem</button>
-        </div>
-      ))}
-
-    </aside>
-  );
-};
-
 const PlayerPage = () => {
   const { episodeId } = useParams();
   const [episode, setEpisode] = useState(null);
@@ -203,7 +117,6 @@ const PlayerPage = () => {
           <button onClick={() => save(Math.floor(position))}>Lưu vị trí xem</button>
         </div>
       </div>
-      <ShoppingPanel episode={episode} position={position} onOpenLens={wakeLensy} />
       {(lensyState === "RESULTS" || lensyState === "ERROR") && (
         <ProductPanel
           result={lensyResult || { message: lensyError, products: [] }}
