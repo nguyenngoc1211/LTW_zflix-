@@ -1,189 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest, API_URL } from "../../services/api.js";
-import { dominantColorName } from "../../utils/colorName.js";
+import { scanRegion as scanRegionApi } from "../../services/scanApi.js";
+import { captureVideoRegion } from "../../utils/videoCapture.js";
+import LensyMascot from "../../components/LensyMascot.jsx";
+import SelectionOverlay from "../../components/SelectionOverlay.jsx";
+import ProductPanel from "../../components/ProductPanel.jsx";
 
 // ---------------------------------------------------------------------------
 // Overlay quét đồ vật kiểu Google Lens: kéo chuột khoanh vùng trên video
 // ---------------------------------------------------------------------------
-const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
-  const containerRef = useRef(null);
-  const [rect, setRect] = useState(null);
-  const dragStartRef = useRef(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const video = videoRef.current;
-    const wasPlaying = video && !video.paused;
-    video?.pause();
-    return () => {
-      if (wasPlaying) video?.play().catch(() => {});
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const localPoint = (clientX, clientY) => {
-    const bounds = containerRef.current.getBoundingClientRect();
-    return {
-      x: Math.min(Math.max(clientX - bounds.left, 0), bounds.width),
-      y: Math.min(Math.max(clientY - bounds.top, 0), bounds.height),
-    };
-  };
-
-  const startDrag = (clientX, clientY) => {
-    dragStartRef.current = localPoint(clientX, clientY);
-  };
-  const moveDrag = (clientX, clientY) => {
-    const start = dragStartRef.current;
-    if (!start) return;
-    const point = localPoint(clientX, clientY);
-    setRect({
-      x: Math.min(start.x, point.x),
-      y: Math.min(start.y, point.y),
-      w: Math.abs(point.x - start.x),
-      h: Math.abs(point.y - start.y),
-    });
-  };
-
-  const scanRegion = async () => {
-    setBusy(true);
-    setError("");
-    const cropStart = performance.now();
-    try {
-      // 1. Crop ảnh vùng khoanh từ frame video (nếu canvas không bị CORS taint)
-      let photo = null;
-      let dominantColor = null;
-      try {
-        const video = videoRef.current;
-        const container = containerRef.current;
-        if (video?.videoWidth && rect && rect.w > 8 && rect.h > 8) {
-          const scaleX = video.videoWidth / container.clientWidth;
-          const scaleY = video.videoHeight / container.clientHeight;
-          const canvas = document.createElement("canvas");
-          let w = Math.max(2, Math.round(rect.w * scaleX));
-          let h = Math.max(2, Math.round(rect.h * scaleY));
-          // Thu nhỏ để AI xử lý nhanh hơn
-          if (w > 512) {
-            h = Math.round((512 / w) * h);
-            w = 512;
-          }
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(video, Math.round(rect.x * scaleX), Math.round(rect.y * scaleY), Math.max(2, Math.round(rect.w * scaleX)), Math.max(2, Math.round(rect.h * scaleY)), 0, 0, w, h);
-          photo = canvas.toDataURL("image/jpeg", 0.7);
-          // Màu chủ đạo của vùng quét — lọc kết quả theo màu như TikTok
-          try {
-            const pixelData = ctx.getImageData(0, 0, w, h).data;
-            dominantColor = dominantColorName(pixelData);
-          } catch { /* canvas tainted */ }
-        }
-      } catch {
-        // video domain khác làm canvas tainted — không gửi ảnh được
-      }
-
-      // 2. CLIP embedding + HNSW vector search trên catalog (tức thời)
-      const cropMs = Math.round(performance.now() - cropStart);
-      const result = await apiRequest("/api/v1/visual-search", {
-        method: "POST",
-        body: JSON.stringify({
-          movieId: episode.production_id,
-          position: Math.floor(position),
-          image: photo,
-          cropMs,
-          aiFilters: dominantColor ? { color: dominantColor } : {},
-        }),
-      });
-
-      onResult(result, photo);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div
-      ref={containerRef}
-      className="lens-overlay"
-      onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
-      onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
-      onMouseUp={() => { dragStartRef.current = null; }}
-      onTouchStart={(e) => { const t = e.touches[0]; startDrag(t.clientX, t.clientY); }}
-      onTouchMove={(e) => { const t = e.touches[0]; moveDrag(t.clientX, t.clientY); }}
-      onTouchEnd={() => { dragStartRef.current = null; }}
-    >
-      <div className="lens-toolbar">
-        <strong>🔍 Quét đồ vật</strong>
-        <span>{rect && rect.w > 8 ? "Đã khoanh vùng — bấm Quét" : "Kéo chuột khoanh vùng món đồ"}</span>
-        <button type="button" disabled={busy || !rect || rect.w < 8} onClick={scanRegion}>
-          {busy ? "Đang quét..." : "Quét vùng này"}
-        </button>
-        <button type="button" className="secondary" onClick={onClose}>Hủy</button>
-      </div>
-      {error && <p className="lens-error">{error}</p>}
-      {rect && (
-        <div
-          className="lens-rect"
-          style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
-        >
-          <span className="lens-rect-size">{Math.round(rect.w)}×{Math.round(rect.h)}</span>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Thẻ kết quả quét hiện ngay trên video
-// ---------------------------------------------------------------------------
-const LensResult = ({ result, photo, onBuy, onFindShopee, onClose }) => {
-  const items = result.products || [];
-  const formatVnd = (raw) =>
-    raw ? new Intl.NumberFormat("vi-VN").format(Number(raw)) + "₫" : null;
-  return (
-    <div className="lens-result">
-      <div className="lens-result-head">
-        <strong>{items.length > 0 ? `Tìm thấy ${items.length} sản phẩm` : "Không tìm thấy sản phẩm"}</strong>
-        <button type="button" className="lens-close" onClick={onClose}>✕</button>
-      </div>
-      {photo && <img className="lens-result-photo" src={photo} alt="Vùng đã quét" />}
-      {result.ocrText && (
-        <p className="lens-ai-badge">📜 OCR đọc được: “{result.ocrText}”</p>
-      )}
-      {items.length === 0 && (
-        <p className="lens-result-note">{result.message || "Thử khoanh vùng món đồ rõ hơn hoặc tìm theo từ khoá."}</p>
-      )}
-      {items.map((item) => (
-        <div key={item.id} className="lens-product-card">
-          <img className="lens-item-img" src={item.imageUrl} alt="" loading="lazy" />
-          <div className="lens-product-info">
-            <strong>{item.name}</strong>
-            {item.category && <small>{item.category}</small>}
-            <small>
-              {item.price ? formatVnd(item.price) : "—"}
-              {item.similarity != null ? ` · giống ${(item.similarity * 100).toFixed(0)}%` : ""}
-              {` · ${item.marketplace === "catalog" ? "Zflix Catalog" : item.marketplace}`}
-            </small>
-          </div>
-          {item.hasAffiliate ? (
-            <button type="button" onClick={() => onBuy(item)}>Mua</button>
-          ) : (
-            <button type="button" className="secondary" onClick={() => onFindShopee(item.name)} title="Sản phẩm chưa gắn link affiliate">
-              Tìm Shopee
-            </button>
-          )}
-        </div>
-      ))}
-      <p className="lens-ai-note">
-        {result.timings ? `CLIP ${result.timings.embedMs}ms · tìm ${result.timings.searchMs}ms · tổng ${result.timings.totalMs}ms` : ""}
-      </p>
-    </div>
-  );
-};
-
 const ShoppingPanel = ({ episode, position, onOpenLens }) => {
   const [products, setProducts] = useState([]);
   const [keyword, setKeyword] = useState("");
@@ -234,7 +60,7 @@ const ShoppingPanel = ({ episode, position, onOpenLens }) => {
       </p>
 
       <div className="shopping-actions">
-        <button type="button" onClick={onOpenLens}>🔍 Quét đồ vật trên video</button>
+        <button type="button" onClick={onOpenLens}>🔍 Quét với Lensy</button>
         <form onSubmit={quickSearch} className="shopping-search">
           <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Hoặc tìm nhanh: đồng hồ nam..." />
           <button type="submit" className="secondary">Tìm</button>
@@ -276,8 +102,12 @@ const PlayerPage = () => {
   const [position, setPosition] = useState(0);
   const videoRef = useRef(null);
   const lastSaved = useRef(0);
-  const [lensCard, setLensCard] = useState(null); // { result, photo }
-  const [lensOpen, setLensOpen] = useState(false);
+  const stageRef = useRef(null);
+  // CineLens: SLEEPING -> AWAKE -> SELECTING -> SCANNING -> RESULTS / ERROR
+  const [lensyState, setLensyState] = useState("SLEEPING");
+  const [lensyResult, setLensyResult] = useState(null);
+  const [lensyPhoto, setLensyPhoto] = useState(null);
+  const [lensyError, setLensyError] = useState("");
   // Bật crossOrigin để chụp khung hình cho AI; host video không CORS sẽ fallback tắt nó
   const [videoNoCors, setVideoNoCors] = useState(false);
   useEffect(() => { apiRequest(`/api/v1/episodes/${episodeId}`).then(setEpisode); }, [episodeId]);
@@ -288,33 +118,60 @@ const PlayerPage = () => {
   };
   if (!episode) return <main className="page-shell"><p className="empty">Đang tải tập phim...</p></main>;
 
-  // Kết quả CLIP tức thời (backend đo timing riêng từng bước)
-  const handleLensResult = (instant, photo) => {
-    setLensOpen(false);
-    setLensCard({ result: instant, photo });
+  // === CineLens: điều khiển trạng thái Lensy ===
+  const wakeLensy = () => {
+    setLensyError("");
+    setLensyState("AWAKE");
+  };
+  const sleepLensy = () => {
+    setLensyState("SLEEPING");
+    setLensyResult(null);
+    setLensyPhoto(null);
+    setLensyError("");
   };
 
-  // Mua: backend xác thực sản phẩm + ghi affiliate_clicks + 302 sang sàn
-  const buyFromLens = (product) => {
-    const searchId = lensCard?.result?.searchId;
+  // Quét: crop chính xác vùng (letterbox) -> multipart -> backend CLIP + HNSW
+  const handleScanRegion = async (rect) => {
+    window.__lensyDebug = (window.__lensyDebug || []).concat("scan-called rect=" + Math.round(rect.w) + "x" + Math.round(rect.h));
+    setLensyState("SCANNING");
+    try {
+      const { blob, dataUrl, cropMs } = captureVideoRegion(
+        videoRef.current, rect, stageRef.current?.clientWidth, stageRef.current?.clientHeight,
+      );
+      setLensyPhoto(dataUrl);
+      window.__lensyDebug = (window.__lensyDebug || []).concat("photo=" + Math.round(dataUrl.length / 1024) + "KB");
+      const result = await scanRegionApi({
+        blob, movieId: episode.production_id, position, cropMs,
+      });
+      setLensyResult(result);
+      window.__lensyDebug = (window.__lensyDebug || []).concat("results=" + result.products?.length);
+      setLensyState("RESULTS");
+    } catch (e) {
+      setLensyError(e.message || "Lensy gặp lỗi khi quét");
+      setLensyState("ERROR");
+    }
+  };
+
+  // Mua: backend xác thực + ghi affiliate_clicks + 302 sang sàn (không nhận URL từ client)
+  const buyProduct = (product) => {
     window.open(
-      `${API_URL}/api/v1/affiliate/redirect/${product.id}${searchId ? `?searchId=${searchId}` : ""}`,
+      `${API_URL}/api/v1/affiliate/redirect/${product.id}${lensyResult?.searchId ? `?searchId=${lensyResult.searchId}` : ""}`,
       "_blank",
       "noopener",
     );
   };
-
-  // Sản phẩm chưa gắn affiliate: mở Shopee search theo tên (tìm kiếm, không phải link hoa hồng)
+  // Chưa gắn affiliate: mở Shopee search theo tên (URL-encoded, tab mới)
   const findOnShopee = (name) => {
     window.open(`https://shopee.vn/search?keyword=${encodeURIComponent(name)}`, "_blank", "noopener");
   };
+
 
   return (
     <main className="page-shell player-page">
       <div className="player-main">
         <Link to={`/movies/${episode.production_id}`}>← {episode.production_title}</Link>
         <h1>Tập {episode.episode_number}: {episode.title}</h1>
-        <div className="player-stage">
+        <div className="player-stage" ref={stageRef}>
           {episode.video_url ? (
             <video
               ref={videoRef}
@@ -329,25 +186,12 @@ const PlayerPage = () => {
           ) : (
             <div className="video-placeholder"><span>▶</span><p>Chưa có URL video trong dữ liệu mẫu.</p></div>
           )}
-          {lensCard && (
-            <LensResult
-              result={lensCard.result}
-              photo={lensCard.photo}
-              aiState={lensCard.aiState}
-              onBuy={buyFromLens}
-              onFindShopee={findOnShopee}
-              onClose={() => setLensCard(null)}
-            />
-          )}
-          {lensOpen && (
-            <LensOverlay
-              episode={episode}
-              position={position}
-              videoRef={videoRef}
-              onClose={() => setLensOpen(false)}
-              onResult={handleLensResult}
-            />
-          )}
+          <SelectionOverlay
+            boundsRef={stageRef}
+            scanning={lensyState === "SCANNING"}
+            onScan={handleScanRegion}
+            onCancel={(message) => { setLensyError(message); if (lensyState !== "AWAKE") sleepLensy(); }}
+          />
         </div>
         <div className="manual-progress">
           <label>Vị trí xem thử: {Math.floor(position)} giây</label>
@@ -355,7 +199,17 @@ const PlayerPage = () => {
           <button onClick={() => save(Math.floor(position))}>Lưu vị trí xem</button>
         </div>
       </div>
-      <ShoppingPanel episode={episode} position={position} onOpenLens={() => setLensOpen(true)} />
+      <ShoppingPanel episode={episode} position={position} onOpenLens={wakeLensy} />
+      {(lensyState === "RESULTS" || lensyState === "ERROR") && (
+        <ProductPanel
+          result={lensyResult || { message: lensyError, products: [] }}
+          photo={lensyPhoto}
+          onClose={() => sleepLensy()}
+          onBuy={buyProduct}
+          onFind={findOnShopee}
+        />
+      )}
+      <LensyMascot state={lensyState} onClick={() => (lensyState === "SLEEPING" ? wakeLensy() : sleepLensy())} />
     </main>
   );
 };
