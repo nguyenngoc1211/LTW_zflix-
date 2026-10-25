@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { Router } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { pool } from "../../core/database/pool.js";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler } from "../../core/utils/http.js";
 import { embedImage, clipReady } from "./clip.service.js";
 import { searchByVector, rebuildIndex, indexStats } from "./vector.index.js";
+import { readText } from "./ocr.service.js";
 import { rankProducts, validateAffiliateTarget } from "./ranking.js";
 
 export const visualShoppingRouter = Router();
@@ -23,7 +24,7 @@ const searchRateLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.user?.id ?? req.ip,
+  keyGenerator: (req, res) => (req.user?.id ? `user-${req.user.id}` : ipKeyGenerator(req, res)),
   message: { message: "Quá nhiều lần tìm kiếm, thử lại sau 15 phút" },
 });
 
@@ -109,20 +110,29 @@ visualShoppingRouter.post(
     const t0 = Date.now();
     const products = rankProducts(catalog, body.aiFilters || {}, 15);
     timings.rankMs = Date.now() - t0;
-    timings.totalMs = timings.embedMs + timings.searchMs + timings.rankMs + (timings.cropMs || 0);
+
+    // OCR đọc chữ/logo trong ảnh — bổ sung từ khóa (như TikTok). Không chặn luồng chính khi lỗi.
+    let ocr = null;
+    if (image) {
+      ocr = await readText(image.buffer);
+      if (ocr?.text) timings.ocrMs = ocr.ocrMs;
+    }
+    timings.totalMs = timings.embedMs + timings.searchMs + timings.rankMs + (timings.cropMs || 0) + (timings.ocrMs || 0);
 
     // Lưu lịch sử tìm kiếm (không lưu ảnh)
     const [searchResult] = await pool
       .execute(
-        `INSERT INTO visual_searches (user_id, movie_id, position, results_count, crop_ms, embed_ms, search_ms, rank_ms, total_ms, provider)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'clip')`,
+        `INSERT INTO visual_searches (user_id, movie_id, position, results_count, crop_ms, embed_ms, search_ms, rank_ms, total_ms, provider, ai_keyword)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'clip', ?)`,
         [req.user?.id ?? null, body.movieId ?? null, Math.floor(Number(body.position) || 0), products.length,
-         timings.cropMs, timings.embedMs, timings.searchMs, timings.rankMs, timings.totalMs],
+         timings.cropMs, timings.embedMs, timings.searchMs, timings.rankMs, timings.totalMs, ocr?.text ?? null],
       )
       .catch(() => [null]);
 
+    const ocrQuickSearch = ocr?.text ? { keyword: ocr.text, shopeeUrl: `https://shopee.vn/search?keyword=${encodeURIComponent(ocr.text)}` } : null;
     res.json({
       searchId: searchResult?.insertId ?? null,
+      ocrText: ocr?.text ?? null,
       products: products.map((product) => ({
         id: product.id,
         name: product.name,

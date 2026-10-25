@@ -5,6 +5,14 @@ import { parseCsvLine } from "../src/modules/visual-shopping/csv.js";
 
 const UA = "ZflixCatalogSeeder/1.0 (educational project; dev@zflix.local) node-fetch";
 const SEARCH_TERMS = {
+  "Cốc sứ": "black coffee cup latte",
+  "Bàn cà phê": "cafe table tiles",
+  "Ghế sắt": "metal garden chair",
+  "Chậu cây": "green plant pot",
+  "Cốc": "ceramic coffee cup",
+  "Bàn": "wooden table cafe",
+  "Ghế": "outdoor chair",
+  "Cây": "indoor plant",
   "Áo hoodie": "white hoodie",
   "Giày thể thao": "white sneakers shoes",
   "Đèn bàn": "table lamp",
@@ -15,11 +23,14 @@ const SEARCH_TERMS = {
   "Loa bluetooth": "bluetooth speaker",
   "Sổ tay": "notebook journal",
   "Bộ cốc": "ceramic coffee cup",
-  "Mũ len": "winter knit cap",
-  "Đồng hồ": "wristwatch",
-  "Balo": "backpack",
-  "Bộ ấm trà": "teapot ceramic",
-  "Giá đỡ": "phone stand",
+  "Máy pha": "coffee maker machine",
+  "Khăn giấy": "paper napkins",
+  "Muỗng": "teaspoon stainless",
+  "Khay": "wooden serving tray",
+  "Ly thủy tinh": "glass cup transparent",
+  "Bình giữ nhiệt": "thermos flask stainless",
+  "Đèn trang trí": "fairy lights decoration",
+  "Túi tote": "tote bag canvas",
 };
 
 const findImage = async (query) => {
@@ -45,8 +56,9 @@ const findImage = async (query) => {
 };
 
 const termFor = (name) => {
-  for (const [prefix, term] of Object.entries(SEARCH_TERMS)) {
-    if (name.includes(prefix)) return term;
+  const entries = Object.entries(SEARCH_TERMS).sort((a, b) => b[0].length - a[0].length);
+  for (const [prefix, term] of entries) {
+    if (name.toLowerCase().includes(prefix.toLowerCase())) return term;
   }
   return null;
 };

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest, API_URL } from "../../services/api.js";
+import { dominantColorName } from "../../utils/colorName.js";
 
 // ---------------------------------------------------------------------------
 // Overlay quét đồ vật kiểu Google Lens: kéo chuột khoanh vùng trên video
@@ -52,6 +53,7 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
     try {
       // 1. Crop ảnh vùng khoanh từ frame video (nếu canvas không bị CORS taint)
       let photo = null;
+      let dominantColor = null;
       try {
         const video = videoRef.current;
         const container = containerRef.current;
@@ -68,10 +70,14 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
           }
           canvas.width = w;
           canvas.height = h;
-          canvas
-            .getContext("2d")
-            .drawImage(video, Math.round(rect.x * scaleX), Math.round(rect.y * scaleY), Math.max(2, Math.round(rect.w * scaleX)), Math.max(2, Math.round(rect.h * scaleY)), 0, 0, w, h);
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(video, Math.round(rect.x * scaleX), Math.round(rect.y * scaleY), Math.max(2, Math.round(rect.w * scaleX)), Math.max(2, Math.round(rect.h * scaleY)), 0, 0, w, h);
           photo = canvas.toDataURL("image/jpeg", 0.7);
+          // Màu chủ đạo của vùng quét — lọc kết quả theo màu như TikTok
+          try {
+            const pixelData = ctx.getImageData(0, 0, w, h).data;
+            dominantColor = dominantColorName(pixelData);
+          } catch { /* canvas tainted */ }
         }
       } catch {
         // video domain khác làm canvas tainted — không gửi ảnh được
@@ -86,6 +92,7 @@ const LensOverlay = ({ episode, position, videoRef, onResult, onClose }) => {
           position: Math.floor(position),
           image: photo,
           cropMs,
+          aiFilters: dominantColor ? { color: dominantColor } : {},
         }),
       });
 
@@ -143,6 +150,9 @@ const LensResult = ({ result, photo, onBuy, onFindShopee, onClose }) => {
         <button type="button" className="lens-close" onClick={onClose}>✕</button>
       </div>
       {photo && <img className="lens-result-photo" src={photo} alt="Vùng đã quét" />}
+      {result.ocrText && (
+        <p className="lens-ai-badge">📜 OCR đọc được: “{result.ocrText}”</p>
+      )}
       {items.length === 0 && (
         <p className="lens-result-note">{result.message || "Thử khoanh vùng món đồ rõ hơn hoặc tìm theo từ khoá."}</p>
       )}

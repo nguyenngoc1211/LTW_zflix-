@@ -7,6 +7,7 @@ const { rankProducts, validateAffiliateTarget } = await import("../src/modules/v
 const { mapRegionToVideoPixels } = await import("../../frontend/src/utils/cropMath.js");
 
 test("rankProducts: sắp xếp theo similarity và lọc sản phẩm hết hàng", () => {
+  process.env.VISUAL_SIM_THRESHOLD = "0.4";
   const candidates = [
     { id: 1, similarity: 0.7, availability: 1 },
     { id: 2, similarity: 0.9, availability: 0 },
@@ -19,6 +20,7 @@ test("rankProducts: sắp xếp theo similarity và lọc sản phẩm hết hà
 });
 
 test("rankProducts: category/color match được boost nhẹ, giới hạn limit", () => {
+  process.env.VISUAL_SIM_THRESHOLD = "0.4";
   const candidates = Array.from({ length: 25 }, (_, i) => ({
     id: i + 1, similarity: 0.5 + (i % 10) / 100, availability: 1,
     category: i === 4 ? "fashion" : "other",

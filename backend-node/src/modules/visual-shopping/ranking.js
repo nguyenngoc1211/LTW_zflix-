@@ -18,7 +18,7 @@ export const rankProducts = (candidates, { category, color } = {}, limit = 15) =
         score = Math.min(1, score + 0.05);
         boosts.push("category");
       }
-      if (color && item.color && item.color.toLowerCase() === String(color).toLowerCase()) {
+      if (color && item.color && (item.color.toLowerCase().includes(String(color).toLowerCase()) || String(color).toLowerCase().includes(item.color.toLowerCase()))) {
         score = Math.min(1, score + 0.05);
         boosts.push("color");
       }
