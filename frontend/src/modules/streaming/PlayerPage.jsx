@@ -22,6 +22,17 @@ const PlayerPage = () => {
   const [lensyResult, setLensyResult] = useState(null);
   const [lensyPhoto, setLensyPhoto] = useState(null);
   const [lensyError, setLensyError] = useState("");
+  const [theater, setTheater] = useState(false);
+
+  // Esc thoát chế độ rạp (không đụng Esc của Lensy — chỉ khi theater đang bật)
+  useEffect(() => {
+    if (!theater) return;
+    const onKey = (event) => {
+      if (event.key === "Escape") setTheater(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [theater]);
   // Bật crossOrigin để chụp khung hình cho AI; host video không CORS sẽ fallback tắt nó
   const [videoNoCors, setVideoNoCors] = useState(false);
   useEffect(() => { apiRequest(`/api/v1/episodes/${episodeId}`).then(setEpisode); }, [episodeId]);
@@ -81,10 +92,14 @@ const PlayerPage = () => {
 
 
   return (
-    <main className="page-shell player-page">
+    <main className={theater ? "page-shell player-page theater-mode" : "page-shell player-page"}>
       <div className="player-main">
-        <Link to={`/movies/${episode.production_id}`}>← {episode.production_title}</Link>
-        <h1>Tập {episode.episode_number}: {episode.title}</h1>
+        {!theater && (
+          <>
+            <Link to={`/movies/${episode.production_id}`}>← {episode.production_title}</Link>
+            <h1>Tập {episode.episode_number}: {episode.title}</h1>
+          </>
+        )}
         <div className="player-stage" ref={stageRef}>
           {episode.video_url ? (
             <video
@@ -111,12 +126,18 @@ const PlayerPage = () => {
             />
           )}
         </div>
-        <div className="manual-progress">
-          <label>Vị trí xem thử: {Math.floor(position)} giây</label>
-          <input type="range" min="0" max={episode.duration} value={position} onChange={(e) => setPosition(Number(e.target.value))} />
-          <button onClick={() => save(Math.floor(position))}>Lưu vị trí xem</button>
-        </div>
+        {!theater && (
+          <div className="manual-progress">
+            <label>Vị trí xem thử: {Math.floor(position)} giây</label>
+            <input type="range" min="0" max={episode.duration} value={position} onChange={(e) => setPosition(Number(e.target.value))} />
+            <button onClick={() => save(Math.floor(position))}>Lưu vị trí xem</button>
+            <button type="button" className="secondary" onClick={() => setTheater(true)} title="Ẩn hết giao diện, chỉ còn phim">🎬 Chế độ rạp</button>
+          </div>
+        )}
       </div>
+      {theater && (
+        <button type="button" className="theater-exit" onClick={() => setTheater(false)} title="Thoát chế độ rạp (Esc)">✕ Thoát chế độ rạp</button>
+      )}
       {(lensyState === "RESULTS" || lensyState === "ERROR") && (
         <ProductPanel
           result={lensyResult || { message: lensyError, products: [] }}
