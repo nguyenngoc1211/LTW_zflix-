@@ -2,9 +2,15 @@
 // Điểm tương đồng chính là cosine similarity từ vector index; category/color
 // chỉ dùng như boost nhỏ khi AI trả về thuộc tính, không bịa điểm.
 
+// Ngưỡng tương đồng tối thiểu — dưới ngưỡng coi là "không tìm thấy sản phẩm phù hợp"
+// (tunable qua env VISUAL_SIM_THRESHOLD; CLIP cosine ~0.55-0.6 là cùng chủ đề)
+export const similarityThreshold = () =>
+  Number(process.env.VISUAL_SIM_THRESHOLD || 0.6);
+
 export const rankProducts = (candidates, { category, color } = {}, limit = 15) => {
+  const threshold = similarityThreshold();
   return candidates
-    .filter((item) => item.availability === 1)
+    .filter((item) => item.availability === 1 && item.similarity >= threshold)
     .map((item) => {
       let score = item.similarity;
       const boosts = [];
