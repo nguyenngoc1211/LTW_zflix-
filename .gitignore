@@ -71,6 +71,9 @@ env/
 db_data/
 mysql_data/
 
+# OCR traineddata (tải tự động)
+*.traineddata
+
 # CLIP model files (150MB — tải tự động khi boot, không track)
 /backend-node/models/
 
