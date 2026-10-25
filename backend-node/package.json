@@ -13,7 +13,8 @@
     "test:cleanup": "node integration/auth-cleanup-smoke.js",
     "test:serpapi": "node scripts/test-serpapi.mjs",
     "seed:omdb": "node scripts/seed-omdb.mjs",
-    "catalog:index": "node scripts/catalog-index.mjs"
+    "catalog:index": "node scripts/catalog-index.mjs",
+    "benchmark:visual": "node scripts/benchmark-visual.mjs"
   },
   "keywords": [],
   "author": "",

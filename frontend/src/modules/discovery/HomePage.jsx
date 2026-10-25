@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import MovieCard from "../../components/MovieCard.jsx";
 import { apiRequest } from "../../services/api.js";
 
@@ -11,6 +11,10 @@ const HomePage = () => {
   const [options, setOptions] = useState({ genres: [], countries: [], years: [] });
   const [result, setResult] = useState({ items: [], page: 1, pages: 1, total: 0 });
   const [featured, setFeatured] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const suggestTimer = useRef(null);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -27,6 +31,23 @@ const HomePage = () => {
   }, [filters]);
 
   const update = (key) => (event) => setDraft((current) => ({ ...current, [key]: event.target.value }));
+
+  // Autocomplete gợi ý phim khi gõ (Edge NGram-style prefix search)
+  const onSearchInput = (event) => {
+    const value = event.target.value;
+    setDraft((current) => ({ ...current, search: value }));
+    clearTimeout(suggestTimer.current);
+    if (!value.trim()) { setSuggestions([]); setShowSuggest(false); return; }
+    suggestTimer.current = setTimeout(() => {
+      apiRequest(`/api/v1/productions/suggest?q=${encodeURIComponent(value.trim())}`)
+        .then((data) => { setSuggestions(data.items); setShowSuggest(data.items.length > 0); })
+        .catch(() => {});
+    }, 250);
+  };
+  const goSuggestion = (item) => {
+    setShowSuggest(false);
+    navigate(`/movies/${item.id}`);
+  };
   return <>
     {featured ? (
       <section className="hero" style={featured.banner_url ? { backgroundImage: `linear-gradient(90deg, rgba(8,10,15,.95), rgba(8,10,15,.4)), url(${featured.banner_url})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
@@ -40,7 +61,22 @@ const HomePage = () => {
     )}
     <main className="page-shell">
       <form className="filter-panel" onSubmit={(event) => { event.preventDefault(); setLoading(true); setError(""); setFilters(draft); }}>
-        <div className="search-row"><input aria-label="Tên phim" value={draft.search} onChange={update("search")} placeholder="Nhập tên phim..." /><button type="submit">Tìm phim</button></div>
+        <div className="search-row" style={{ position: "relative" }}>
+          <input aria-label="Tên phim" value={draft.search} onChange={onSearchInput} placeholder="Nhập tên phim..." autoComplete="off" />
+          {showSuggest && suggestions.length > 0 && (
+            <div className="suggest-dropdown">
+              {suggestions.map((item) => (
+                <button key={item.id} type="button" className="suggest-item" onClick={() => goSuggestion(item)}>
+                  {item.poster_url ? <img src={item.poster_url} alt="" loading="lazy" /> : <span className="suggest-fallback">🎬</span>}
+                  <span className="suggest-title">{item.title}</span>
+                  <span className="suggest-year">{item.release_year || ""}</span>
+                  <span className="suggest-rating">⭐ {Number(item.rating_avg).toFixed(1)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button type="submit">Tìm phim</button>
+        </div>
         <div className="filter-grid">
           <select value={draft.genre} onChange={update("genre")}><option value="">Mọi thể loại</option>{options.genres.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select>
           <select value={draft.country} onChange={update("country")}><option value="">Mọi quốc gia</option>{options.countries.map((item) => <option key={item}>{item}</option>)}</select>

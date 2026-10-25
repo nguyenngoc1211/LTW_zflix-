@@ -31,6 +31,18 @@ discoveryRouter.get("/productions", asyncHandler(async (req, res) => {
   res.json({ ...result, page, limit, pages: Math.ceil(result.total / limit) });
 }));
 
+// Autocomplete gợi ý phim khi gõ (kiểu Edge NGram của Elasticsearch — dùng MySQL prefix match)
+discoveryRouter.get("/productions/suggest", asyncHandler(async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
+  if (q.length < 1) return res.json({ items: [] });
+  const [rows] = await pool.execute(
+    `SELECT id, title, poster_url, release_year, rating_avg FROM productions
+     WHERE title LIKE ? ORDER BY rating_avg DESC, rating_count DESC LIMIT 8`,
+    [`${q}%`],
+  );
+  res.json({ items: rows });
+}));
+
 discoveryRouter.get("/productions/:id", asyncHandler(async (req, res) => {
   const id = parsePositiveInt(req.params.id, "production id");
   const [rows] = await pool.execute(`SELECT p.*, GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR '||') AS genres FROM productions p LEFT JOIN production_genres pg ON pg.production_id=p.id LEFT JOIN genres g ON g.id=pg.genre_id WHERE p.id=? GROUP BY p.id`, [id]);
