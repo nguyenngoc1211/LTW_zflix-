@@ -184,107 +184,6 @@ const LensResult = ({ result, photo, onBuy, onFindShopee, onClose }) => {
   );
 };
 
-// ---------------------------------------------------------------------------
-// Linh vật thỏ "Quét đồ vật" — kéo-thả lên món đồ là quét (drag-to-scan)
-// ---------------------------------------------------------------------------
-const ScanMascot = ({ stageRef, onScanRegion }) => {
-  const [armed, setArmed] = useState(false); // đang trong chế độ chọn điểm quét
-  const [ghost, setGhost] = useState(null); // tâm vòng quét trong player-stage (px)
-  const armedRef = useRef(false);
-  const ghostRef = useRef(null);
-
-  // Kích hoạt: click linh vật → di chuột: ghost theo chuột → click lần 2: quét
-  useEffect(() => {
-    const stagePoint = (clientX, clientY) => {
-      const bounds = stageRef.current.getBoundingClientRect();
-      return {
-        x: Math.min(Math.max(clientX - bounds.left, 90), bounds.width - 90),
-        y: Math.min(Math.max(clientY - bounds.top, 90), bounds.height - 90),
-      };
-    };
-    const onMouseDown = (event) => {
-      if (!armedRef.current) return;
-      if (event.target?.closest?.(".scan-mascot")) return; // click mascot = hủy chế độ quét
-      const point = stagePoint(event.clientX, event.clientY);
-      ghostRef.current = point;
-      setGhost(point);
-    };
-    const onMouseMove = (event) => {
-      if (!armedRef.current) return;
-      const point = stagePoint(event.clientX, event.clientY);
-      ghostRef.current = point;
-      setGhost(point);
-    };
-    const onMouseUpScan = () => {
-      if (!armedRef.current) return;
-      armedRef.current = false;
-      setArmed(false);
-      const point = ghostRef.current;
-      setGhost(null);
-      if (point) onScanRegion({ x: point.x - 90, y: point.y - 90, w: 180, h: 180 });
-    };
-    window.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUpScan);
-    window.addEventListener("touchmove", (e) => { if (e.touches[0]) onMouseMove(e.touches[0]); }, { passive: false });
-    return () => {
-      window.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUpScan);
-    };
-  }, [stageRef, onScanRegion]);
-
-  const arm = (clientX, clientY) => {
-    armedRef.current = true;
-    setArmed(true);
-    const bounds = stageRef.current.getBoundingClientRect();
-    const point = {
-      x: Math.min(Math.max(clientX - bounds.left, 90), bounds.width - 90),
-      y: Math.min(Math.max(clientY - bounds.top, 90), bounds.height - 90),
-    };
-    ghostRef.current = point;
-    setGhost(point);
-  };
-
-  return (
-    <>
-      <div
-        className={armed ? "scan-mascot armed" : "scan-mascot"}
-        title="Bấm vào mình rồi di chuột lên món đồ muốn mua!"
-        onMouseDown={(e) => {
-          window.__mascotLog = (window.__mascotLog || []).concat('jsx-md armed=' + armedRef.current);
-          e.preventDefault();
-          if (!armedRef.current) arm(e.clientX, e.clientY);
-          else { armedRef.current = false; setArmed(false); setGhost(null); }
-        }}
-      >
-        <svg viewBox="0 0 64 64" aria-hidden="true">
-          <ellipse cx="24" cy="12" rx="5.5" ry="14" fill="#fff" stroke="#e5e7eb" strokeWidth="1.5" transform="rotate(-12 24 12)" />
-          <ellipse cx="40" cy="12" rx="5.5" ry="14" fill="#fff" stroke="#e5e7eb" strokeWidth="1.5" transform="rotate(12 40 12)" />
-          <ellipse cx="24" cy="14" rx="2.5" ry="9" fill="#fecdd3" transform="rotate(-12 24 14)" />
-          <ellipse cx="40" cy="14" rx="2.5" ry="9" fill="#fecdd3" transform="rotate(12 40 14)" />
-          <circle cx="32" cy="34" r="19" fill="#fff" stroke="#e5e7eb" strokeWidth="1.5" />
-          <circle cx="25" cy="31" r="3.2" fill="#1f2937" />
-          <circle cx="39" cy="31" r="3.2" fill="#1f2937" />
-          <circle cx="26.2" cy="29.8" r="1.1" fill="#fff" />
-          <circle cx="40.2" cy="29.8" r="1.1" fill="#fff" />
-          <ellipse cx="20" cy="37" rx="3.5" ry="2.2" fill="#fda4af" />
-          <ellipse cx="44" cy="37" rx="3.5" ry="2.2" fill="#fda4af" />
-          <path d="M29 38 Q32 41 35 38" stroke="#1f2937" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-          <ellipse cx="32" cy="36" rx="2.4" ry="1.7" fill="#f43f5e" />
-        </svg>
-        <span className="scan-mascot-label">{armed ? "Chọn đồ..." : "Quét"}</span>
-      </div>
-      {armed && ghost && (
-        <div className="mascot-ghost" style={{ left: ghost.x - 90, top: ghost.y - 90 }}>
-          <div className="mascot-ghost-ring" />
-          <span className="mascot-ghost-hint">Bấm để quét vùng này</span>
-        </div>
-      )}
-    </>
-  );
-};
-
 const ShoppingPanel = ({ episode, position, onOpenLens }) => {
   const [products, setProducts] = useState([]);
   const [keyword, setKeyword] = useState("");
@@ -379,7 +278,6 @@ const PlayerPage = () => {
   const lastSaved = useRef(0);
   const [lensCard, setLensCard] = useState(null); // { result, photo }
   const [lensOpen, setLensOpen] = useState(false);
-  const stageRef = useRef(null);
   // Bật crossOrigin để chụp khung hình cho AI; host video không CORS sẽ fallback tắt nó
   const [videoNoCors, setVideoNoCors] = useState(false);
   useEffect(() => { apiRequest(`/api/v1/episodes/${episodeId}`).then(setEpisode); }, [episodeId]);
@@ -394,45 +292,6 @@ const PlayerPage = () => {
   const handleLensResult = (instant, photo) => {
     setLensOpen(false);
     setLensCard({ result: instant, photo });
-  };
-
-  // Kéo linh vật thả lên món đồ: crop vùng tròn quanh điểm thả rồi quét CLIP
-  const handleMascotScan = async (rect) => {
-    setLensOpen(false);
-    setLensCard({ result: null, photo: null, aiState: "pending" });
-    const cropStart = performance.now();
-    let photo = null;
-    try {
-      try {
-        const video = videoRef.current;
-        const stage = stageRef.current;
-        if (video?.videoWidth && stage) {
-          const scaleX = video.videoWidth / stage.clientWidth;
-          const scaleY = video.videoHeight / stage.clientHeight;
-          const canvas = document.createElement("canvas");
-          let w = Math.max(2, Math.round(rect.w * scaleX));
-          let h = Math.max(2, Math.round(rect.h * scaleY));
-          if (w > 512) { h = Math.round((512 / w) * h); w = 512; }
-          canvas.width = w; canvas.height = h;
-          canvas.getContext("2d").drawImage(
-            video,
-            Math.round(rect.x * scaleX), Math.round(rect.y * scaleY), Math.max(2, Math.round(rect.w * scaleX)), Math.max(2, Math.round(rect.h * scaleY)),
-            0, 0, w, h,
-          );
-          photo = canvas.toDataURL("image/jpeg", 0.7);
-        }
-      } catch { /* canvas tainted */ }
-      const result = await apiRequest("/api/v1/visual-search", {
-        method: "POST",
-        body: JSON.stringify({
-          movieId: episode.production_id, position: Math.floor(position),
-          image: photo, cropMs: Math.round(performance.now() - cropStart),
-        }),
-      });
-      setLensCard({ result, photo });
-    } catch (e) {
-      setLensCard({ result: { message: e.message, products: [] }, photo: null });
-    }
   };
 
   // Mua: backend xác thực sản phẩm + ghi affiliate_clicks + 302 sang sàn
@@ -455,7 +314,7 @@ const PlayerPage = () => {
       <div className="player-main">
         <Link to={`/movies/${episode.production_id}`}>← {episode.production_title}</Link>
         <h1>Tập {episode.episode_number}: {episode.title}</h1>
-        <div className="player-stage" ref={stageRef}>
+        <div className="player-stage">
           {episode.video_url ? (
             <video
               ref={videoRef}
@@ -480,7 +339,6 @@ const PlayerPage = () => {
               onClose={() => setLensCard(null)}
             />
           )}
-          <ScanMascot stageRef={stageRef} onScanRegion={handleMascotScan} />
           {lensOpen && (
             <LensOverlay
               episode={episode}
