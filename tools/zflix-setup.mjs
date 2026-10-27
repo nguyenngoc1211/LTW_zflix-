@@ -558,7 +558,34 @@ const main = async () => {
     CONN.port = Number(flagValue("--db-port", 3306));
   }
 
-  const probe = mysqlQuery(mysqlExe, "SELECT VERSION() AS v");
+  let probe = mysqlQuery(mysqlExe, "SELECT VERSION() AS v");
+
+  // MySQL có trên máy nhưng CHƯA CHẠY (XAMPP chưa bật) -> tự chuyển MariaDB portable,
+  // thay vì bắt người dùng bật XAMPP. Không áp dụng cho --db-url (DB dùng chung).
+  if (probe.status !== 0 && CONN.mode === "local" && !isRemote
+      && /connect|refused|can't connect|2002|10061/i.test(probe.stderr || "")) {
+    warn("MySQL co tren may nhung khong ket noi duoc - chuyen sang MariaDB portable");
+    const install = await installEmbedded();
+    if (!install.ok) {
+      die(
+        `Khong ket noi duoc MySQL, va cai MariaDB portable cung that bai (${install.reason})`,
+        install.reason === "platform"
+          ? "Bat MySQL thu cong roi chay lai: net start mysql"
+          : "Kiem tra mang, hoac bat MySQL roi chay lai.",
+      );
+    }
+    if (!install.cached) ok("da cai MariaDB portable vao .localdb/");
+    mysqlExe = embeddedPaths().mysql;
+    Object.assign(CONN, { host: "127.0.0.1", port: EMBEDDED_PORT, user: "root", password: "" });
+    CONN.mode = "embedded";
+
+    const started = startEmbedded();
+    if (!started.ok) die("MariaDB portable khong khoi dong duoc", "Xem log: .localdb/data/*.err");
+    embeddedStarted = true;
+    ok(`MariaDB portable dang chay (port ${EMBEDDED_PORT})`);
+    probe = mysqlQuery(mysqlExe, "SELECT VERSION() AS v");
+  }
+
   if (probe.status !== 0) {
     if (CONN.mode === "embedded") {
       die(
@@ -569,7 +596,7 @@ const main = async () => {
     if (/connect|refused|can't connect|2002/i.test(probe.stderr)) {
       die(
         "Khong ket noi duoc MySQL",
-        "MySQL chua chay. Bat MySQL trong XAMPP Control Panel (hoac: net start mysql) roi chay lai.",
+        "MySQL chua chay. Bat MySQL trong XAMPP Control Panel (hoac: net start mysql), hoac dung --embedded.",
       );
     }
     die(
