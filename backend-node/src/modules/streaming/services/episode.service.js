@@ -1,5 +1,6 @@
 import prisma from "../../../core/database/prisma.js";
 import { uploadFileToR2 } from "../../../core/storage/upload.helper.js";
+import { videoServiceProcessEndpoint } from "../../../config/video-service.config.js";
 import axios from "axios";
 
 export const getEpisodesBySeasonService = async (seasonId) => {
@@ -56,7 +57,7 @@ export const createEpisodeService = async (data, file) => {
 
   if (file && videoUrl) {
     axios
-      .post("http://video_service:8001/process-video", {
+      .post(videoServiceProcessEndpoint, {
         file_name: videoUrl,
         production_id: episode.production_id,
         episode_id: episode.id,
@@ -92,7 +93,7 @@ export const updateEpisodeService = async (id, data, file) => {
 
   if (file && videoUrl) {
     axios
-      .post("http://video_service:8001/process-video", {
+      .post(videoServiceProcessEndpoint, {
         file_name: videoUrl,
         production_id: episode.production_id,
         episode_id: episode.id,

@@ -71,6 +71,7 @@ services:
       R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
       R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:-}
       VIDEO_WEBHOOK_SECRET: ${VIDEO_WEBHOOK_SECRET:-}
+      VIDEO_SERVICE_URL: http://video_service:8001
     depends_on:
       db:
         condition: service_healthy

@@ -3,6 +3,7 @@ import {
   deleteFilesFromR2,
   uploadFileToR2,
 } from "../../../core/storage/upload.helper.js";
+import { videoServiceProcessEndpoint } from "../../../config/video-service.config.js";
 import axios from "axios";
 
 const generateCleanSlug = (title) => {
@@ -140,7 +141,7 @@ export const uploadMovieService = async (file, metadata) => {
   if (firstEpisodeId && fileName) {
     console.log(`🔥 Đã lưu DB. Đang gửi file ${fileName} sang Python xử lý...`);
     axios
-      .post("http://video_service:8001/process-video", {
+      .post(videoServiceProcessEndpoint, {
         file_name: fileName,
         production_id: newProduction.id,
         episode_id: firstEpisodeId,
