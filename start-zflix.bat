@@ -113,11 +113,10 @@ if defined LOCALDB (
     ) else (
         echo       Dang khoi dong MariaDB portable ^(port !DB_PORT!^)...
         start "MariaDB portable" /min "!LOCALDB!\bin\mysqld.exe" --defaults-file="%~dp0.localdb\my.ini"
-        ping -n 10 127.0.0.1 >nul
-        netstat -ano | findstr ":!DB_PORT! " | findstr "LISTENING" >nul
+        call :wait_port !DB_PORT! 45
         if errorlevel 1 (
             color 0C
-            echo       LOI: MariaDB portable khong khoi dong duoc^!
+            echo       LOI: MariaDB portable khong khoi dong duoc sau 45 giay^!
             echo       Xem loi trong %~dp0.localdb\data\*.err
             echo       Thu xoa thu muc .localdb roi chay lai setup-zflix.bat
             if not defined ZFLIX_NO_PAUSE pause
@@ -177,11 +176,10 @@ if not errorlevel 1 (
     ) else (
         start "MariaDB" /min "!MYSQLD_EXE!"
     )
-    ping -n 9 127.0.0.1 >nul
-    netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul
+    call :wait_port 3306 45
     if errorlevel 1 (
         color 0C
-        echo       LOI: MariaDB khong khoi dong duoc^!
+        echo       LOI: MariaDB khong khoi dong duoc sau 45 giay^!
         echo       Kiem tra thu muc data cua MySQL co bi loi khong.
         if not defined ZFLIX_NO_PAUSE pause
         exit /b 1
@@ -202,11 +200,17 @@ if not errorlevel 1 (
     cd /d "%~dp0backend-node"
     start "Zflix Backend" /min cmd /c "npm start > backend.log 2> backend.err"
     cd /d "%~dp0"
-    ping -n 9 127.0.0.1 >nul
-    netstat -ano | findstr ":3000 " | findstr "LISTENING" >nul
+
+    REM Poll den 45 giay thay vi ngu co dinh 8 giay: lan dau MariaDB vua
+    REM khoi dong (InnoDB recovery) backend co the can lau hon.
+    call :wait_port 3000 45
+
     if errorlevel 1 (
         color 0C
-        echo       LOI: Backend khong khoi dong^! Xem backend-node\backend.err
+        echo       LOI: Backend khong khoi dong sau 45 giay.
+        echo.
+        echo       --- 15 dong cuoi backend-node\backend.err ---
+        if exist "%~dp0backend-node\backend.err" powershell -NoProfile -Command "Get-Content '%~dp0backend-node\backend.err' -Tail 15 -ErrorAction SilentlyContinue"
         if not defined ZFLIX_NO_PAUSE pause
         exit /b 1
     )
@@ -272,11 +276,15 @@ if not errorlevel 1 (
     cd /d "%~dp0frontend"
     start "Zflix Frontend" /min cmd /c "npm run dev > frontend.log 2> frontend.err"
     cd /d "%~dp0"
-    ping -n 11 127.0.0.1 >nul
-    netstat -ano | findstr ":5173 " | findstr "LISTENING" >nul
+
+    call :wait_port 5173 45
+
     if errorlevel 1 (
         color 0C
-        echo       LOI: Frontend khong khoi dong^! Xem frontend\frontend.err
+        echo       LOI: Frontend khong khoi dong sau 45 giay.
+        echo.
+        echo       --- 15 dong cuoi frontend\frontend.err ---
+        if exist "%~dp0frontend\frontend.err" powershell -NoProfile -Command "Get-Content '%~dp0frontend\frontend.err' -Tail 15 -ErrorAction SilentlyContinue"
         if not defined ZFLIX_NO_PAUSE pause
         exit /b 1
     )
@@ -323,3 +331,21 @@ echo ============================================
 echo.
 start http://localhost:5173
 if not defined ZFLIX_NO_PAUSE pause
+exit /b 0
+
+REM ============================================================
+REM :wait_port <port> <timeout_seconds>
+REM Poll port cho den khi LISTENING, toi da <timeout> giay.
+REM Tra errorlevel 0 neu len kip, 1 neu het gio.
+REM ============================================================
+:wait_port
+set "_WP_PORT=%~1"
+set "_WP_MAX=%~2"
+set /a _WP_COUNT=0
+:wait_port_loop
+netstat -ano | findstr ":!_WP_PORT! " | findstr "LISTENING" >nul
+if not errorlevel 1 exit /b 0
+set /a _WP_COUNT+=1
+if !_WP_COUNT! GEQ !_WP_MAX! exit /b 1
+ping -n 2 127.0.0.1 >nul
+goto :wait_port_loop
