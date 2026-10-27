@@ -10,6 +10,7 @@ import { authRouter } from "./modules/auth/auth.routes.js";
 import { discoveryRouter } from "./modules/discovery/discovery.routes.js";
 import { communityRouter } from "./modules/community/community.routes.js";
 import { streamingRouter } from "./modules/streaming/streaming.routes.js";
+import streamingContentRouter from "./modules/streaming/route/index.js";
 import { watchPartyRouter } from "./modules/watch-party/watch-party.routes.js";
 import { adminRouter } from "./modules/admin/admin.routes.js";
 import { adminContentRouter } from "./modules/admin/admin.content.routes.js";
@@ -62,6 +63,32 @@ export const createApp = () => {
   app.use("/api/v1/admin", adminContentRouter);
   app.use("/api/v1/admin", adminModerationRouter);
   app.use("/api/v1/admin", adminSystemRouter);
+
+  // Quản lý phim/tập nâng cao (Prisma + R2, từ nhánh Nam) — chỉ admin/moderator.
+  // Webhook do video-processor gọi nội bộ nên xác thực bằng secret riêng.
+  const requireContentStaff = (req, res, next) => {
+    if (!["admin", "moderator"].includes(req.user?.role)) {
+      return res.status(403).json({ message: "You do not have permission to access this resource" });
+    }
+    next();
+  };
+  const verifyVideoWebhook = (req, res, next) => {
+    const expected = process.env.VIDEO_WEBHOOK_SECRET || "";
+    const received = req.get("x-webhook-secret") || "";
+    if (!expected || received !== expected) {
+      return res.status(401).json({ message: "Invalid webhook secret" });
+    }
+    next();
+  };
+  app.use("/api/streaming/episodes/webhook", verifyVideoWebhook);
+  app.use(
+    "/api/streaming",
+    (req, res, next) => {
+      if (req.originalUrl.startsWith("/api/streaming/episodes/webhook/")) return next();
+      return requireAuth(req, res, () => requireContentStaff(req, res, next));
+    },
+    streamingContentRouter,
+  );
 
   // Banner phim nổi bật trên trang chủ (công khai, đọc từ app_settings)
   app.get("/api/v1/settings/featured", async (req, res) => {

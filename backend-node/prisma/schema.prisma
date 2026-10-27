@@ -1,14 +1,535 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
+  binaryFeatures = ["native", "linux-musl-openssl-3.0.x"]
+  previewFeatures = ["fullTextIndex", "fullTextSearch"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model productions {
+  id                Int                 @id @default(autoincrement())
+  type              Type
+  title             String              @db.VarChar(255)
+  slug              String              @unique(map: "slug") @db.VarChar(255)
+  description       String?             @db.Text
+  poster_url        String?             @db.VarChar(255)
+  banner_url        String?             @db.VarChar(255)
+  status            Status?             @default(ongoing)
+  release_year      Int?                @db.Year
+  is_premium        Boolean?            @default(false)
+  country           String?             @db.VarChar(100)
+  rating_avg        Decimal?            @default(0.0) @db.Decimal(3, 1)
+  rating_count      Int?                @default(0)
+  created_at        DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at        DateTime?           @default(now()) @updatedAt @db.Timestamp(0)
+  language          String?             @db.VarChar(100)
+  bookmarks         bookmarks[]
+  comments          comments[]
+  daily_stats       daily_stats[]
+  episodes          episodes[]
+  movies            movies?
+  production_actors production_actors[]
+  production_genres production_genres[]
+  ratings           ratings[]
+  seasons           seasons?
+  series            series?
+  watch_parties     watch_parties[]
+
+  @@index([is_premium], map: "idx_premium")
+  @@index([release_year], map: "idx_release_year")
+  @@index([slug], map: "idx_slug")
+  @@index([status], map: "idx_status")
+  @@index([type], map: "idx_type")
+}
+
+model movies {
+  id               Int         @id
+  duration         Int
+  preview_duration Int?        @default(300)
+  production       productions @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "movies_ibfk_1")
+
+  @@index([duration], map: "idx_duration")
+}
+
+model episodes {
+  id              Int             @id @default(autoincrement())
+  production_id   Int
+  episode_number  Int
+  title           String          @db.VarChar(255)
+  video_url       String?         @db.VarChar(500)
+  duration        Int
+  thumbnail_url   String?         @db.VarChar(255)
+  intro_start     Int?            @default(0)
+  intro_end       Int?            @default(0)
+  preview_enabled Boolean?        @default(true)
+  views_count     Int?            @default(0)
+  created_at      DateTime?       @default(now()) @db.Timestamp(0)
+  updated_at      DateTime?       @default(now()) @db.Timestamp(0)
+  comments        comments[]
+  production      productions     @relation(fields: [production_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "episodes_ibfk_1")
+  watch_history   watch_history[]
+  watch_parties   watch_parties[]
+
+  @@unique([production_id, episode_number], map: "uk_production_episode")
+  @@index([episode_number], map: "idx_episode_number")
+  @@index([production_id], map: "idx_production")
+  @@index([views_count], map: "idx_views")
+}
+
+model actors {
+  id                Int                 @id @default(autoincrement())
+  name              String              @db.VarChar(200)
+  slug              String              @unique(map: "slug") @db.VarChar(255)
+  avatar_url        String?             @db.VarChar(255)
+  bio               String?             @db.Text
+  birth_date        DateTime?           @db.Date
+  country           String?             @db.VarChar(100)
+  gender            actors_gender?      @default(unknown)
+  created_at        DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at        DateTime?           @default(now()) @db.Timestamp(0)
+  production_actors production_actors[]
+
+  @@index([name], map: "idx_name")
+  @@index([slug], map: "idx_slug")
+  @@fulltext([name, bio], map: "ft_actor_search")
+}
+
+model bookmarks {
+  user_id            Int
+  production_id      Int
+  note               String?     @db.Text
+  notify_new_episode Boolean?    @default(true)
+  created_at         DateTime?   @default(now()) @db.Timestamp(0)
+  users              users       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "bookmarks_ibfk_1")
+  productions        productions @relation(fields: [production_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "bookmarks_ibfk_2")
+
+  @@id([user_id, production_id])
+  @@index([production_id], map: "idx_production_bookmarks")
+  @@index([user_id, created_at], map: "idx_user_bookmarks")
+}
+
+model comment_likes {
+  user_id    Int
+  comment_id Int
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "comment_likes_ibfk_1")
+  comments   comments  @relation(fields: [comment_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "comment_likes_ibfk_2")
+
+  @@id([user_id, comment_id])
+  @@index([comment_id, created_at], map: "idx_comment_likes")
+}
+
+model comments {
+  id             Int              @id @default(autoincrement())
+  user_id        Int
+  production_id  Int
+  episode_id     Int?
+  content        String           @db.Text
+  parent_id      Int?
+  likes_count    Int?             @default(0)
+  status         comments_status? @default(active)
+  created_at     DateTime?        @default(now()) @db.Timestamp(0)
+  updated_at     DateTime?        @default(now()) @db.Timestamp(0)
+  comment_likes  comment_likes[]
+  users          users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "comments_ibfk_1")
+  productions    productions      @relation(fields: [production_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "comments_ibfk_2")
+  episodes       episodes?        @relation(fields: [episode_id], references: [id], onUpdate: NoAction, map: "comments_ibfk_3")
+  comments       comments?        @relation("commentsTocomments", fields: [parent_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "comments_ibfk_4")
+  other_comments comments[]       @relation("commentsTocomments")
+
+  @@index([episode_id, created_at], map: "idx_episode_comments")
+  @@index([parent_id, created_at], map: "idx_parent_comments")
+  @@index([production_id, created_at], map: "idx_production_comments")
+  @@index([user_id, created_at], map: "idx_user_comments")
+}
+
+model daily_stats {
+  id                Int          @id @default(autoincrement())
+  stat_date         DateTime     @unique(map: "stat_date") @db.Date
+  total_users       Int?         @default(0)
+  new_users         Int?         @default(0)
+  active_users      Int?         @default(0)
+  total_views       Int?         @default(0)
+  total_watch_time  BigInt?      @default(0)
+  avg_watch_time    Int?         @default(0)
+  new_subscriptions Int?         @default(0)
+  total_revenue     Decimal?     @default(0.00) @db.Decimal(15, 2)
+  top_production_id Int?
+  top_genre_id      Int?
+  calculated_at     DateTime?    @default(now()) @db.Timestamp(0)
+  productions       productions? @relation(fields: [top_production_id], references: [id], onUpdate: NoAction, map: "daily_stats_ibfk_1")
+  genres            genres?      @relation(fields: [top_genre_id], references: [id], onUpdate: NoAction, map: "daily_stats_ibfk_2")
+
+  @@index([stat_date(sort: Desc)], map: "idx_stat_date")
+  @@index([top_genre_id], map: "top_genre_id")
+  @@index([top_production_id], map: "top_production_id")
+}
+
+model genres {
+  id                Int                 @id @default(autoincrement())
+  name              String              @db.VarChar(100)
+  slug              String              @unique(map: "slug") @db.VarChar(100)
+  description       String?             @db.Text
+  created_at        DateTime?           @default(now()) @db.Timestamp(0)
+  daily_stats       daily_stats[]
+  production_genres production_genres[]
+
+  @@index([slug], map: "idx_slug")
+}
+
+model notifications {
+  id           Int                       @id @default(autoincrement())
+  user_id      Int
+  title        String                    @db.VarChar(255)
+  message      String                    @db.Text
+  type         notifications_type
+  entity_type  notifications_entity_type
+  entity_id    Int?
+  redirect_url String?                   @db.VarChar(500)
+  is_read      Boolean?                  @default(false)
+  created_at   DateTime?                 @default(now()) @db.Timestamp(0)
+  read_at      DateTime?                 @db.Timestamp(0)
+  users        users                     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "notifications_ibfk_1")
+
+  @@index([user_id, is_read, created_at(sort: Desc)], map: "idx_user_notifications")
+  @@index([user_id, type], map: "idx_user_type")
+}
+
+model production_actors {
+  id             Int                          @id @default(autoincrement())
+  production_id  Int
+  actor_id       Int
+  character_name String?                      @db.VarChar(200)
+  character_slug String?                      @db.VarChar(255)
+  role_type      production_actors_role_type? @default(cast)
+  display_order  Int?                         @default(0)
+  is_main        Boolean?                     @default(false)
+  created_at     DateTime?                    @default(now()) @db.Timestamp(0)
+  updated_at     DateTime?                    @default(now()) @db.Timestamp(0)
+  productions    productions                  @relation(fields: [production_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "production_actors_ibfk_1")
+  actors         actors                       @relation(fields: [actor_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "production_actors_ibfk_2")
+
+  @@unique([production_id, actor_id, role_type], map: "uk_production_actor_role")
+  @@index([actor_id, production_id], map: "idx_actor_productions")
+  @@index([character_name(length: 100)], map: "idx_character_search")
+  @@index([production_id, role_type, display_order], map: "idx_production_cast")
+}
+
+model production_genres {
+  production_id Int
+  genre_id      Int
+  productions   productions @relation(fields: [production_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "production_genres_ibfk_1")
+  genres        genres      @relation(fields: [genre_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "production_genres_ibfk_2")
+
+  @@id([production_id, genre_id])
+  @@index([genre_id], map: "idx_genre")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ratings {
+  user_id        Int
+  production_id  Int
+  rating         Int         @db.TinyInt
+  review_title   String?     @db.VarChar(200)
+  review_content String?     @db.Text
+  likes_count    Int?        @default(0)
+  is_edited      Boolean?    @default(false)
+  created_at     DateTime?   @default(now()) @db.Timestamp(0)
+  updated_at     DateTime?   @default(now()) @db.Timestamp(0)
+  users          users       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "ratings_ibfk_1")
+  productions    productions @relation(fields: [production_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "ratings_ibfk_2")
+
+  @@id([user_id, production_id])
+  @@index([production_id, rating], map: "idx_production_rating")
+  @@index([user_id, created_at], map: "idx_user_rating")
+}
+
+model seasons {
+  id             Int         @id
+  series_id      Int
+  season_number  Int
+  total_episodes Int?        @default(0)
+  productions    productions @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "seasons_ibfk_1")
+  series         series      @relation(fields: [series_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "seasons_ibfk_2")
+
+  @@unique([series_id, season_number], map: "uk_series_season")
+  @@index([season_number], map: "idx_season_number")
+  @@index([series_id], map: "idx_series")
+}
+
+model series {
+  id            Int         @id
+  total_seasons Int?        @default(0)
+  seasons       seasons[]
+  productions   productions @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "series_ibfk_1")
+
+  @@index([total_seasons], map: "idx_total_seasons")
+}
+
+model subscription_plans {
+  id                 Int                  @id @default(autoincrement())
+  name               String               @db.VarChar(100)
+  code               String               @unique(map: "code") @db.VarChar(50)
+  description        String?              @db.Text
+  duration_days      Int
+  price              Decimal              @db.Decimal(10, 2)
+  discount_price     Decimal?             @db.Decimal(10, 2)
+  currency           String?              @default("VND") @db.VarChar(3)
+  features           Json?
+  is_active          Boolean?             @default(true)
+  display_order      Int?                 @default(0)
+  created_at         DateTime?            @default(now()) @db.Timestamp(0)
+  updated_at         DateTime?            @default(now()) @db.Timestamp(0)
+  transactions       transactions[]
+  user_subscriptions user_subscriptions[]
+
+  @@index([is_active, display_order], map: "idx_active_display")
+}
+
+model transactions {
+  id                       Int                         @id @default(autoincrement())
+  transaction_code         String                      @unique(map: "transaction_code") @db.VarChar(50)
+  user_id                  Int
+  plan_id                  Int
+  amount                   Decimal                     @db.Decimal(10, 2)
+  discount_amount          Decimal?                    @default(0.00) @db.Decimal(10, 2)
+  final_amount             Decimal                     @db.Decimal(10, 2)
+  status                   transactions_status?        @default(pending)
+  payment_method           transactions_payment_method
+  payment_gateway_response String?                     @db.Text
+  vip_start_date           DateTime?                   @db.DateTime(0)
+  vip_end_date             DateTime?                   @db.DateTime(0)
+  created_at               DateTime?                   @default(now()) @db.Timestamp(0)
+  updated_at               DateTime?                   @default(now()) @db.Timestamp(0)
+  users                    users                       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "transactions_ibfk_1")
+  subscription_plans       subscription_plans          @relation(fields: [plan_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "transactions_ibfk_2")
+  user_subscriptions       user_subscriptions[]
+
+  @@index([created_at], map: "idx_created_at")
+  @@index([transaction_code], map: "idx_transaction_code")
+  @@index([user_id, status], map: "idx_user_status")
+  @@index([plan_id], map: "plan_id")
+}
+
+model user_subscriptions {
+  id                  Int                        @id @default(autoincrement())
+  user_id             Int
+  plan_id             Int
+  transaction_id      Int?
+  start_date          DateTime                   @db.DateTime(0)
+  end_date            DateTime                   @db.DateTime(0)
+  status              user_subscriptions_status? @default(active)
+  auto_renew          Boolean?                   @default(true)
+  cancellation_reason String?                    @db.Text
+  created_at          DateTime?                  @default(now()) @db.Timestamp(0)
+  users               users                      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_subscriptions_ibfk_1")
+  subscription_plans  subscription_plans         @relation(fields: [plan_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_subscriptions_ibfk_2")
+  transactions        transactions?              @relation(fields: [transaction_id], references: [id], onUpdate: NoAction, map: "user_subscriptions_ibfk_3")
+
+  @@index([end_date], map: "idx_end_date")
+  @@index([user_id, status], map: "idx_user_status")
+  @@index([plan_id], map: "plan_id")
+  @@index([transaction_id], map: "transaction_id")
+}
+
+model users {
+  id                       Int                        @id @default(autoincrement())
+  username                 String                     @unique(map: "username") @db.VarChar(50)
+  email                    String                     @unique(map: "email") @db.VarChar(100)
+  password                 String?                    @db.VarChar(255)
+  avatar_url               String?                    @default("/default-avatar.png") @db.VarChar(255)
+  role                     users_role?                @default(user)
+  vip_expires_at           DateTime?                  @db.DateTime(0)
+  auto_renew               Boolean?                   @default(false)
+  provider                 String?                    @default("local") @db.VarChar(20)
+  provider_id              String?                    @db.VarChar(100)
+  total_watch_time         Int?                       @default(0)
+  last_login               DateTime?                  @db.DateTime(0)
+  created_at               DateTime?                  @default(now()) @db.Timestamp(0)
+  updated_at               DateTime?                  @default(now()) @db.Timestamp(0)
+  bookmarks                bookmarks[]
+  comment_likes            comment_likes[]
+  comments                 comments[]
+  notifications            notifications[]
+  ratings                  ratings[]
+  transactions             transactions[]
+  user_subscriptions       user_subscriptions[]
+  watch_history            watch_history[]
+  watch_parties            watch_parties[]
+  watch_party_chats        watch_party_chats[]
+  watch_party_participants watch_party_participants[]
+
+  @@index([email], map: "idx_email")
+  @@index([provider, provider_id], map: "idx_provider")
+  @@index([role], map: "idx_role")
+  @@index([vip_expires_at], map: "idx_vip_expires")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model watch_history {
+  user_id          Int
+  episode_id       Int
+  last_position    Int?      @default(0)
+  watched_percent  Decimal?  @default(0.00) @db.Decimal(5, 2)
+  watched_duration Int?      @default(0)
+  is_completed     Boolean?  @default(false)
+  first_watched_at DateTime? @default(now()) @db.Timestamp(0)
+  last_watched_at  DateTime? @default(now()) @db.Timestamp(0)
+  users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_history_ibfk_1")
+  episodes         episodes  @relation(fields: [episode_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_history_ibfk_2")
+
+  @@id([user_id, episode_id])
+  @@index([is_completed], map: "idx_completed")
+  @@index([episode_id, last_watched_at], map: "idx_episode_watched")
+  @@index([user_id, last_watched_at], map: "idx_user_watched")
+}
+
+model watch_parties {
+  id                       String                     @id @db.VarChar(20)
+  host_id                  Int
+  title                    String                     @db.VarChar(255)
+  password                 String?                    @db.VarChar(100)
+  max_participants         Int?                       @default(10)
+  production_id            Int
+  episode_id               Int
+  current_position         Int?                       @default(0)
+  is_playing               Boolean?                   @default(false)
+  allow_chat               Boolean?                   @default(true)
+  allow_skip_votes         Boolean?                   @default(false)
+  skip_votes_required      Int?                       @default(3)
+  status                   watch_parties_status?      @default(waiting)
+  created_at               DateTime?                  @default(now()) @db.Timestamp(0)
+  started_at               DateTime?                  @db.Timestamp(0)
+  expires_at               DateTime?                  @db.Timestamp(0)
+  users                    users                      @relation(fields: [host_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_parties_ibfk_1")
+  productions              productions                @relation(fields: [production_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_parties_ibfk_2")
+  episodes                 episodes                   @relation(fields: [episode_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_parties_ibfk_3")
+  watch_party_chats        watch_party_chats[]
+  watch_party_participants watch_party_participants[]
+
+  @@index([episode_id], map: "episode_id")
+  @@index([host_id], map: "idx_host")
+  @@index([status, expires_at], map: "idx_status_expires")
+  @@index([production_id], map: "production_id")
+}
+
+model watch_party_chats {
+  id                 Int           @id @default(autoincrement())
+  party_id           String        @db.VarChar(20)
+  user_id            Int
+  message            String        @db.Text
+  timestamp_in_video Int?          @default(0)
+  is_system_message  Boolean?      @default(false)
+  created_at         DateTime?     @default(now()) @db.Timestamp(0)
+  watch_parties      watch_parties @relation(fields: [party_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_party_chats_ibfk_1")
+  users              users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_party_chats_ibfk_2")
+
+  @@index([party_id, created_at], map: "idx_party_chats")
+  @@index([user_id], map: "user_id")
+}
+
+model watch_party_participants {
+  party_id             String                         @db.VarChar(20)
+  user_id              Int
+  role                 watch_party_participants_role? @default(participant)
+  can_control_playback Boolean?                       @default(false)
+  can_send_chat        Boolean?                       @default(true)
+  is_muted             Boolean?                       @default(false)
+  joined_at            DateTime?                      @default(now()) @db.Timestamp(0)
+  last_active_at       DateTime?                      @default(now()) @db.Timestamp(0)
+  watch_parties        watch_parties                  @relation(fields: [party_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_party_participants_ibfk_1")
+  users                users                          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "watch_party_participants_ibfk_2")
+
+  @@id([party_id, user_id])
+  @@index([user_id, joined_at], map: "idx_user_parties")
+}
+
+enum Type {
+  movie
+  season
+  series
+}
+
+enum Status {
+  ongoing
+  completed
+}
+
+enum watch_party_participants_role {
+  host
+  co_host     @map("co-host")
+  participant
+}
+
+enum notifications_type {
+  system
+  vip
+  new_episode
+  reply
+  like
+  warning
+}
+
+enum notifications_entity_type {
+  production
+  episode
+  comment
+  transaction
+  user
+}
+
+enum production_actors_role_type {
+  cast
+  director
+  writer
+  producer
+  crew
+}
+
+enum users_role {
+  admin
+  user
+}
+
+enum user_subscriptions_status {
+  active
+  expired
+  cancelled
+}
+
+enum actors_gender {
+  male
+  female
+  other
+  unknown
+}
+
+enum comments_status {
+  active
+  hidden
+  deleted
+}
+
+enum transactions_status {
+  pending
+  success
+  failed
+  cancelled
+}
+
+enum transactions_payment_method {
+  momo
+  vnpay
+  zalopay
+  credit_card
+}
+
+enum watch_parties_status {
+  waiting
+  playing
+  paused
+  ended
 }

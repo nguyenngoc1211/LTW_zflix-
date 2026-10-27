@@ -65,6 +65,12 @@ services:
       PASSWORD_RESET_TOKEN_TTL_MINUTES: 30
       FORGOT_PASSWORD_RATE_LIMIT_MAX: 5
       RESET_PASSWORD_RATE_LIMIT_MAX: 10
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:-}
+      VIDEO_WEBHOOK_SECRET: ${VIDEO_WEBHOOK_SECRET:-}
     depends_on:
       db:
         condition: service_healthy
@@ -73,7 +79,7 @@ services:
     volumes:
       - ./backend-node:/app
       - /app/node_modules
-    command: sh -c "npm install && npm run migrate:auth && npm run dev"
+    command: sh -c "npm install && npx prisma generate && npm run migrate:auth && npm run dev"
 
   # Python Video Service
   video-processor:
@@ -83,7 +89,15 @@ services:
       - "8001:8001"
     volumes:
       - ./backend-python/video-processor:/app
-    command: sh -c "pip install -r requirements.txt && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload"
+    environment:
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:-}
+      NODE_WEBHOOK_URL: ${NODE_WEBHOOK_URL:-http://backend-node:3000/api/streaming/episodes/webhook/video-done}
+      VIDEO_WEBHOOK_SECRET: ${VIDEO_WEBHOOK_SECRET:-}
+    command: sh -c "pip install -r requirements.txt && uvicorn main:app --app-dir src --host 0.0.0.0 --port 8001 --reload"
 
   # Python AI Service
   ai-chatbot:
@@ -103,6 +117,7 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:3000
+      - VITE_STREAMING_API_URL=http://localhost:3000/api/streaming
     volumes:
       - ./frontend:/app
       - /app/node_modules

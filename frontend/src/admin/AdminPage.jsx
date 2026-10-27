@@ -112,6 +112,7 @@ const AdminPage = () => {
       admin: "analytics",
       users: "users",
       movies: "movies",
+      content: "content",
       community: "community",
       parties: "parties",
       subscriptions: "subscriptions",
@@ -134,6 +135,11 @@ const AdminPage = () => {
     {
       label: <Link to="/admin/movies">Quản lý phim</Link>,
       key: "movies",
+      icon: <PlaySquareOutlined />,
+    },
+    {
+      label: <Link to="/admin/content">Kho phim & tập</Link>,
+      key: "content",
       icon: <PlaySquareOutlined />,
     },
     {

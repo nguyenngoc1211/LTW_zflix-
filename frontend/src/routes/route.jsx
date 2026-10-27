@@ -5,6 +5,7 @@ import AdminPage from "../admin/AdminPage";
 import DashboardPage from "../admin/analytics/DashboardPage.jsx";
 import UsersAdminPage from "../admin/users/UsersAdminPage.jsx";
 import MoviesAdminPage from "../admin/content/MoviesAdminPage.jsx";
+import ContentTable from "../admin/content/ContentTable.jsx";
 import ViewsPage from "../admin/analytics/ViewsPage.jsx";
 import CommunityAdminPage from "../admin/community/CommunityAdminPage.jsx";
 import PartiesAdminPage from "../admin/community/PartiesAdminPage.jsx";
@@ -88,6 +89,7 @@ export const router = createBrowserRouter([
             element: <DashboardPage />,
           },
           { path: "/admin/movies", element: <MoviesAdminPage /> },
+          { path: "/admin/content", element: <ContentTable /> },
           { path: "/admin/community", element: <CommunityAdminPage /> },
           { path: "/admin/parties", element: <PartiesAdminPage /> },
           { path: "/admin/shopping", element: <ShoppingAdminPage /> },
