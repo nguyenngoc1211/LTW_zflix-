@@ -15,6 +15,11 @@ Thumbs.db
 !**/.env.example
 tmp/
 
+# --- AI AGENT / EDITOR LOCAL STATE ---
+.qoder/
+.claude/
+.cursor/
+
 
 # --- DEPENDENCIES (Thư viện tải về) ---
 node_modules/

@@ -90,7 +90,8 @@ docker compose up --build
 #    Backend:   http://localhost:3000  ({"message":"Zflix API","status":"ok"})
 ```
 
-MySQL container tự nạp `database/init.sql` khi tạo volume lần đầu (28 bảng + dữ liệu mẫu).
+MySQL container tự nạp `database/init.sql` khi tạo volume lần đầu (32 bảng + dữ liệu mẫu) và
+`database/migrate-visual-shopping.sql` (3 bảng visual shopping). Tổng cộng **35 bảng**.
 Nếu volume cũ chưa có bảng `production_interests`, chạy thêm:
 ```bash
 docker compose exec -T db mysql -uroot -prootpassword movie_streaming_db < database/migrate-hai.sql
@@ -98,17 +99,35 @@ docker compose exec -T db mysql -uroot -prootpassword movie_streaming_db < datab
 
 ## 💻 Chạy thủ công không dùng Docker (Dev local)
 
-Yêu cầu: Node.js ≥ 20, MySQL 8 (hoặc MariaDB ≥ 10.5, xem ghi chú bên dưới).
+### Cách nhanh nhất — 1 lệnh (Windows)
+
+```cmd
+setup-zflix.bat
+start-zflix.bat
+```
+
+`setup-zflix.bat` tự tìm MySQL, tạo database đủ 35 bảng, sinh `.env` với secret ngẫu nhiên,
+cài dependency và đặt mật khẩu dev. Chi tiết + xử lý lỗi: **[docs/SETUP_TEAM.md](docs/SETUP_TEAM.md)**.
+
+Tài khoản demo sau khi cài: `admin@moviehub.com` / `Zflix@2026`
+
+### Cách thủ công
+
+Yêu cầu: Node.js ≥ 20, MySQL 8 (hoặc MariaDB ≥ 10.8, xem ghi chú bên dưới).
 
 ```bash
-# 1. Database: tạo DB và nạp schema
+# 1. Database: tạo DB, nạp schema (32 bảng) + 3 bảng visual shopping
 mysql -u root -p -e "CREATE DATABASE movie_streaming_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql -u root -p movie_streaming_db < database/init.sql
+mysql -u root -p movie_streaming_db < database/migrate-visual-shopping.sql
 
 # 2. Backend
 cd backend-node
 cp .env.example .env        # sửa DATABASE_URL, JWT_ACCESS_SECRET cho máy bạn
 npm install
+npx prisma generate         # bắt buộc: module quản lý phim dùng Prisma
+npm run migrate:auth
+npm run db:password         # đặt mật khẩu dev (nếu không, không đăng nhập được)
 npm run dev                 # chạy tại http://localhost:3000
 
 # 3. Frontend (mở terminal khác)
@@ -117,9 +136,10 @@ npm install
 npm run dev                 # chạy tại http://localhost:5173
 ```
 
-> **Ghi chú MariaDB:** `init.sql` dùng collation `utf8mb4_0900_ai_ci` của MySQL 8. Trên
-> MariaDB, chuyển collation khi import:
+> **Ghi chú MariaDB:** `init.sql` là dump từ MySQL 8.0 nên chứa `utf8mb4_0900_ai_ci` — collation
+> mà MariaDB không có (lỗi `1273 Unknown collation`). Thay trước khi import:
 > `sed 's/utf8mb4_0900_ai_ci/utf8mb4_unicode_ci/g' database/init.sql | mysql -u root -p movie_streaming_db`
+> (`setup-zflix.bat` tự làm bước này.)
 
 ## 🔐 Biến môi trường
 
