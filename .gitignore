@@ -76,6 +76,9 @@ env/
 db_data/
 mysql_data/
 
+# MariaDB portable do setup-zflix.bat tải về (86MB + data dir)
+/.localdb/
+
 # OCR traineddata (tải tự động)
 *.traineddata
 

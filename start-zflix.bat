@@ -90,7 +90,45 @@ echo       Prisma client: OK
 echo.
 
 REM ---------- 1. MariaDB ----------
-echo [1/5] Kiem tra MariaDB (port 3306)...
+echo [1/5] Kiem tra database...
+
+REM Doc port tu DATABASE_URL trong .env (mac dinh 3306)
+set "DB_PORT=3306"
+for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"DATABASE_URL=" "%~dp0backend-node\.env" 2^>nul') do (
+    for /f "tokens=4 delims=:/" %%P in ("%%B") do set "DB_PORT=%%P"
+)
+if "!DB_PORT!"=="" set "DB_PORT=3306"
+
+REM Che do B (portable): setup-zflix.bat tao .localdb/, DB chay port rieng
+set "LOCALDB="
+if exist "%~dp0.localdb\my.ini" (
+    for /d %%D in ("%~dp0.localdb\mariadb-*") do if exist "%%D\bin\mysqld.exe" set "LOCALDB=%%D"
+)
+
+if defined LOCALDB (
+    echo       Chong: MariaDB portable ^(.localdb/^)
+    netstat -ano | findstr ":!DB_PORT! " | findstr "LISTENING" >nul
+    if not errorlevel 1 (
+        echo       MariaDB portable dang chay ^(port !DB_PORT!^) - BO QUA
+    ) else (
+        echo       Dang khoi dong MariaDB portable ^(port !DB_PORT!^)...
+        start "MariaDB portable" /min "!LOCALDB!\bin\mysqld.exe" --defaults-file="%~dp0.localdb\my.ini"
+        ping -n 10 127.0.0.1 >nul
+        netstat -ano | findstr ":!DB_PORT! " | findstr "LISTENING" >nul
+        if errorlevel 1 (
+            color 0C
+            echo       LOI: MariaDB portable khong khoi dong duoc^!
+            echo       Xem loi trong %~dp0.localdb\data\*.err
+            echo       Thu xoa thu muc .localdb roi chay lai setup-zflix.bat
+            if not defined ZFLIX_NO_PAUSE pause
+            exit /b 1
+        )
+        echo       MariaDB portable: OK
+    )
+    goto :db_ready
+)
+
+REM Che do A: MySQL cai san tren may (port 3306)
 netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul
 if not errorlevel 1 (
     echo       MariaDB dang chay - BO QUA
@@ -150,6 +188,8 @@ if not errorlevel 1 (
     )
     echo       MariaDB: OK
 )
+
+:db_ready
 echo.
 
 REM ---------- 2. Backend ----------
@@ -246,11 +286,20 @@ echo.
 
 REM ---------- 5. Kiem tra cau hinh upload video ----------
 echo [5/5] Kiem tra cau hinh upload video...
-findstr /b /c:"R2_ACCOUNT_ID=" "backend-node\.env" >nul
-if errorlevel 1 echo       CANH BAO: backend-node\.env thieu R2_* - upload video se loi.
-for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"R2_ACCOUNT_ID=" "backend-node\.env"') do if "%%B"=="" echo       CANH BAO: R2_ACCOUNT_ID dang trong - upload video se loi.
-for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"VIDEO_WEBHOOK_SECRET=" "backend-node\.env"') do if "%%B"=="" echo       CANH BAO: VIDEO_WEBHOOK_SECRET dang trong - webhook HLS se bi tu choi.
-for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"VIDEO_SERVICE_URL=" "backend-node\.env"') do if "%%B"=="" echo       CANH BAO: VIDEO_SERVICE_URL dang trong - se dung http://127.0.0.1:8001.
+set "R2_MISSING=0"
+findstr /b /c:"R2_ACCOUNT_ID=" "backend-node\.env" >nul 2>&1 || set "R2_MISSING=1"
+findstr /b /c:"R2_ACCESS_KEY_ID=" "backend-node\.env" >nul 2>&1 || set "R2_MISSING=1"
+findstr /b /c:"R2_SECRET_ACCESS_KEY=" "backend-node\.env" >nul 2>&1 || set "R2_MISSING=1"
+if "!R2_MISSING!"=="1" echo       CANH BAO: backend-node\.env thieu R2_* - upload video se loi.
+
+set "R2_EMPTY=0"
+for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"R2_ACCOUNT_ID=" "backend-node\.env" 2^>nul') do if "%%B"=="" set "R2_EMPTY=1"
+if "!R2_EMPTY!"=="1" echo       CANH BAO: R2_ACCOUNT_ID dang trong - upload video se loi.
+if "!R2_MISSING!"=="0" if "!R2_EMPTY!"=="0" echo       R2: OK
+
+set "WH_EMPTY=0"
+for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"VIDEO_WEBHOOK_SECRET=" "backend-node\.env" 2^>nul') do if "%%B"=="" set "WH_EMPTY=1"
+if "!WH_EMPTY!"=="1" echo       CANH BAO: VIDEO_WEBHOOK_SECRET dang trong - webhook HLS se bi tu choi.
 echo.
 
 echo ============================================

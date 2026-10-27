@@ -6,15 +6,14 @@ Hướng dẫn cho người **clone repo lần đầu**. Nếu bạn đã chạy
 
 ## Yêu cầu
 
-| Phần mềm | Phiên bản | Ghi chú |
+| Phần mềm | Bắt buộc? | Ghi chú |
 | --- | --- | --- |
-| **Node.js** | ≥ 20 (khuyến nghị 22 LTS) | https://nodejs.org |
-| **MySQL / MariaDB** | MySQL 8.0 **hoặc** MariaDB ≥ 10.8 | Dễ nhất: [XAMPP](https://www.apachefriends.org) (kèm MariaDB 10.4) |
-| **Python** | ≥ 3.10 | Chỉ cần nếu muốn upload/convert video sang HLS |
-| **ffmpeg** | bất kỳ | Chỉ cần cho upload video: `winget install Gyan.FFmpeg` |
+| **Node.js** ≥ 20 | ✅ Bắt buộc | https://nodejs.org (bản LTS) |
+| **MySQL / MariaDB** | ❌ Tùy chọn | Không có vẫn chạy: script tự tải MariaDB portable |
+| **Python** ≥ 3.10 | ❌ Tùy chọn | Chỉ cần khi upload/convert video sang HLS |
+| **ffmpeg** | ❌ Tùy chọn | Chỉ cần cho upload video: `winget install Gyan.FFmpeg` |
 
-> **MariaDB 10.4 (XAMPP) vẫn chạy được**: script cài đặt tự chuyển collation
-> `utf8mb4_0900_ai_ci` → `utf8mb4_unicode_ci` khi import `init.sql`.
+**Chỉ cần Node.js.** Script cài đặt tự lo database theo 1 trong 3 cách dưới.
 
 ---
 
@@ -24,36 +23,81 @@ Hướng dẫn cho người **clone repo lần đầu**. Nếu bạn đã chạy
 git clone <repo-url>
 cd LTW_zflix-
 setup-zflix.bat
-```
-
-Script sẽ hỏi **mật khẩu user `root` của MySQL** (XAMPP mặc định để trống → nhấn Enter).
-
-Sau khi xong:
-
-```cmd
 start-zflix.bat
 ```
 
 Mở http://localhost:5173 → đăng nhập `admin@moviehub.com` / `Zflix@2026`.
 
-### Script đã làm gì
+---
+
+## 3 chế độ database
+
+Script tự chọn chế độ phù hợp, hoặc bạn chỉ định bằng tham số.
+
+### A. Máy đã có MySQL (XAMPP / Laragon / MySQL Server)
+
+Tự phát hiện, không cần làm gì. Script sẽ hỏi mật khẩu user `root`
+(XAMPP mặc định để trống → nhấn Enter).
+
+### B. Máy chưa có gì → MariaDB portable (mặc định)
+
+Script tự tải MariaDB 10.11 (~86 MB) về `.localdb/`, giải nén, khởi tạo data dir
+và chạy ở **port 3307** (không đụng MySQL nào khác trên máy).
+
+- Không cần quyền admin, không cài vào hệ thống
+- Lần đầu mất ~1 phút (tải), các lần sau dùng lại ngay
+- `start-zflix.bat` tự bật lại MariaDB portable
+- Xoá thư mục `.localdb/` là reset sạch
+
+Ép dùng chế độ này kể cả khi máy có MySQL: `setup-zflix.bat --embedded`
+
+### C. DB dùng chung cho cả nhóm
+
+Một người tạo DB trên cloud (hoặc máy chủ), cả nhóm cùng trỏ vào:
+
+```cmd
+setup-zflix.bat --db-url "mysql://user:password@host:3306/movie_streaming_db"
+```
+
+> ⚠️ **Chế độ C KHÔNG BAO GIỜ tự nạp lại schema** — vì `init.sql` có 32 câu
+> `DROP TABLE` sẽ xoá sạch dữ liệu chung. Script chỉ kiểm tra DB tồn tại rồi
+> giữ nguyên. Muốn reset phải gõ đúng tên database để xác nhận.
+
+**Người tạo DB chung** chạy trước (một lần), trên máy có MySQL:
+
+```cmd
+setup-zflix.bat
+```
+
+rồi chia sẻ connection string cho nhóm.
+
+---
+
+## Script đã làm gì
 
 | Bước | Nội dung |
 | --- | --- |
-| 1 | Tìm `mysql.exe` trong XAMPP / Laragon / MySQL Server / PATH |
-| 2 | Kiểm tra kết nối bằng user `root` |
-| 3 | Tạo database `movie_streaming_db` + import `init.sql` (32 bảng) + `migrate-visual-shopping.sql` (3 bảng) → **35 bảng** |
+| 1 | Chọn nguồn DB: MySQL sẵn có → MariaDB portable → `--db-url` |
+| 2 | Kiểm tra kết nối |
+| 3 | Tạo database + import `init.sql` (32 bảng) + `migrate-visual-shopping.sql` (3 bảng) → **35 bảng** |
 | 4 | Sinh 3 file `.env` với `JWT_ACCESS_SECRET` + `VIDEO_WEBHOOK_SECRET` **ngẫu nhiên**, ghi đúng mật khẩu MySQL vào `DATABASE_URL` |
 | 5 | `npm install`, `prisma generate`, `migrate:auth`, đặt mật khẩu dev |
 
 ### Tuỳ chọn
 
 ```cmd
-setup-zflix.bat --db-password 123456        # không hỏi, dùng mật khẩu này
-setup-zflix.bat --force                     # XOÁ database cũ, làm lại từ đầu (MẤT DỮ LIỆU)
-setup-zflix.bat --skip-install              # bỏ qua npm install (đã cài rồi)
-setup-zflix.bat --db-name zflix_test        # dùng database tên khác (để thử nghiệm)
+setup-zflix.bat --embedded                                  # ép dùng MariaDB portable
+setup-zflix.bat --db-url "mysql://u:p@host:3306/db"         # DB dùng chung
+setup-zflix.bat --db-password 123456                        # không hỏi mật khẩu root
+setup-zflix.bat --force                                     # XOÁ database, nạp lại (MẤT DỮ LIỆU)
+setup-zflix.bat --skip-install                              # bỏ qua npm install
+setup-zflix.bat --db-name zflix_test                        # DB tên khác (thử nghiệm, KHÔNG đụng .env)
 ```
+
+> **`.env` an toàn**: script **chỉ** ghi `DATABASE_URL` khi `.env` vừa được tạo
+> trong chính lần chạy đó. Nếu `.env` đã tồn tại từ trước, script giữ nguyên
+> tuyệt đối — kể cả khi dùng `--force` (vì `--force` nghĩa là xoá *database*,
+> không phải xoá *cấu hình*). Muốn đổi thì sửa tay dòng `DATABASE_URL`.
 
 ---
 
@@ -98,14 +142,15 @@ Log khi có lỗi:
 
 ## Lỗi thường gặp
 
-### "Khong tim thay mysql.exe"
+### "Tai MariaDB portable that bai" (chế độ B)
 
-Chưa cài MySQL, hoặc XAMPP cài ở ổ khác. Script tìm ở:
-`C:\xampp\mysql\bin\`, `C:\laragon\...`, `C:\Program Files\MySQL\...`, rồi tới `PATH`.
+Script cần mạng cho lần tải đầu (~86 MB). Kiểm tra kết nối rồi chạy lại.
+Nếu mạng công ty/trường chặn `archive.mariadb.org`, tải thủ công file zip rồi
+đặt vào `.localdb/mariadb.zip` trước khi chạy.
 
-Cài XAMPP: https://www.apachefriends.org → mở XAMPP Control Panel → **Start** MySQL.
+Xoá `.localdb/` để thử lại từ đầu.
 
-### "Dang nhap MySQL that bai"
+### "Dang nhap MySQL that bai" (chế độ A)
 
 Sai mật khẩu `root`. Chạy lại với mật khẩu đúng:
 
@@ -113,8 +158,17 @@ Sai mật khẩu `root`. Chạy lại với mật khẩu đúng:
 setup-zflix.bat --db-password MATKHAU_CUA_BAN
 ```
 
-Quên mật khẩu root? Mở XAMPP Control Panel → MySQL → **Config** → `my.ini`, hoặc
-reset bằng `mysqld --skip-grant-tables`.
+Hoặc bỏ qua MySQL có sẵn, dùng portable: `setup-zflix.bat --embedded`
+
+### "Database ... khong ton tai" (chế độ C)
+
+DB dùng chung chưa được tạo. Nhờ người tạo DB chạy `setup-zflix.bat` trước,
+hoặc kiểm tra lại connection string trong `--db-url`.
+
+### Port 3307 bị chiếm (chế độ B)
+
+Kiểm tra: `netstat -ano | findstr :3307`. Nếu có process khác, tắt nó hoặc
+xoá `.localdb/` rồi chạy lại.
 
 ### "mysqladmin: connect to server failed" hoặc port 3306 không lên
 
