@@ -24,8 +24,13 @@ if errorlevel 1 (
 if not exist "backend-node\.env" (
     color 0C
     echo       LOI: Thieu backend-node\.env
-    echo       Copy backend-node\.env.example thanh backend-node\.env
-    echo       roi dien DATABASE_URL / JWT_ACCESS_SECRET truoc khi chay.
+    echo.
+    echo       Chay lan dau? Dung script cai dat:
+    echo           setup-zflix.bat
+    echo.
+    echo       Hoac tu lam:
+    echo           copy backend-node\.env.example backend-node\.env
+    echo           roi dien DATABASE_URL / JWT_ACCESS_SECRET truoc khi chay.
     if not defined ZFLIX_NO_PAUSE pause
     exit /b 1
 )
@@ -91,20 +96,55 @@ if not errorlevel 1 (
     echo       MariaDB dang chay - BO QUA
 ) else (
     echo       Dang khoi dong MariaDB...
-    if not exist "C:\xampp\mysql\bin\mysqld.exe" (
+
+    REM Tim mysqld.exe: XAMPP mac dinh, Laragon, MySQL Server, hoac trong PATH
+    set "MYSQLD_EXE="
+    set "MYSQL_INI="
+    if exist "C:\xampp\mysql\bin\mysqld.exe" (
+        set "MYSQLD_EXE=C:\xampp\mysql\bin\mysqld.exe"
+        set "MYSQL_INI=C:\xampp\mysql\bin\my.ini"
+    )
+    if not defined MYSQLD_EXE if exist "C:\laragon\bin\mysql\mysql-8.0.30-winx64\bin\mysqld.exe" (
+        set "MYSQLD_EXE=C:\laragon\bin\mysql\mysql-8.0.30-winx64\bin\mysqld.exe"
+        set "MYSQL_INI=C:\laragon\bin\mysql\mysql-8.0.30-winx64\bin\my.ini"
+    )
+    if not defined MYSQLD_EXE if exist "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe" (
+        set "MYSQLD_EXE=C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe"
+        set "MYSQL_INI=C:\Program Files\MySQL\MySQL Server 8.0\my.ini"
+    )
+    if not defined MYSQLD_EXE if exist "C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqld.exe" (
+        set "MYSQLD_EXE=C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqld.exe"
+        set "MYSQL_INI=C:\Program Files\MySQL\MySQL Server 8.4\my.ini"
+    )
+    if not defined MYSQLD_EXE (
+        for /f "delims=" %%P in ('where mysqld 2^>nul') do if not defined MYSQLD_EXE set "MYSQLD_EXE=%%P"
+    )
+
+    if not defined MYSQLD_EXE (
         color 0C
-        echo       LOI: Khong tim thay C:\xampp\mysql\bin\mysqld.exe
-        echo       Hay bat MySQL/MariaDB thu cong roi chay lai script.
+        echo       LOI: Khong tim thay mysqld.exe
+        echo       Da tim: XAMPP, Laragon, MySQL Server 8.0/8.4, PATH.
+        echo       Hay bat MySQL/MariaDB thu cong ^(XAMPP Control Panel^) roi chay lai script.
         if not defined ZFLIX_NO_PAUSE pause
         exit /b 1
     )
-    start "MariaDB" /min "C:\xampp\mysql\bin\mysqld.exe" --defaults-file="C:\xampp\mysql\bin\my.ini"
+    echo       Dung: !MYSQLD_EXE!
+
+    if defined MYSQL_INI (
+        if exist "!MYSQL_INI!" (
+            start "MariaDB" /min "!MYSQLD_EXE!" --defaults-file="!MYSQL_INI!"
+        ) else (
+            start "MariaDB" /min "!MYSQLD_EXE!"
+        )
+    ) else (
+        start "MariaDB" /min "!MYSQLD_EXE!"
+    )
     ping -n 9 127.0.0.1 >nul
     netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul
     if errorlevel 1 (
         color 0C
         echo       LOI: MariaDB khong khoi dong duoc^!
-        echo       Kiem tra C:\xampp\mysql\data co bi loi khong
+        echo       Kiem tra thu muc data cua MySQL co bi loi khong.
         if not defined ZFLIX_NO_PAUSE pause
         exit /b 1
     )
@@ -173,7 +213,10 @@ if not errorlevel 1 (
                 echo       Video Processor: OK
             )
             where ffmpeg >nul 2>&1
-            if errorlevel 1 echo       CANH BAO: Khong co ffmpeg - xu ly video upload se loi.
+            if errorlevel 1 (
+                echo       CANH BAO: Khong co ffmpeg trong PATH - cat video HLS se loi.
+                echo       Cai: winget install Gyan.FFmpeg   ^(hoac tai ffmpeg.org, giai nen, them bin vao PATH^)
+            )
         )
     )
 )
@@ -201,11 +244,13 @@ if not errorlevel 1 (
 )
 echo.
 
-REM ---------- 5. Kiem tra cau hinh R2/webhook ----------
+REM ---------- 5. Kiem tra cau hinh upload video ----------
 echo [5/5] Kiem tra cau hinh upload video...
 findstr /b /c:"R2_ACCOUNT_ID=" "backend-node\.env" >nul
 if errorlevel 1 echo       CANH BAO: backend-node\.env thieu R2_* - upload video se loi.
+for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"R2_ACCOUNT_ID=" "backend-node\.env"') do if "%%B"=="" echo       CANH BAO: R2_ACCOUNT_ID dang trong - upload video se loi.
 for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"VIDEO_WEBHOOK_SECRET=" "backend-node\.env"') do if "%%B"=="" echo       CANH BAO: VIDEO_WEBHOOK_SECRET dang trong - webhook HLS se bi tu choi.
+for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"VIDEO_SERVICE_URL=" "backend-node\.env"') do if "%%B"=="" echo       CANH BAO: VIDEO_SERVICE_URL dang trong - se dung http://127.0.0.1:8001.
 echo.
 
 echo ============================================
@@ -217,8 +262,11 @@ echo   Quet do   : http://localhost:5173/watch/1128
 echo   Admin     : http://localhost:5173/admin-login
 echo   Kho phim  : http://localhost:5173/admin/content
 echo.
-echo   TK admin  : admin@moviehub.com / Zflix@2026  ^(dang nhap tai /admin-login^)
-echo   TK user   : john.doe@email.com / Zflix@2026
+echo   TK admin  : admin@moviehub.com
+echo   TK user   : john.doe@email.com
+echo   Mat khau  : Zflix@2026  ^(chi khi da chay setup-zflix.bat^)
+echo.
+echo   Chua dang nhap duoc? Chay: cd backend-node ^&^& npm run db:password
 echo.
 echo   Cua so server dang chay o taskbar (toi uu).
 echo   De TAT: chay stop-zflix.bat
