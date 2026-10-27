@@ -1,11 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import Hls from "hls.js";
 import { apiRequest, API_URL } from "../../services/api.js";
 import { scanRegion as scanRegionApi } from "../../services/scanApi.js";
 import { captureVideoRegion } from "../../utils/videoCapture.js";
 import LensyMascot from "../../components/LensyMascot.jsx";
 import SelectionOverlay from "../../components/SelectionOverlay.jsx";
 import ProductPanel from "../../components/ProductPanel.jsx";
+
+// Video trên R2 không có CORS nên phát qua proxy của backend
+const toPlayableUrl = (url) => {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.endsWith(".r2.dev")) {
+      return `${API_URL}/api/v1/hls${parsed.pathname}${parsed.search}`;
+    }
+  } catch {
+    // URL không hợp lệ — giữ nguyên
+  }
+  return url;
+};
 
 // ---------------------------------------------------------------------------
 // Overlay quét đồ vật kiểu Google Lens: kéo chuột khoanh vùng trên video
@@ -36,6 +51,35 @@ const PlayerPage = () => {
   // Bật crossOrigin để chụp khung hình cho AI; host video không CORS sẽ fallback tắt nó
   const [videoNoCors, setVideoNoCors] = useState(false);
   useEffect(() => { apiRequest(`/api/v1/episodes/${episodeId}`).then(setEpisode); }, [episodeId]);
+
+  // Phát HLS (.m3u8) bằng hls.js khi trình duyệt không hỗ trợ native (Chrome, Firefox)
+  useEffect(() => {
+    const video = videoRef.current;
+    const url = toPlayableUrl(episode?.video_url);
+    if (!video || !url) return;
+    const isHls = /\.m3u8($|\?)/i.test(url);
+    if (!isHls || video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = url;
+      return () => {
+        video.removeAttribute("src");
+        video.load();
+      };
+    }
+    if (!Hls.isSupported()) {
+      video.src = url;
+      return;
+    }
+    const hls = new Hls();
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+      else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+      else hls.destroy();
+    });
+    return () => hls.destroy();
+  }, [episode]);
   const save = (seconds) => {
     if (Math.abs(seconds - lastSaved.current) < 10) return;
     lastSaved.current = seconds;
@@ -106,7 +150,6 @@ const PlayerPage = () => {
               ref={videoRef}
               controls
               autoPlay
-              src={episode.video_url}
               {...(videoNoCors ? {} : { crossOrigin: "anonymous" })}
               onError={() => { if (!videoNoCors) setVideoNoCors(true); }}
               onTimeUpdate={(e) => { setPosition(e.currentTarget.currentTime); save(Math.floor(e.currentTarget.currentTime)); }}

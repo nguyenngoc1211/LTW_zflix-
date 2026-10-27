@@ -11,6 +11,7 @@ import { discoveryRouter } from "./modules/discovery/discovery.routes.js";
 import { communityRouter } from "./modules/community/community.routes.js";
 import { streamingRouter } from "./modules/streaming/streaming.routes.js";
 import streamingContentRouter from "./modules/streaming/route/index.js";
+import { r2ProxyRouter } from "./modules/streaming/r2-proxy.routes.js";
 import { watchPartyRouter } from "./modules/watch-party/watch-party.routes.js";
 import { adminRouter } from "./modules/admin/admin.routes.js";
 import { adminContentRouter } from "./modules/admin/admin.content.routes.js";
@@ -55,6 +56,7 @@ export const createApp = () => {
   app.use("/api/v1", discoveryRouter);
   app.use("/api/v1", communityRouter);
   app.use("/api/v1", streamingRouter);
+  app.use("/api/v1/hls", r2ProxyRouter);
   app.use("/api/v1", watchPartyRouter);
   app.use("/api/v1", shoppingRouter);
   app.use("/api/v1", visualShoppingRouter);
