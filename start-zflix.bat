@@ -104,6 +104,7 @@ for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"DATABASE_URL=" "%~dp0backen
     for /f "tokens=4 delims=:/" %%P in ("%%B") do set "DB_PORT=%%P"
 )
 if "!DB_PORT!"=="" set "DB_PORT=3306"
+echo !DB_PORT!| findstr /r "^[0-9][0-9]*$" >nul || set "DB_PORT=3306"
 
 REM Che do B (portable): setup-zflix.bat tao .localdb/, DB chay port rieng
 set "LOCALDB="
@@ -133,8 +134,8 @@ if defined LOCALDB (
     goto :db_ready
 )
 
-REM Che do A: MySQL cai san tren may (port 3306)
-netstat -ano | findstr ":3306 " | findstr "LISTENING" >nul
+REM Che do A: MySQL cai san tren may (port lay tu DATABASE_URL)
+netstat -ano | findstr ":!DB_PORT! " | findstr "LISTENING" >nul
 if not errorlevel 1 (
     echo       MariaDB dang chay - BO QUA
 ) else (
@@ -182,7 +183,7 @@ if not errorlevel 1 (
     ) else (
         start "MariaDB" /min "!MYSQLD_EXE!"
     )
-    call :wait_port 3306 45
+    call :wait_port !DB_PORT! 45
     if errorlevel 1 (
         color 0C
         echo       LOI: MariaDB khong khoi dong duoc sau 45 giay^!
@@ -242,21 +243,21 @@ if not errorlevel 1 (
         echo       CANH BAO: Khong co Python - bo qua video processor.
         echo       ^(Upload video/HLS se khong hoat dong.^)
     ) else (
-        !PYCMD! -c "import fastapi, uvicorn, boto3, requests, dotenv" >nul 2>&1
+        call :find_ffmpeg
+        if errorlevel 1 (
+            echo       CANH BAO: Khong tim thay ffmpeg - upload se khong tao duoc HLS.
+            echo       Cai bang: winget install Gyan.FFmpeg
+        )
+        !PYCMD! -c "import fastapi, uvicorn, boto3, requests, dotenv, ffmpeg, multipart" >nul 2>&1
         if errorlevel 1 (
             echo       Cai Python deps...
             !PYCMD! -m pip install --disable-pip-version-check -q -r "backend-python\video-processor\requirements.txt" > "backend-python\video-processor\pip.log" 2>&1
         )
-        !PYCMD! -c "import fastapi, uvicorn, boto3, requests, dotenv" >nul 2>&1
+        !PYCMD! -c "import fastapi, uvicorn, boto3, requests, dotenv, ffmpeg, multipart" >nul 2>&1
         if errorlevel 1 (
             echo       CANH BAO: Thieu Python deps - bo qua video processor.
             echo       Xem backend-python\video-processor\pip.log
         ) else (
-            where ffmpeg >nul 2>&1
-            if errorlevel 1 (
-                echo       CANH BAO: Khong tim thay ffmpeg - upload se khong tao duoc HLS.
-                echo       Cai bang: winget install Gyan.FFmpeg
-            )
             set "PYTHONUTF8=1"
             set "PYTHONIOENCODING=utf-8"
             pushd "backend-python\video-processor"
@@ -268,11 +269,6 @@ if not errorlevel 1 (
                 echo       CANH BAO: Video Processor khong khoi dong - xem video.err
             ) else (
                 echo       Video Processor: OK
-            )
-            where ffmpeg >nul 2>&1
-            if errorlevel 1 (
-                echo       CANH BAO: Khong co ffmpeg trong PATH - cat video HLS se loi.
-                echo       Cai: winget install Gyan.FFmpeg   ^(hoac tai ffmpeg.org, giai nen, them bin vao PATH^)
             )
         )
     )
@@ -314,9 +310,19 @@ findstr /b /c:"R2_SECRET_ACCESS_KEY=" "backend-node\.env" >nul 2>&1 || set "R2_M
 if "!R2_MISSING!"=="1" echo       CANH BAO: backend-node\.env thieu R2_* - upload video se loi.
 
 set "R2_EMPTY=0"
-for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"R2_ACCOUNT_ID=" "backend-node\.env" 2^>nul') do if "%%B"=="" set "R2_EMPTY=1"
-if "!R2_EMPTY!"=="1" echo       CANH BAO: R2_ACCOUNT_ID dang trong - upload video se loi.
+for %%V in (R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY) do (
+    for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"%%V=" "backend-node\.env" 2^>nul') do if "%%B"=="" set "R2_EMPTY=1"
+)
+if "!R2_EMPTY!"=="1" echo       CANH BAO: R2_* dang trong - upload video se loi.
 if "!R2_MISSING!"=="0" if "!R2_EMPTY!"=="0" echo       R2: OK
+
+set "VISION_PROVIDER="
+for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"VISION_PROVIDER=" "backend-node\.env" 2^>nul') do set "VISION_PROVIDER=%%B"
+if /i "!VISION_PROVIDER!"=="deepseek" (
+    set "VISION_KEY_EMPTY=0"
+    for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"DEEPSEEK_API_KEY=" "backend-node\.env" 2^>nul') do if "%%B"=="" set "VISION_KEY_EMPTY=1"
+    if "!VISION_KEY_EMPTY!"=="1" echo       CANH BAO: VISION_PROVIDER=deepseek nhung DEEPSEEK_API_KEY dang trong - Lensy dung catalog demo.
+)
 
 set "WH_EMPTY=0"
 for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"VIDEO_WEBHOOK_SECRET=" "backend-node\.env" 2^>nul') do if "%%B"=="" set "WH_EMPTY=1"
@@ -362,3 +368,30 @@ set /a _WP_COUNT+=1
 if !_WP_COUNT! GEQ !_WP_MAX! exit /b 1
 ping -n 2 127.0.0.1 >nul
 goto :wait_port_loop
+
+REM ============================================================
+REM :find_ffmpeg
+REM Tim ffmpeg trong PATH; neu khong co, thu cac vi tri cai dat
+REM pho bien (winget Gyan.FFmpeg, C:\ffmpeg, tools\ffmpeg) va
+REM them bin vao PATH cho tien trinh con (video processor).
+REM Tra errorlevel 0 neu tim thay.
+REM ============================================================
+:find_ffmpeg
+where ffmpeg >nul 2>&1
+if not errorlevel 1 exit /b 0
+
+set "FFMPEG_BIN="
+for /d %%D in ("%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_*") do (
+    for /d %%B in ("%%~D\ffmpeg-*_build") do (
+        if exist "%%~B\bin\ffmpeg.exe" set "FFMPEG_BIN=%%~B\bin"
+    )
+)
+if not defined FFMPEG_BIN if exist "C:\ffmpeg\bin\ffmpeg.exe" set "FFMPEG_BIN=C:\ffmpeg\bin"
+if not defined FFMPEG_BIN if exist "%~dp0tools\ffmpeg\bin\ffmpeg.exe" set "FFMPEG_BIN=%~dp0tools\ffmpeg\bin"
+if not defined FFMPEG_BIN exit /b 1
+
+set "PATH=!FFMPEG_BIN!;!PATH!"
+where ffmpeg >nul 2>&1
+if errorlevel 1 exit /b 1
+echo       ffmpeg: !FFMPEG_BIN!
+exit /b 0
