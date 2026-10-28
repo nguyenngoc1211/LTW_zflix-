@@ -15,6 +15,7 @@
     "test:serpapi": "node scripts/test-serpapi.mjs",
     "seed:omdb": "node scripts/seed-omdb.mjs",
     "fill:seasons": "node scripts/fill-missing-seasons.mjs",
+    "restore:r2": "node scripts/restore-r2-demos.mjs",
     "catalog:index": "node scripts/catalog-index.mjs",
     "benchmark:visual": "node scripts/benchmark-visual.mjs"
   },

@@ -204,6 +204,27 @@ curl http://127.0.0.1:8001/docs
 
 Không có R2 key thì **chỉ luồng upload hỏng** — xem phim, tìm kiếm, admin, Lensy vẫn chạy bình thường.
 
+### ⚠️ `npm run seed:omdb` XOÁ TOÀN BỘ phim cũ
+
+Script này bước ① xoá **mọi** `productions` / `episodes` / `seasons` (chỉ giữ `users`),
+rồi nạp lại từ OMDb. Hậu quả:
+
+- **Mất 2 phim demo HLS của nhánh Nam** (`Phim Demo Nam — Lẻ/Bộ (HLS R2)`) vì
+  chúng không có trong danh sách OMDb. File video vẫn còn trên R2 nên khôi phục được.
+- **Mất mọi phim bạn tự upload** qua trang quản trị.
+
+Sau khi chạy `seed:omdb`, khôi phục phim demo R2:
+
+```cmd
+cd backend-node
+npm run restore:r2
+```
+
+> Trước khi chạy `seed:omdb` trên DB có dữ liệu thật, hãy backup:
+> ```cmd
+> mysqldump -u root -p movie_streaming_db > backup.sql
+> ```
+
 ### Phim không phát được (player quay vòng)
 
 Video trên R2 được phát qua proxy backend `/api/v1/hls/*` (vì bucket không cấu hình CORS).
