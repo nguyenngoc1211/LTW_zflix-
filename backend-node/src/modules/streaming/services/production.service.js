@@ -3,6 +3,7 @@ import {
   deleteFilesFromR2,
   uploadFileToR2,
 } from "../../../core/storage/upload.helper.js";
+import { toPublicMediaUrl } from "../../../core/storage/public-url.js";
 import { videoServiceProcessEndpoint } from "../../../config/video-service.config.js";
 import axios from "axios";
 
@@ -458,7 +459,10 @@ export const getMovieBySlugService = async (slug) => {
     ...production,
     seasons:
       formattedSeasons.length > 0 ? formattedSeasons : production.seasons,
-    episodes: formattedEpisodes,
+    episodes: formattedEpisodes.map((episode) => ({
+      ...episode,
+      video_url: toPublicMediaUrl(episode.video_url),
+    })),
     genres: production.production_genres.map((pg) => pg.genres),
     actors: production.production_actors.map((pa) => ({
       ...pa.actors,

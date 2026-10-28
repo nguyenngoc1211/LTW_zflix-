@@ -8,7 +8,6 @@ import {
   getMovieBySlug,
 } from "../../services/movieService";
 import { calcTargetSeasonIdAndTargetEpisodes } from "../../utils/streaming/common";
-import { getFallbackVideoUrl } from "../../utils/streaming/fallbackUrl";
 
 export const useWatchPage = () => {
   const { slug } = useParams();
@@ -48,19 +47,6 @@ export const useWatchPage = () => {
 
         let { targetSeasonId, targetEpisodes } =
           calcTargetSeasonIdAndTargetEpisodes(mappedData, currentEpNumber);
-
-        const currentSeason = production.seasons?.find((s) => s.id === targetSeasonId);
-        const seasonNumber = currentSeason?.season_number || 1;
-
-        targetEpisodes = targetEpisodes.map((ep) => ({
-          ...ep,
-          video_url: getFallbackVideoUrl(
-            ep.video_url,
-            production.type,
-            seasonNumber,
-            ep.episode_number
-          ),
-        }));
 
         setCurrentSeasonId(targetSeasonId);
         setEpisodeList(targetEpisodes);
@@ -135,11 +121,6 @@ export const useWatchPage = () => {
            const res = await getEpisodesBySeason(seasonId);
            newEpisodes = res.data || [];
         }
-
-        newEpisodes = newEpisodes.map(ep => ({
-          ...ep,
-          video_url: getFallbackVideoUrl(ep.video_url, productionData.type, newSeasonNum, ep.episode_number)
-        }));
 
         setEpisodeList(newEpisodes);
         setCurrentSeasonId(seasonId);

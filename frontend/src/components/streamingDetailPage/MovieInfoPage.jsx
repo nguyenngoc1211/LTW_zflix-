@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Spin } from "antd";
+import { Spin, message } from "antd";
 import { useParams } from "react-router-dom";
 import { getMovieBySlug, getPopularMovies } from "../../services/movieService";
 

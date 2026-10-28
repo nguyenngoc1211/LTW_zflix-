@@ -6,6 +6,7 @@ import LensyMascot from "../LensyMascot";
 import SelectionOverlay from "../SelectionOverlay";
 import ProductPanel from "../ProductPanel";
 import { useLensy } from "../../hooks/useLensy";
+import { useVideoSource } from "../../hooks/useVideoSource";
 
 const VideoPlayer = ({
   currentEpisode,
@@ -28,6 +29,10 @@ const VideoPlayer = ({
     productionId: productionId ?? currentEpisode?.production_id,
     position: positionRef.current,
   });
+
+  // Phát video: proxy R2 qua backend + hls.js cho .m3u8 (Chrome/Firefox).
+  // R2 không có CORS nên không thể dùng src trực tiếp.
+  useVideoSource({ videoRef, videoUrl: currentEpisode?.video_url });
 
   useEffect(() => {
     if (!videoRef.current || !settings.autoPlay) return;
@@ -65,11 +70,11 @@ const VideoPlayer = ({
         isLightOff ? "z-50" : ""
       }`}
     >
-      <div className="aspect-video w-full bg-black">
+      <div className="relative aspect-video w-full bg-black">
+        {/* src do useVideoSource() gắn (proxy R2 + hls.js), không set inline. */}
         <video
           ref={videoRef}
           key={currentEpisode.video_url}
-          src={currentEpisode.video_url}
           controls
           crossOrigin="anonymous"
           className="h-full w-full object-contain"
@@ -78,6 +83,11 @@ const VideoPlayer = ({
           onTimeUpdate={handleTimeUpdate}
           onEnded={handleVideoEnded}
         />
+        {!currentEpisode.video_url && (
+          <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-gray-400">
+            Video chưa sẵn sàng. Nếu vừa upload, quá trình xử lý có thể chưa hoàn tất.
+          </div>
+        )}
       </div>
 
       {/* CineLens: overlay khoanh vùng + panel kết quả */}
