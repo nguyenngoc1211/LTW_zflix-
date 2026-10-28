@@ -166,6 +166,15 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 - **Frontend:** thêm `/register` và link từ `/login`; thành công chuyển về login. Admin shell kiểm tra thêm API thật `GET /api/v1/admin/check` trước khi hiển thị, nhưng backend RBAC vẫn là security boundary. Password lifecycle, MFA và session UI hiện có được giữ trong phạm vi auth.
 - **Xác minh tại thời điểm follow-up:** backend unit `15/15`; full auth/password/MFA/registration integration trên MySQL thật pass; cleanup integration pass; frontend lint/build pass; auth, MFA login, MFA management, sessions, password lifecycle và registration UI smoke đều pass. Follow-up đã được commit tại `55430bf`.
 
+### Hậu kiểm Phase 7 — xác thực Socket.IO Watch Party (2026-10-28)
+
+- **Lý do:** namespace `/watch-party` trước đây không xác thực handshake; client tự gửi `userId`/`username` trong `join-party` và server tin dùng giá trị đó để broadcast, cho phép giả danh người khác.
+- **Backend:** thêm namespace middleware `authenticateSocket` xác thực access token JWT (allow-list `HS256`) và session trong `auth_sessions` (chưa revoke, chưa idle/absolute expiry, user `active`); lưu `sessionId`, `userId`, `username`, `avatarUrl` vào `socket.data`. `join-party` chỉ nhận `{ partyId }`; chat/sync/end dùng danh tính từ `socket.data`, bỏ qua field danh tính do client gửi.
+- **Frontend:** `getPartySocket` truyền access token qua `auth` callback để mỗi lần connect/reconnect dùng token mới nhất; `PartyRoom` chỉ emit `{ partyId }`.
+- **Sửa kèm:** `GET /api/v1/watch-party/my-parties` được đăng ký trước route động `/watch-party/:partyId` (trước đây trả `404`); chi tiết phòng và danh sách phòng vẫn hoạt động.
+- **Xác minh thực chạy:** không token và token sai bị `connect_error` "Authentication required"; token hợp lệ kết nối, join và chat thành công; client gửi `username: "SPOOFED"` nhưng broadcast vẫn là username DB (`michael_brown`). Backend unit `32/32`; `my-parties` trả `200`; frontend lint 0 error, build pass.
+- **Giới hạn:** access token hết hạn hoặc session bị revoke giữa phiên socket không ngắt kết nối hiện có cho tới khi client disconnect/reconnect; chưa rate-limit sự kiện socket; `participant-action` chưa kiểm tra quyền host/co-host trước khi broadcast/kick — cần scope riêng.
+
 ### Authorization integration guide
 
 `docs/AUTHORIZATION_INTEGRATION_GUIDE.md` ghi pattern thực tế và checklist cho teammate khi backend bổ sung API mới. Đây là documentation-only; không thêm API, role, ownership helper hoặc thay đổi production source. Các policy trong ma trận là **yêu cầu tương lai**, phải review lại theo resource API thật khi được triển khai.
@@ -198,6 +207,7 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 - MFA challenge và recovery code không lưu raw value; challenge có TTL/attempt cap/one-time consumption.
 - Không tạo auth session, access token hoặc refresh cookie trước khi MFA login challenge thành công.
 - TOTP time step đã dùng không được chấp nhận lại; recovery code chỉ dùng một lần.
+- Socket namespace `/watch-party` xác thực access token và session DB ở handshake; danh tính lấy từ server, không tin payload client.
 
 ## Real APIs hiện đang tồn tại
 
@@ -294,6 +304,7 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - Frontend login/admin guard, refresh bootstrap/failure, logout state clearing và ordinary-user redirect.
 - MFA setup/enable, không cấp credential trước factor, challenge expiry/attempt cap/one-time, TOTP replay, recovery-code one-time, disabled user, password-reset preservation và disable session revocation.
 - Frontend login chuyển sang second step bằng challenge giữ trong memory và chấp nhận TOTP/recovery code.
+- Socket Watch Party reject thiếu/sai token, chấp nhận token hợp lệ, và danh tính broadcast lấy từ token thay vì payload client; `my-parties` trả `200` sau khi sửa thứ tự route.
 
 ## Deferred / Future hardening
 
@@ -308,6 +319,7 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - Server-side premium/subscription authorization khi có API tương ứng
 - Admin CRUD và community/content moderation authorization khi có API tương ứng
 - Email verification, OAuth, passkeys/WebAuthn và recovery nâng cao
+- Rate limiting sự kiện Socket.IO, buộc ngắt khi access token hết hạn giữa phiên, và kiểm tra quyền host/co-host cho `participant-action`
 
 ## Trạng thái sau Phase 7
 

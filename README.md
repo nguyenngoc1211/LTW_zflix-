@@ -184,6 +184,7 @@ npm run build               # build production
 
 ## 📚 Tài liệu thêm
 
+- [Cấu trúc dự án cho thành viên mới](docs/PROJECT_STRUCTURE.md)
 - [Danh sách API các module Discovery/Community/Streaming](docs/HAI_API_REFERENCE.md)
 - [Hướng dẫn merge và vận hành module của Hai](docs/HAI_MODULES_GUIDE.md)
 - [Báo cáo kiểm thử branch Hai](docs/HAI_TEST_REPORT.md)
