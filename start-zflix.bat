@@ -81,12 +81,18 @@ call npx prisma generate > prisma.log 2>&1
 set "PRISMA_ERR=!errorlevel!"
 popd
 if not "!PRISMA_ERR!"=="0" (
-    color 0C
-    echo       LOI: prisma generate that bai^! Xem backend-node\prisma.log
-    if not defined ZFLIX_NO_PAUSE pause
-    exit /b 1
+    REM Backend dang chay giu DLL query engine nen generate khong rename duoc.
+    netstat -ano | findstr ":3000 " | findstr "LISTENING" >nul
+    if errorlevel 1 (
+        color 0C
+        echo       LOI: prisma generate that bai^! Xem backend-node\prisma.log
+        if not defined ZFLIX_NO_PAUSE pause
+        exit /b 1
+    )
+    echo       CANH BAO: prisma generate that bai nhung backend dang chay - BO QUA.
+) else (
+    echo       Prisma client: OK
 )
-echo       Prisma client: OK
 echo.
 
 REM ---------- 1. MariaDB ----------
@@ -246,6 +252,13 @@ if not errorlevel 1 (
             echo       CANH BAO: Thieu Python deps - bo qua video processor.
             echo       Xem backend-python\video-processor\pip.log
         ) else (
+            where ffmpeg >nul 2>&1
+            if errorlevel 1 (
+                echo       CANH BAO: Khong tim thay ffmpeg - upload se khong tao duoc HLS.
+                echo       Cai bang: winget install Gyan.FFmpeg
+            )
+            set "PYTHONUTF8=1"
+            set "PYTHONIOENCODING=utf-8"
             pushd "backend-python\video-processor"
             start "Zflix Video" /min cmd /c "!PYCMD! -m uvicorn main:app --app-dir src --host 127.0.0.1 --port 8001 > video.log 2> video.err"
             popd

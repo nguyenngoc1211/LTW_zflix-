@@ -7,7 +7,7 @@ from core.config import BUCKET_NAME, PUBLIC_DOMAIN, NODE_WEBHOOK_URL, WEBHOOK_SE
 
 def process_hls_task(file_name: str, production_id: int, episode_id: int):
     try:
-        print(f"🎬 Bắt đầu xử lý: {file_name}")
+        print(f"Bat dau xu ly: {file_name}", flush=True)
 
         base_name = os.path.splitext(os.path.basename(file_name))[0]
         work_dir = f"./temp/{base_name}"
@@ -17,10 +17,10 @@ def process_hls_task(file_name: str, production_id: int, episode_id: int):
         hls_output_dir = f"{work_dir}/hls"
         os.makedirs(hls_output_dir, exist_ok=True)
 
-        print("⬇️ Đang tải file gốc từ Cloudflare R2...")
+        print("Dang tai file goc tu Cloudflare R2...", flush=True)
         s3_client.download_file(BUCKET_NAME, file_name, local_input_path)
 
-        print("✂️ Đang cắt video ra HLS (m3u8)...")
+        print("Dang cat video ra HLS (m3u8)...", flush=True)
         (
             ffmpeg.input(local_input_path)
             .output(
@@ -34,7 +34,7 @@ def process_hls_task(file_name: str, production_id: int, episode_id: int):
             .run(capture_stdout=True, capture_stderr=True)
         )
 
-        print("☁️ Đang upload các đoạn phim đã cắt lên R2...")
+        print("Dang upload cac doan phim da cat len R2...", flush=True)
         r2_hls_path = f"hls/{base_name}" 
 
         for root, _, files in os.walk(hls_output_dir):
@@ -50,9 +50,9 @@ def process_hls_task(file_name: str, production_id: int, episode_id: int):
         shutil.rmtree(work_dir)
 
         final_hls_url = f"{PUBLIC_DOMAIN}/{r2_hls_path}/playlist.m3u8"
-        print(f"✅ XỬ LÝ XONG! Link phim HLS: {final_hls_url}")
+        print(f"XU LY XONG! Link phim HLS: {final_hls_url}", flush=True)
 
-        print("🔔 Đang báo cáo kết quả về Node.js...")
+        print("Dang bao cao ket qua ve Node.js...", flush=True)
         webhook_data = {
             "production_id": production_id,
             "episode_id": episode_id,
@@ -66,9 +66,9 @@ def process_hls_task(file_name: str, production_id: int, episode_id: int):
         )
         
         if response.status_code == 200:
-            print("🎉 Cập nhật Database thành công!")
+            print("Cap nhat Database thanh cong!", flush=True)
         else:
-            print(f"⚠️ Node.js phản hồi lỗi: {response.text}")
+            print(f"Node.js phan hoi loi: {response.text}", flush=True)
 
     except Exception as e:
-        print(f"❌ LỖI XỬ LÝ VIDEO: {str(e)}")
+        print(f"LOI XU LY VIDEO: {type(e).__name__}: {e}", flush=True)
