@@ -179,6 +179,12 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
    không đè thanh điều khiển native ở đáy video. */
 .lensy-compact { right: 10px; top: 10px; bottom: auto; width: 42px; height: 42px; padding: 2px; opacity: .85; }
 .lensy-compact:hover { opacity: 1; }
+
+/* Biến thể nằm trong thanh điều khiển (cạnh nút đèn): bỏ absolute để hoà
+   vào flex, kích thước bằng icon button của antd. */
+.lensy-inline { position: relative; right: auto; bottom: auto; top: auto; width: 32px; height: 32px; padding: 1px; background: transparent; backdrop-filter: none; opacity: .9; flex: 0 0 auto; }
+.lensy-inline:hover { opacity: 1; transform: scale(1.12); }
+.lensy-inline.lensy-awake { box-shadow: 0 0 0 2px rgba(139,92,246,.5), 0 0 12px rgba(34,211,238,.35); }
 .lensy-sleeping .lensy-svg { animation: lensy-breathe 3.6s ease-in-out infinite; }
 @keyframes lensy-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(3px) scale(.97); } }
 .lensy-awake { animation: lensy-wake .55s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 0 3px rgba(139,92,246,.45), 0 0 24px rgba(34,211,238,.35), 0 .5rem 1.4rem rgba(0,0,0,.5); }

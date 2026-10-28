@@ -100,15 +100,8 @@ const VideoPlayer = ({
           onFind={lensy.findOnShopee}
         />
       )}
-      {/* Ẩn mascot khi đang chọn vùng để không vướng thao tác kéo chuột;
-          hiện lại ở các state khác để bấm ngủ/thức. */}
-      {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && (
-        <LensyMascot
-          compact
-          state={lensy.state}
-          onClick={() => (lensy.state === "SLEEPING" ? lensy.wake() : lensy.sleep())}
-        />
-      )}
+      {/* Mascot được render trong thanh điều khiển bên dưới (cạnh nút đèn),
+          ẩn khi đang chọn vùng để không vướng thao tác kéo chuột. */}
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-[#18181b] p-3">
         <div className="flex items-center gap-4 text-sm text-gray-300">
@@ -121,6 +114,13 @@ const VideoPlayer = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && (
+            <LensyMascot
+              inline
+              state={lensy.state}
+              onClick={() => (lensy.state === "SLEEPING" ? lensy.wake() : lensy.sleep())}
+            />
+          )}
           <Tooltip title={isLightOff ? "Bật đèn" : "Tắt đèn"}>
             <Button type="text" icon={<BulbOutlined />} onClick={() => setLightOff(!isLightOff)} />
           </Tooltip>

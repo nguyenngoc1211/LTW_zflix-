@@ -1,14 +1,15 @@
 // Lensy — linh vật kính lúp AI Visual Shopping.
 // States: SLEEPING (mặc định, mắt nhắm + Zzz) -> AWAKE (mắt mở + glow) ->
 // SELECTING/SCANNING/RESULTS/ERROR (biểu cảm thay đổi theo state).
-export default function LensyMascot({ state, onClick, compact = false }) {
+export default function LensyMascot({ state, onClick, compact = false, inline = false }) {
   const sleeping = state === "SLEEPING";
   const scanning = state === "SCANNING";
   const error = state === "ERROR";
+  const variant = inline ? "lensy-inline" : compact ? "lensy-compact" : "";
   return (
     <button
       type="button"
-      className={`lensy ${compact ? "lensy-compact" : ""} ${sleeping ? "lensy-sleeping" : "lensy-awake"} lensy-${state.toLowerCase()}`}
+      className={`lensy ${variant} ${sleeping ? "lensy-sleeping" : "lensy-awake"} lensy-${state.toLowerCase()}`}
       onClick={onClick}
       title={sleeping ? "Đánh thức Lensy để tìm món đồ bạn thích" : "Bấm vào mình để quay lại ngủ"}
       aria-label="Lensy - trợ lý tìm kiếm sản phẩm trong phim"
