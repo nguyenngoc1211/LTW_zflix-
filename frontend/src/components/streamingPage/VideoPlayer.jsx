@@ -1,6 +1,11 @@
-import { BulbOutlined, StepForwardOutlined } from "@ant-design/icons";
+import { BulbOutlined, ScanOutlined, StepForwardOutlined } from "@ant-design/icons";
 import { Button, Switch, Tooltip, message } from "antd";
 import { useEffect, useRef } from "react";
+
+import LensyMascot from "../LensyMascot";
+import SelectionOverlay from "../SelectionOverlay";
+import ProductPanel from "../ProductPanel";
+import { useLensy } from "../../hooks/useLensy";
 
 const VideoPlayer = ({
   currentEpisode,
@@ -9,8 +14,20 @@ const VideoPlayer = ({
   onNextEpisode,
   settings,
   setSettings,
+  productionId,
+  onTimeUpdate,
 }) => {
   const videoRef = useRef(null);
+  const stageRef = useRef(null);
+  const positionRef = useRef(0);
+
+  // CineLens: quét đồ vật trong khung hình (Lensy)
+  const lensy = useLensy({
+    videoRef,
+    stageRef,
+    productionId: productionId ?? currentEpisode?.production_id,
+    position: positionRef.current,
+  });
 
   useEffect(() => {
     if (!videoRef.current || !settings.autoPlay) return;
@@ -25,6 +42,12 @@ const VideoPlayer = ({
     }
   };
 
+  const handleTimeUpdate = () => {
+    const t = videoRef.current?.currentTime || 0;
+    positionRef.current = t;
+    if (onTimeUpdate) onTimeUpdate(Math.floor(t));
+  };
+
   const handleVideoEnded = () => {
     if (!settings.autoNext) return;
     message.loading("Tự động chuyển tập tiếp theo sau 3 giây...", 2);
@@ -37,6 +60,7 @@ const VideoPlayer = ({
 
   return (
     <div
+      ref={stageRef}
       className={`relative w-full overflow-hidden rounded-xl bg-black shadow-2xl ${
         isLightOff ? "z-50" : ""
       }`}
@@ -47,12 +71,39 @@ const VideoPlayer = ({
           key={currentEpisode.video_url}
           src={currentEpisode.video_url}
           controls
+          crossOrigin="anonymous"
           className="h-full w-full object-contain"
           poster={currentEpisode.thumbnail_url}
           onLoadedMetadata={handleLoadedMetadata}
+          onTimeUpdate={handleTimeUpdate}
           onEnded={handleVideoEnded}
         />
       </div>
+
+      {/* CineLens: overlay khoanh vùng + panel kết quả */}
+      {lensy.isOpen && (
+        <SelectionOverlay
+          boundsRef={stageRef}
+          scanning={lensy.state === "SCANNING"}
+          onScan={lensy.scan}
+          onCancel={lensy.sleep}
+          onTooSmall={(m) => lensy.setError(m)}
+          error={lensy.error}
+        />
+      )}
+      {(lensy.state === "RESULTS" || lensy.state === "ERROR") && (
+        <ProductPanel
+          result={lensy.result || { message: lensy.error, products: [] }}
+          photo={lensy.photo}
+          onClose={lensy.sleep}
+          onBuy={lensy.buy}
+          onFind={lensy.findOnShopee}
+        />
+      )}
+      <LensyMascot
+        state={lensy.state}
+        onClick={() => (lensy.state === "SLEEPING" ? lensy.wake() : lensy.sleep())}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-[#18181b] p-3">
         <div className="flex items-center gap-4 text-sm text-gray-300">
@@ -65,6 +116,13 @@ const VideoPlayer = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Tooltip title="Lensy — quét đồ vật trong phim">
+            <Button
+              type="text"
+              icon={<ScanOutlined />}
+              onClick={() => (lensy.state === "SLEEPING" ? lensy.wake() : lensy.sleep())}
+            />
+          </Tooltip>
           <Tooltip title={isLightOff ? "Bật đèn" : "Tắt đèn"}>
             <Button type="text" icon={<BulbOutlined />} onClick={() => setLightOff(!isLightOff)} />
           </Tooltip>

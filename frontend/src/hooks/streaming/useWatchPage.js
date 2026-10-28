@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { message } from "antd";
 import { useParams, useSearchParams } from "react-router-dom";
 
+import { apiRequest } from "../../services/api.js";
 import {
   getEpisodesBySeason,
   getMovieBySlug,
@@ -177,6 +178,22 @@ export const useWatchPage = () => {
     }
   };
 
+  // Lưu vị trí xem vào lịch sử (giống PlayerPage): mỗi 10 giây một lần.
+  const lastSavedRef = useRef(0);
+  const handleTimeUpdate = useCallback(
+    (seconds) => {
+      const episodeId = currentEpisode?.id;
+      if (!episodeId) return;
+      if (Math.abs(seconds - lastSavedRef.current) < 10) return;
+      lastSavedRef.current = seconds;
+      apiRequest(`/api/v1/history/${episodeId}`, {
+        method: "PUT",
+        body: JSON.stringify({ position: seconds }),
+      }).catch(() => {});
+    },
+    [currentEpisode],
+  );
+
   // Trả về tất cả dữ liệu và hàm cần thiết cho View
   return {
     loading,
@@ -193,6 +210,7 @@ export const useWatchPage = () => {
       handleChangeEpisode,
       handleChangeSeason,
       handleNextEpisode,
+      handleTimeUpdate,
     },
   };
 };

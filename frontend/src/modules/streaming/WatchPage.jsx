@@ -79,6 +79,8 @@ const WatchPage = () => {
                   onNextEpisode={handleNextEpisode}
                   settings={playerSettings}
                   setSettings={setPlayerSettings}
+                  productionId={productionData?.id ?? currentEpisode.production_id}
+                  onTimeUpdate={handlers.handleTimeUpdate}
                 />
               ) : (
                 <div className="aspect-video bg-black flex items-center justify-center text-gray-500">
