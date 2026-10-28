@@ -90,3 +90,7 @@ mysql_data/
 
 # Local-only runbook
 /docs/LOCAL_DOCKER_GUIDE.md
+
+# Database backup truoc khi migration
+/.backups/
+

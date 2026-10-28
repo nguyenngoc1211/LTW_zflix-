@@ -86,7 +86,12 @@ export const createApp = () => {
   app.use(
     "/api/streaming",
     (req, res, next) => {
+      // Webhook do video-processor gọi nội bộ, xác thực bằng secret riêng.
       if (req.originalUrl.startsWith("/api/streaming/episodes/webhook/")) return next();
+      // Theo thiết kế (docs/project-analysis), các endpoint ĐỌC của streaming là
+      // Public: xem chi tiết phim theo slug, xem tập theo mùa. Chỉ các thao tác
+      // GHI (thêm/sửa/xoá tập, tạo mùa) mới cần admin/moderator.
+      if (req.method === "GET" || req.method === "HEAD") return next();
       return requireAuth(req, res, () => requireContentStaff(req, res, next));
     },
     streamingContentRouter,

@@ -47,8 +47,65 @@ discoveryRouter.get("/productions/:id", asyncHandler(async (req, res) => {
   const id = parsePositiveInt(req.params.id, "production id");
   const [rows] = await pool.execute(`SELECT p.*, GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR '||') AS genres FROM productions p LEFT JOIN production_genres pg ON pg.production_id=p.id LEFT JOIN genres g ON g.id=pg.genre_id WHERE p.id=? GROUP BY p.id`, [id]);
   if (!rows.length) return res.status(404).json({ message: "Production not found" });
-  const [episodes] = await pool.execute("SELECT id, episode_number, title, duration, thumbnail_url, video_url FROM episodes WHERE production_id=? ORDER BY episode_number", [id]);
-  res.json({ ...rows[0], genres: rows[0].genres ? rows[0].genres.split("||") : [], episodes });
+
+  // Series được seed thành 1 production gốc + N production con cho từng mùa
+  // (seasons.series_id -> production gốc, seasons.id -> production của mùa).
+  // Gom tập từ mọi mùa về production gốc để bấm vào phim là xem được ngay,
+  // đồng thời trả `seasons` để UI hiển thị bộ chọn mùa.
+  const [seasons] = await pool.execute(
+    `SELECT s.id, s.season_number, s.total_episodes, p.title, p.poster_url
+       FROM seasons s
+       JOIN productions p ON p.id = s.id
+      WHERE s.series_id = ?
+      ORDER BY s.season_number`,
+    [id],
+  );
+
+  const ownEpisodes = `SELECT id, episode_number, title, duration, thumbnail_url, video_url
+                         FROM episodes WHERE production_id = ?`;
+  let episodes;
+  if (seasons.length) {
+    // Gộp tập của production gốc + tất cả mùa con.
+    // Số tập đánh liên tục qua các mùa (mùa 2 tiếp số của mùa 1) để tránh
+    // trùng "Tập 1" nhiều lần; vẫn giữ season_number để UI hiển thị theo mùa.
+    const seasonIds = seasons.map((s) => s.id);
+    const placeholders = seasonIds.map(() => "?").join(",");
+    const [merged] = await pool.execute(
+      `SELECT e.id, e.episode_number AS episode_in_season, e.title, e.duration,
+              e.thumbnail_url, e.video_url, e.production_id AS season_id, s.season_number
+         FROM episodes e
+         JOIN seasons s ON s.id = e.production_id
+        WHERE e.production_id IN (${placeholders})
+        ORDER BY s.season_number, e.episode_number`,
+      seasonIds,
+    );
+    let running = 0;
+    episodes = merged.map((ep) => {
+      running += 1;
+      return {
+        ...ep,
+        episode_number: running,
+        // Nhãn đầy đủ để người dùng biết tập thuộc mùa nào
+        display_title: `S${ep.season_number}E${ep.episode_in_season} · ${ep.title}`,
+      };
+    });
+  } else {
+    const [own] = await pool.execute(`${ownEpisodes} ORDER BY episode_number`, [id]);
+    episodes = own;
+  }
+
+  res.json({
+    ...rows[0],
+    genres: rows[0].genres ? rows[0].genres.split("||") : [],
+    seasons: seasons.map((s) => ({
+      id: s.id,
+      season_number: s.season_number,
+      total_episodes: s.total_episodes,
+      title: s.season_number ? `Mùa ${s.season_number}` : s.title,
+      poster_url: s.poster_url,
+    })),
+    episodes,
+  });
 }));
 
 discoveryRouter.post("/search/reindex", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
