@@ -72,6 +72,10 @@ services:
       R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:-}
       VIDEO_WEBHOOK_SECRET: ${VIDEO_WEBHOOK_SECRET:-}
       VIDEO_SERVICE_URL: http://video_service:8001
+      VISION_PROVIDER: ${VISION_PROVIDER:-none}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-v4-flash-vision-exp}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
     depends_on:
       db:
         condition: service_healthy

@@ -220,6 +220,7 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
 .cinelens-photo { width: 100%; margin: .5rem 1rem 0; width: calc(100% - 2rem); border-radius: .6rem; border: 1px solid rgba(34,211,238,.35); }
 .cinelens-ocr, .lens-ai-badge { margin: .6rem 1rem 0; padding: .4rem .6rem; border-radius: .5rem; background: rgba(139,92,246,.15); border: 1px solid rgba(139,92,246,.35); color: #c4b5fd; font-size: .78rem; }
 .cinelens-empty { margin: 1rem; padding: .9rem; border-radius: .7rem; background: rgba(30,41,59,.5); color: #94a3b8; font-size: .85rem; }
+.cinelens-ai-search { margin: .6rem 1rem 0; padding: .55rem .8rem; border-radius: .55rem; border: 1px solid rgba(168,85,247,.5); background: rgba(168,85,247,.18); color: #e9d5ff; font-size: .8rem; font-weight: 600; cursor: pointer; }
 .cinelens-products { display: flex; flex-direction: column; gap: .6rem; padding: .8rem 1rem; }
 .cinelens-card { display: flex; gap: .7rem; padding: .6rem; border-radius: .8rem; border: 1px solid rgba(148,163,184,.18); background: rgba(15,23,42,.65); align-items: center; }
 .cinelens-card-img { width: 52px; height: 52px; border-radius: .5rem; object-fit: cover; background: #1e293b; flex-shrink: 0; }

@@ -91,7 +91,7 @@ Mỗi module thường gồm `*.routes.js` (định nghĩa endpoint) và `*.serv
 | `watch-party/` | `/api/v1` + Socket.IO `/watch-party` | Phòng xem chung, chat, đồng bộ phát |
 | `admin/` | `/api/v1/admin` | Dashboard, user, moderation, cấu hình hệ thống |
 | `shopping/` | `/api/v1` | Sản phẩm gắn mốc phim, affiliate Shopee |
-| `visual-shopping/` | `/api/v1/visual-search`, `/api/v1/scan` | Tìm sản phẩm bằng ảnh (CLIP + HNSW + OCR) |
+| `visual-shopping/` | `/api/v1/visual-search`, `/api/v1/scan` | Tìm sản phẩm bằng ảnh (DeepSeek vision + tra sàn Tiki, fallback CLIP/HNSW) |
 
 Quy ước quyền:
 
@@ -301,9 +301,9 @@ Socket.IO watch party dùng cùng access token ở handshake; server kiểm tra
 
 ```text
 Ảnh/chụp màn hình
-  -> OCR (tesseract.js) + embedding CLIP (@xenova/transformers)
-  -> vector index HNSW (hnswlib-node) trên catalog
-  -> ranking + affiliate link Shopee
+  -> AI nhận diện (DeepSeek/Gemini) + OCR (tesseract.js) chạy song song
+  -> từ khoá AI -> tìm sản phẩm thật trên Tiki (marketplace.js, cache 5 phút)
+  -> chưa cấu hình AI: fallback embedding CLIP + HNSW trên catalog demo
 ```
 
 ---

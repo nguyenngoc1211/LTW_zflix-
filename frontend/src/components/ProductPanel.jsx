@@ -1,15 +1,22 @@
 // Panel kết quả CineLens — glassmorphism, drawer bên phải (desktop) / bottom sheet (mobile)
 export default function ProductPanel({ result, photo, onClose, onBuy, onFind }) {
   const items = result.products || [];
-  const mode = result.mode === "real" ? "REAL" : "DEMO";
+  const isDemo = result.mode !== "real";
   const formatVnd = (raw) => (raw ? new Intl.NumberFormat("vi-VN").format(Number(raw)) + "₫" : null);
+  const openProduct = (product) => {
+    if (product.hasAffiliate) return onBuy(product);
+    if (product.searchUrl) return window.open(product.searchUrl, "_blank", "noopener");
+    return onFind(product.name);
+  };
 
   return (
     <aside className="cinelens-panel" role="dialog" aria-label="Kết quả tìm kiếm Lensy">
       <div className="cinelens-panel-head">
         <div>
           <h3>Lensy tìm thấy {items.length} sản phẩm</h3>
-          <span className="cinelens-mode-badge" data-mode={mode}>{mode === "real" ? "REAL DATA" : "DEMO CATALOG"}</span>
+          <span className="cinelens-mode-badge" data-mode={isDemo ? "demo" : "real"}>
+            {isDemo ? "DEMO CATALOG" : "REAL DATA"}
+          </span>
         </div>
         <button type="button" className="cinelens-close" onClick={onClose} aria-label="Đóng">✕</button>
       </div>
@@ -19,6 +26,12 @@ export default function ProductPanel({ result, photo, onClose, onBuy, onFind }) 
       {result.detected_objects?.map((obj, index) => (
         <p key={index} className="lens-ai-badge">🤖 Nhận diện: “{obj.name}”{obj.source === "ocr" ? " (OCR)" : ""}</p>
       ))}
+
+      {result.suggestedKeyword && (
+        <button type="button" className="cinelens-ai-search" onClick={() => onFind(result.suggestedKeyword)}>
+          Tìm “{result.suggestedKeyword}” trên Shopee
+        </button>
+      )}
 
       {items.length === 0 && (
         <p className="cinelens-empty">{result.message || "Chưa tìm thấy sản phẩm phù hợp — thử khoanh vùng rõ hơn nhé!"}</p>
@@ -40,18 +53,22 @@ export default function ProductPanel({ result, photo, onClose, onBuy, onFind }) 
             <button
               type="button"
               className={product.hasAffiliate ? "cinelens-buy" : "cinelens-find"}
-              onClick={() => (product.hasAffiliate ? onBuy(product) : onFind(product))}
+              onClick={() => openProduct(product)}
             >
-              {product.hasAffiliate ? "Mua ngay" : "Tìm trên Shopee"}
+              {product.hasAffiliate
+                ? "Mua ngay"
+                : product.platform?.toLowerCase().includes("tiki")
+                  ? "Xem trên Tiki"
+                  : "Tìm trên Shopee"}
             </button>
           </article>
         ))}
       </div>
 
       <p className="cinelens-footer-note">
-        {mode === "demo"
+        {isDemo
           ? "⚠️ Chế độ DEMO — sản phẩm từ Local Catalog mẫu, chưa liên kết sàn thật."
-          : "🔗 Chế độ REAL — đang dùng nguồn dữ liệu đã cấu hình."}
+          : "🔗 Chế độ REAL — sản phẩm trực tiếp từ sàn thương mại điện tử, theo từ khoá AI nhận diện."}
         {result.timings ? ` ⚡ ${result.timings.totalMs}ms` : ""}
       </p>
     </aside>

@@ -8,6 +8,8 @@ import { embedImage, clipReady } from "./clip.service.js";
 import { searchByVector } from "./vector.index.js";
 import { rankProducts, similarityThreshold } from "./ranking.js";
 import { readText } from "./ocr.service.js";
+import { searchMarketplace } from "./marketplace.js";
+import { visionConfigured, visionProviderName, identifyProduct } from "../shopping/vision.js";
 
 export const scanRouter = Router();
 
@@ -44,16 +46,60 @@ function rateLimitSafe() {
 }
 
 // Chế độ phản ánh NGUỒN SẢN PHẨM đang dùng (theo spec CineLens):
-// "demo" = Local Catalog mẫu; "real" = khi tích hợp API sàn/feed đối tác thật.
-// LLM fallback (Gemini OCR) không đổi nguồn sản phẩm.
-const currentMode = () => "demo";
+// "real" = sản phẩm tra trực tiếp từ sàn theo từ khoá AI; "demo" = Local Catalog mẫu.
+const searchCatalog = async (imageBuffer, timings) => {
+  await clipReady();
+  const { embedding, embedMs } = await embedImage(imageBuffer);
+  timings.embedMs = embedMs;
+
+  const { items: hits, searchMs } = await searchByVector(embedding, 20);
+  timings.searchMs = searchMs;
+
+  const ids = hits.map((hit) => hit.productId);
+  if (!ids.length) return [];
+
+  const [rows] = await pool.query(
+    `SELECT id, name, description, category, color, price, currency, marketplace,
+            product_url, affiliate_url, availability, image_url
+     FROM visual_products WHERE id IN (${ids.map(() => "?").join(",")})`,
+    ids,
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const catalog = hits
+    .map((hit) => {
+      const row = byId.get(hit.productId);
+      return row ? { ...row, availability: Number(row.availability), similarity: hit.similarity } : null;
+    })
+    .filter(Boolean);
+
+  const t0 = Date.now();
+  const ranked = rankProducts(catalog, {}, 15);
+  timings.rankMs = Date.now() - t0;
+
+  return ranked.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    category: item.category,
+    color: item.color,
+    price: item.price,
+    currency: item.currency,
+    platform: item.marketplace === "catalog" ? "Zflix Catalog (demo)" : item.marketplace,
+    image: item.image_url,
+    similarity: item.score,
+    availability: Boolean(item.availability),
+    hasAffiliate: Boolean(item.affiliate_url),
+    searchUrl: item.product_url || `https://shopee.vn/search?keyword=${encodeURIComponent(item.name)}`,
+  }));
+};
 
 scanRouter.post(
   "/scan",
   scanLimiter,
   upload.single("image"),
   async (req, res) => {
-    const timings = { cropMs: Number(req.body?.cropMs) || null, embedMs: 0, searchMs: 0, rankMs: 0, ocrMs: 0 };
+    const startedAt = Date.now();
+    const timings = { cropMs: Number(req.body?.cropMs) || null, embedMs: 0, searchMs: 0, rankMs: 0, ocrMs: 0, visionMs: 0, marketplaceMs: 0 };
     try {
       // Ảnh: từ multipart file hoặc JSON base64 (tương thích luồng cũ)
       let imageBuffer = req.file?.buffer;
@@ -68,87 +114,98 @@ scanRouter.post(
         return res.status(413).json({ message: "Ảnh quá lớn (tối đa 5MB)" });
       }
 
-      await clipReady();
-      const { embedding, embedMs } = await embedImage(imageBuffer);
-      timings.embedMs = embedMs;
+      // AI nhận diện và OCR chạy song song; kết quả AI quyết định nguồn sản phẩm.
+      const aiEnabled = visionConfigured();
+      const aiPromise = aiEnabled
+        ? (async () => {
+            const start = Date.now();
+            try {
+              return await identifyProduct(imageBuffer.toString("base64"));
+            } catch (error) {
+              console.warn("[scan] nhan dien AI loi:", error.message);
+              return null;
+            } finally {
+              timings.visionMs = Date.now() - start;
+            }
+          })()
+        : Promise.resolve(null);
 
-      const { items: hits, searchMs } = await searchByVector(embedding, 20);
-      timings.searchMs = searchMs;
+      const ocrPromise = (async () => {
+        const start = Date.now();
+        try {
+          return await readText(imageBuffer);
+        } catch {
+          return null;
+        } finally {
+          timings.ocrMs = Date.now() - start;
+        }
+      })();
 
-      const ids = hits.map((hit) => hit.productId);
-      let catalog = [];
-      if (ids.length) {
-        const [rows] = await pool.query(
-          `SELECT id, name, description, category, color, price, currency, marketplace,
-                  product_url, affiliate_url, availability, image_url
-           FROM visual_products WHERE id IN (${ids.map(() => "?").join(",")})`,
-          ids,
-        );
-        const byId = new Map(rows.map((row) => [row.id, row]));
-        catalog = hits
-          .map((hit) => {
-            const row = byId.get(hit.productId);
-            return row ? { ...row, availability: Number(row.availability), similarity: hit.similarity } : null;
-          })
-          .filter(Boolean);
+      const ai = await aiPromise;
+
+      // Có từ khoá AI -> tra sản phẩm THẬT trên sàn. Catalog demo chỉ dùng khi
+      // chưa cấu hình AI vì dữ liệu mẫu dễ gợi ý sai loại hàng.
+      let products = [];
+      if (ai?.keyword) {
+        const start = Date.now();
+        try {
+          products = await searchMarketplace(ai.keyword, 10);
+        } catch (error) {
+          console.warn("[scan] tra san that loi:", error.message);
+        } finally {
+          timings.marketplaceMs = Date.now() - start;
+        }
+      } else if (!aiEnabled) {
+        products = await searchCatalog(imageBuffer, timings);
       }
 
-      const t0 = Date.now();
-      const ranked = rankProducts(catalog, {}, 15);
-      timings.rankMs = Date.now() - t0;
+      const ocr = await ocrPromise;
+      const mode = aiEnabled ? "real" : "demo";
 
-      // OCR đọc chữ/logo trong ảnh (như TikTok) — lỗi không chặn luồng
-      let ocr = null;
-      try {
-        ocr = await readText(imageBuffer);
-        if (ocr?.text) timings.ocrMs = ocr.ocrMs;
-      } catch { /* bỏ qua */ }
+      // Thời gian thực tế phía server (AI/OCR chạy song song nên không cộng dồn).
+      timings.totalMs = Date.now() - startedAt;
 
-      const t1 = Date.now();
-      timings.totalMs =
-        (timings.cropMs || 0) + timings.embedMs + timings.searchMs + timings.rankMs + (timings.ocrMs || 0) + (t1 - t0);
-
-      // detected_objects: KHÔNG bịa. Chỉ có khi OCR đọc được chữ hoặc AI LLM fallback trả kết quả.
+      // detected_objects: KHÔNG bịa. Chỉ có khi AI nhận diện hoặc OCR đọc được chữ.
       const detected_objects = [];
+      if (ai?.keyword || ai?.category) {
+        detected_objects.push({
+          name: ai.keyword || ai.category,
+          source: visionProviderName(),
+          confidence: null,
+          category: ai.category || null,
+          color: ai.color || null,
+        });
+      }
       if (ocr?.text) {
         detected_objects.push({ name: ocr.text, source: "ocr", confidence: null });
       }
-      const aiKeyword = ocr?.text ?? null;
+      const aiKeyword = ai?.keyword ?? ocr?.text ?? null;
 
       // Lưu lịch sử (không lưu ảnh)
       pool
         .execute(
           `INSERT INTO visual_searches (user_id, movie_id, position, results_count, crop_ms, embed_ms, search_ms, rank_ms, total_ms, provider, ai_keyword)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'clip', ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [req.user?.id ?? null, Number(req.body?.movieId) || null, Math.floor(Number(req.body?.position) || 0),
-           ranked.length, timings.cropMs, timings.embedMs, timings.searchMs, timings.rankMs, timings.totalMs, aiKeyword],
+           products.length, timings.cropMs, timings.embedMs, timings.searchMs, timings.rankMs, timings.totalMs,
+           ai?.keyword ? (products.length ? "ai+tiki" : "ai") : "clip", aiKeyword],
         )
         .catch(() => {});
 
-      const products = ranked.map((item) => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        category: item.category,
-        color: item.color,
-        price: item.price,
-        currency: item.currency,
-        platform: item.marketplace === "catalog" ? "Zflix Catalog (demo)" : item.marketplace,
-        image: item.image_url,
-        similarity: item.score,
-        availability: Boolean(item.availability),
-        hasAffiliate: Boolean(item.affiliate_url),
-        // Chưa cấu hình affiliate: chỉ trả link SEARCH của sàn (URL-encoded, mở tab mới)
-        searchUrl: `https://shopee.vn/search?keyword=${encodeURIComponent(item.name)}`,
-      }));
-
       res.json({
-        mode: currentMode(),
+        mode,
         detected_objects,
+        suggestedKeyword: ai?.keyword ?? null,
         products,
         ocrText: ocr?.text ?? null,
         timings,
-        message: ranked.length ? null : "Lensy không tìm thấy sản phẩm phù hợp với vùng này — thử khoanh vùng khác nhé!",
+        message: products.length
+          ? null
+          : ai?.keyword
+            ? "Sàn chưa trả về sản phẩm khớp — thử khoanh vùng rõ hơn hoặc bấm tìm trên Shopee nhé!"
+            : aiEnabled
+              ? "Lensy chưa nhận diện được món đồ trong vùng này — thử khoanh sát món đồ hơn nhé!"
+              : "Lensy không tìm thấy sản phẩm phù hợp với vùng này — thử khoanh vùng khác nhé!",
       });
     } catch (error) {
       console.error("[scan] lỗi:", error.message.slice(0, 150));
