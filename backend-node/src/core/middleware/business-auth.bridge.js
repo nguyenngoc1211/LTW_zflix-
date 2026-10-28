@@ -12,4 +12,6 @@ const authUnavailable = (req, res) => res.status(503).json({
 });
 
 export const requireAuth = authModule?.requireAuth || authUnavailable;
+export const optionalAuth =
+  authModule?.optionalAuth || ((req, res, next) => next());
 export const requireRole = authModule?.requireRole || (() => authUnavailable);

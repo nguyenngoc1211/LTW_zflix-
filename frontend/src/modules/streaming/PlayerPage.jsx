@@ -2,25 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Hls from "hls.js";
 import { apiRequest, API_URL } from "../../services/api.js";
+import { toPlayableUrl } from "../../hooks/useVideoSource.js";
 import { scanRegion as scanRegionApi } from "../../services/scanApi.js";
 import { captureVideoRegion } from "../../utils/videoCapture.js";
 import LensyMascot from "../../components/LensyMascot.jsx";
 import SelectionOverlay from "../../components/SelectionOverlay.jsx";
 import ProductPanel from "../../components/ProductPanel.jsx";
-
-// Video trên R2 không có CORS nên phát qua proxy của backend
-const toPlayableUrl = (url) => {
-  if (!url) return url;
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.endsWith(".r2.dev")) {
-      return `${API_URL}/api/v1/hls${parsed.pathname}${parsed.search}`;
-    }
-  } catch {
-    // URL không hợp lệ — giữ nguyên
-  }
-  return url;
-};
 
 // ---------------------------------------------------------------------------
 // Overlay quét đồ vật kiểu Google Lens: kéo chuột khoanh vùng trên video
@@ -145,7 +132,9 @@ const PlayerPage = () => {
           </>
         )}
         <div className="player-stage" ref={stageRef}>
-          {episode.video_url ? (
+          {episode.locked ? (
+            <div className="video-placeholder"><span>🔒</span><p>Nội dung dành cho thành viên VIP. Liên hệ quản trị viên để kích hoạt.</p></div>
+          ) : episode.video_url ? (
             <video
               ref={videoRef}
               controls

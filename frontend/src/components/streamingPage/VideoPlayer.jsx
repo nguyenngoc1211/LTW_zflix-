@@ -1,4 +1,8 @@
-import { BulbOutlined, StepForwardOutlined } from "@ant-design/icons";
+import {
+  BulbOutlined,
+  LockOutlined,
+  StepForwardOutlined,
+} from "@ant-design/icons";
 import { Button, Switch, Tooltip, message } from "antd";
 import { useEffect, useRef } from "react";
 
@@ -21,6 +25,7 @@ const VideoPlayer = ({
   const videoRef = useRef(null);
   const stageRef = useRef(null);
   const positionRef = useRef(0);
+  const isLocked = Boolean(currentEpisode?.locked);
 
   // CineLens: quét đồ vật trong khung hình (Lensy)
   const lensy = useLensy({
@@ -72,21 +77,35 @@ const VideoPlayer = ({
     >
       <div className="relative aspect-video w-full bg-black">
         {/* src do useVideoSource() gắn (proxy R2 + hls.js), không set inline. */}
-        <video
-          ref={videoRef}
-          key={currentEpisode.video_url}
-          controls
-          crossOrigin="anonymous"
-          className="h-full w-full object-contain"
-          poster={currentEpisode.thumbnail_url}
-          onLoadedMetadata={handleLoadedMetadata}
-          onTimeUpdate={handleTimeUpdate}
-          onEnded={handleVideoEnded}
-        />
-        {!currentEpisode.video_url && (
-          <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-gray-400">
-            Video chưa sẵn sàng. Nếu vừa upload, quá trình xử lý có thể chưa hoàn tất.
+        {isLocked ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <LockOutlined className="text-4xl text-amber-400" />
+            <p className="text-base font-semibold text-white">
+              Nội dung dành cho thành viên VIP
+            </p>
+            <p className="max-w-md text-sm text-gray-400">
+              Bạn cần tài khoản VIP để xem tập này. Liên hệ quản trị viên để kích hoạt.
+            </p>
           </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              key={currentEpisode.id}
+              controls
+              crossOrigin="anonymous"
+              className="h-full w-full object-contain"
+              poster={currentEpisode.thumbnail_url}
+              onLoadedMetadata={handleLoadedMetadata}
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={handleVideoEnded}
+            />
+            {!currentEpisode.video_url && (
+              <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-gray-400">
+                Video chưa sẵn sàng. Nếu vừa upload, quá trình xử lý có thể chưa hoàn tất.
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -124,7 +143,7 @@ const VideoPlayer = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && (
+          {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && !isLocked && (
             <LensyMascot
               inline
               state={lensy.state}

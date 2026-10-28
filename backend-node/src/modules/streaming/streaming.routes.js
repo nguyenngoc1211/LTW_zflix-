@@ -1,16 +1,28 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
-import { toPublicMediaUrl } from "../../core/storage/public-url.js";
-import { requireAuth } from "../../core/middleware/business-auth.bridge.js";
+import { requireAuth, optionalAuth } from "../../core/middleware/business-auth.bridge.js";
 import { asyncHandler, parsePositiveInt } from "../../core/utils/http.js";
+import { applyEpisodeAccess } from "./playback-access.js";
 
 export const streamingRouter = Router();
 
-streamingRouter.get("/episodes/:episodeId", asyncHandler(async (req, res) => {
+streamingRouter.get("/episodes/:episodeId", optionalAuth, asyncHandler(async (req, res) => {
   const episodeId = parsePositiveInt(req.params.episodeId, "episode id");
-  const [items] = await pool.execute(`SELECT e.*, p.title AS production_title, p.id AS production_id, p.slug, p.poster_url FROM episodes e JOIN productions p ON p.id=e.production_id WHERE e.id=?`, [episodeId]);
+  const [items] = await pool.execute(
+    `SELECT e.*, p.title AS production_title, p.id AS production_id, p.slug, p.poster_url,
+            p.is_premium, sp.is_premium AS series_premium
+       FROM episodes e
+       JOIN productions p ON p.id = e.production_id
+       LEFT JOIN seasons s ON s.id = p.id
+       LEFT JOIN productions sp ON sp.id = s.series_id
+      WHERE e.id = ?`,
+    [episodeId],
+  );
   if (!items.length) return res.status(404).json({ message: "Episode not found" });
-  res.json({ ...items[0], video_url: toPublicMediaUrl(items[0].video_url) });
+  const premium = Boolean(items[0].is_premium) || Boolean(items[0].series_premium);
+  const episode = applyEpisodeAccess(items[0], { premium, user: req.user });
+  delete episode.series_premium;
+  res.json(episode);
 }));
 
 streamingRouter.get("/history", requireAuth, asyncHandler(async (req, res) => {

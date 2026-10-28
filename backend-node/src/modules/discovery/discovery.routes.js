@@ -1,8 +1,13 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
-import { requireAuth, requireRole } from "../../core/middleware/business-auth.bridge.js";
+import { requireAuth, requireRole, optionalAuth } from "../../core/middleware/business-auth.bridge.js";
 import { searchProductions, syncProductionIndex } from "./search.service.js";
+import {
+  applyEpisodeAccess,
+  isPremiumLocked,
+  resolveProductionPremium,
+} from "../streaming/playback-access.js";
 
 export const discoveryRouter = Router();
 
@@ -43,7 +48,7 @@ discoveryRouter.get("/productions/suggest", asyncHandler(async (req, res) => {
   res.json({ items: rows });
 }));
 
-discoveryRouter.get("/productions/:id", asyncHandler(async (req, res) => {
+discoveryRouter.get("/productions/:id", optionalAuth, asyncHandler(async (req, res) => {
   const id = parsePositiveInt(req.params.id, "production id");
   const [rows] = await pool.execute(`SELECT p.*, GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR '||') AS genres FROM productions p LEFT JOIN production_genres pg ON pg.production_id=p.id LEFT JOIN genres g ON g.id=pg.genre_id WHERE p.id=? GROUP BY p.id`, [id]);
   if (!rows.length) return res.status(404).json({ message: "Production not found" });
@@ -94,8 +99,11 @@ discoveryRouter.get("/productions/:id", asyncHandler(async (req, res) => {
     episodes = own;
   }
 
+  const premium = await resolveProductionPremium(id);
+  const accessOptions = { premium, user: req.user };
   res.json({
     ...rows[0],
+    locked: isPremiumLocked(premium, req.user),
     genres: rows[0].genres ? rows[0].genres.split("||") : [],
     seasons: seasons.map((s) => ({
       id: s.id,
@@ -104,7 +112,7 @@ discoveryRouter.get("/productions/:id", asyncHandler(async (req, res) => {
       title: s.season_number ? `Mùa ${s.season_number}` : s.title,
       poster_url: s.poster_url,
     })),
-    episodes,
+    episodes: episodes.map((episode) => applyEpisodeAccess(episode, accessOptions)),
   });
 }));
 

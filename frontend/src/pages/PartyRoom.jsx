@@ -3,10 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { watchPartyApi, getCurrentUserId } from "../services/api.js";
 import { getPartySocket } from "../services/socket.js";
 import { useAuth } from "../hooks/useAuth.js";
-
-// Video demo dự phòng khi database chưa có link video thật
-const FALLBACK_VIDEO_URL =
-  "https://vjs.zencdn.net/v/oceans.mp4";
+import { useVideoSource } from "../hooks/useVideoSource.js";
 
 export default function PartyRoom() {
   const { partyId } = useParams();
@@ -33,6 +30,9 @@ export default function PartyRoom() {
   const videoRef = useRef(null);
   const chatBottomRef = useRef(null);
   const isLocalSeeking = useRef(false);
+
+  // Phát qua proxy backend (URL tương đối + playback token) và hls.js cho m3u8.
+  useVideoSource({ videoRef, videoUrl: party?.video_url });
 
   // Cuộn xuống tin nhắn mới nhất
   const scrollToBottom = () => {
@@ -310,8 +310,6 @@ export default function PartyRoom() {
     );
   }
 
-  const videoSource = party.video_url || FALLBACK_VIDEO_URL;
-
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-8 py-5 animate-fadeIn">
       {/* Room Header Top Bar */}
@@ -384,23 +382,24 @@ export default function PartyRoom() {
         <div className="lg:col-span-8 flex flex-col gap-4">
           {/* Video Container */}
           <div className="relative rounded-3xl overflow-hidden bg-black border border-white/10 shadow-2xl aspect-video flex items-center justify-center group">
-            <video
-              ref={videoRef}
-              src={videoSource}
-              controls
-              onPlay={handlePlay}
-              onPause={handlePause}
-              onSeeked={handleSeeked}
-              onError={(e) => {
-                console.warn("[Video] Load error on source, falling back to oceans.mp4");
-                if (e.currentTarget.src !== FALLBACK_VIDEO_URL) {
-                  e.currentTarget.src = FALLBACK_VIDEO_URL;
-                }
-              }}
-              className="w-full h-full object-contain"
-              playsInline
-            />
-
+            {party.locked ? (
+              <div className="px-6 text-center">
+                <p className="text-4xl mb-3">🔒</p>
+                <p className="text-base font-bold text-white">Nội dung dành cho thành viên VIP</p>
+                <p className="mt-2 text-sm text-neutral-400">
+                  Bạn cần tài khoản VIP để xem phim trong phòng này. Liên hệ quản trị viên để kích hoạt.
+                </p>
+              </div>
+            ) : (
+              <video
+                ref={videoRef}
+                controls
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onSeeked={handleSeeked}
+                className="w-full h-full object-contain"
+              />
+            )}
             {/* Thông báo phân quyền nếu người xem không phải Host */}
             {!canControl && (
               <div className="absolute top-4 left-4 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-xl text-xs text-neutral-300 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">

@@ -1,7 +1,7 @@
 # Tiến độ bảo mật Authentication & Authorization
 
-Ngày rà soát source và Git gần nhất: 2026-09-30
-Current branch: `Du`  
+Ngày rà soát source và Git gần nhất: 2026-10-28
+Current branch: `integration`  
 Current latest security phase commit: `8988504`
 Mốc source hiện tại: `55430bf update UI User` (đã commit follow-up auth UI và đăng ký local)
 Current latest documentation commit: `55430bf update UI User`
@@ -175,6 +175,20 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 - **Xác minh thực chạy:** không token và token sai bị `connect_error` "Authentication required"; token hợp lệ kết nối, join và chat thành công; client gửi `username: "SPOOFED"` nhưng broadcast vẫn là username DB (`michael_brown`). Backend unit `32/32`; `my-parties` trả `200`; frontend lint 0 error, build pass.
 - **Giới hạn:** access token hết hạn hoặc session bị revoke giữa phiên socket không ngắt kết nối hiện có cho tới khi client disconnect/reconnect; chưa rate-limit sự kiện socket; `participant-action` chưa kiểm tra quyền host/co-host trước khi broadcast/kick — cần scope riêng.
 
+### Phase 8 — VIP entitlement và playback token (2026-10-28)
+
+- **Lý do:** `productions.is_premium` trước đây chỉ là cờ hiển thị. Các endpoint đọc streaming trả `video_url` công khai, proxy `/api/v1/hls` không cần token, và object R2 công khai — guest/user thường vẫn xem được phim VIP.
+- **Entitlement:** thêm `core/security/entitlements.js` (`isVipActive`, `canAccessPremium` = role `admin`/`moderator` hoặc `vip_expires_at` còn hạn). `publicUser` trả thêm `vipExpiresAt`/`isVip`; login, refresh và MFA challenge SELECT đọc `vip_expires_at`.
+- **optionalAuth:** `core/middleware/auth.middleware.js` thêm `optionalAuth` (token thiếu/sai → tiếp tục như guest); gắn cho production detail, season episodes, episode detail, discovery production detail và watch-party detail.
+- **Áp quyền:** `resolveProductionPremium` + `applyEpisodeAccess` (`modules/streaming/playback-access.js`) thay `video_url` bằng playback URL đã ký và trả `locked`; viewer không đủ quyền nhận `video_url: null`. Các service production/episode, discovery và watch party đều đi qua helper này.
+- **Playback token:** `core/security/playback-token.js` ký HMAC-SHA256 payload `{exp, scope}` base64url, TTL 600 giây, secret `PLAYBACK_TOKEN_SECRET` (fallback `JWT_ACCESS_SECRET`). URL dạng `/api/v1/hls/t/<token>/<objectPath>` để segment tương đối trong HLS kế thừa token. Scope là thư mục cho `.m3u8`, chính xác cho file khác.
+- **Proxy:** `r2-proxy.routes.js` chỉ nhận `GET`/`HEAD`, chỉ proxy object `hls/` hoặc `raw/`, từ chối `..`/`\`, bắt buộc token hợp lệ (thiếu/sai/hết hạn/sai scope → `403`), trả `Cache-Control: private, max-age=300`.
+- **Watch Party:** tạo phòng tập premium trả `403 VIP_REQUIRED` nếu không đủ quyền; join phòng premium kiểm tra entitlement; chi tiết phòng áp `locked` và ẩn `video_url`.
+- **Frontend:** `VideoPlayer`, `PlayerPage` và `PartyRoom` hiển thị khóa VIP thay cho `<video>` khi `locked`; `useVideoSource` nhận URL proxy tương đối; bỏ URL video demo fallback trong `PartyRoom`.
+- **Sửa race phát hiện khi verify:** `apiRequest` gửi request trước khi `AuthProvider` khôi phục phiên xong nên request đầu tiên không kèm access token, khiến VIP/admin tải thẳng trang xem bị khóa nhầm. `services/api.js` giờ chờ `refreshSession` hoàn tất (trừ endpoint `/api/v1/auth/*`) trước request đầu tiên.
+- **Xác minh thực chạy (2026-10-28):** guest mở `/watch/anh-lam?ep=1` thấy overlay VIP và 0 thẻ `<video>`, detail trả `locked:true`, `video_url:null`; guest mở phim free thấy video phát qua `/api/v1/hls/t/...` (`readyState=4`, `currentTime` tăng); user đăng nhập không VIP (john) gửi kèm Authorization vẫn `locked:true`; admin tải thẳng trang premium có Authorization, `locked:false`, video phát. Proxy: token hợp lệ `200`, thiếu token `403`, token bị sửa `403`, token scope khác `403`, path traversal `404`. Backend unit `54/54`; frontend build pass; lint chỉ còn lỗi cũ ngoài phạm vi.
+- **Giới hạn còn lại:** bucket R2 vẫn public nên URL R2 trực tiếp (kể cả URL từng lộ) vẫn tải được, không qua proxy/token. Playback token gắn scope + TTL, không gắn user/session. Chặn triệt để cần private bucket + presigned URL hoặc Cloudflare Worker kiểm tra quyền. Luồng subscription/purchase chưa nối vào `vip_expires_at`; hiện VIP được cấp thủ công bởi admin.
+
 ### Authorization integration guide
 
 `docs/AUTHORIZATION_INTEGRATION_GUIDE.md` ghi pattern thực tế và checklist cho teammate khi backend bổ sung API mới. Đây là documentation-only; không thêm API, role, ownership helper hoặc thay đổi production source. Các policy trong ma trận là **yêu cầu tương lai**, phải review lại theo resource API thật khi được triển khai.
@@ -305,6 +319,7 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - MFA setup/enable, không cấp credential trước factor, challenge expiry/attempt cap/one-time, TOTP replay, recovery-code one-time, disabled user, password-reset preservation và disable session revocation.
 - Frontend login chuyển sang second step bằng challenge giữ trong memory và chấp nhận TOTP/recovery code.
 - Socket Watch Party reject thiếu/sai token, chấp nhận token hợp lệ, và danh tính broadcast lấy từ token thay vì payload client; `my-parties` trả `200` sau khi sửa thứ tự route.
+- VIP gating: guest/user không VIP nhận `locked:true` và `video_url:null`; admin/VIP còn hạn nhận playback URL đã ký; proxy HLS từ chối thiếu token, token sửa, sai scope và path traversal; watch party premium chặn tạo/join khi không đủ quyền.
 
 ## Deferred / Future hardening
 
@@ -316,7 +331,7 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - Deployed cleanup scheduler cho `npm run cleanup:auth`
 - Multi-tab auth state sync
 - IDOR/BOLA, ownership, mass-assignment khi các resource API thật xuất hiện
-- Server-side premium/subscription authorization khi có API tương ứng
+- Private R2 bucket, presigned URL hoặc Cloudflare Worker cho playback (hiện bucket public nên URL trực tiếp vẫn bypass proxy/token)
 - Admin CRUD và community/content moderation authorization khi có API tương ứng
 - Email verification, OAuth, passkeys/WebAuthn và recovery nâng cao
 - Rate limiting sự kiện Socket.IO, buộc ngắt khi access token hết hạn giữa phiên, và kiểm tra quyền host/co-host cho `participant-action`

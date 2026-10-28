@@ -9,7 +9,7 @@ import {
 
 export const getEpisodesBySeasonController = async (req, res) => {
   try {
-    const episodes = await getEpisodesBySeasonService(req.params.seasonId);
+    const episodes = await getEpisodesBySeasonService(req.params.seasonId, req.user);
     res.json({ data: episodes });
   } catch (error) {
     res.status(500).json({ error: error.message });

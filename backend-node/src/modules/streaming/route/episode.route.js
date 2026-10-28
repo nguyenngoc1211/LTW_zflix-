@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import { optionalAuth } from "../../../core/middleware/business-auth.bridge.js";
 
 import {
   getEpisodesBySeasonController,
@@ -14,7 +15,7 @@ import { webhookVideoController } from "../controllers/webhook.controller.js";
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.get("/seasons/:seasonId/episodes", getEpisodesBySeasonController);
+router.get("/seasons/:seasonId/episodes", optionalAuth, getEpisodesBySeasonController);
 router.post(
   "/series/:seriesId/seasons",
   express.json(),

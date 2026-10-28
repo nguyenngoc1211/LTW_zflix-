@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../../core/database/pool.js";
 import { securityLog } from "../../core/security/security-logger.js";
+import { isVipActive } from "../../core/security/entitlements.js";
 import {
   deliverPasswordReset,
   passwordResetDeliveryAvailable,
@@ -43,6 +44,8 @@ const publicUser = (row) => ({
   email: row.email,
   avatarUrl: row.avatar_url,
   role: row.role,
+  vipExpiresAt: row.vip_expires_at || null,
+  isVip: isVipActive(row.vip_expires_at),
 });
 
 const signAccessToken = (user, sessionId) =>
@@ -96,7 +99,7 @@ export const clearRefreshCookieOptions = () => {
 export const login = async (email, password, metadata = {}) => {
   const [users] = await pool.execute(
     `SELECT id, username, email, password, avatar_url, role, provider,
-            status, failed_login_attempts, locked_until, mfa_enabled
+            status, failed_login_attempts, locked_until, mfa_enabled, vip_expires_at
      FROM users WHERE email = ? LIMIT 1`,
     [email],
   );
@@ -181,7 +184,7 @@ export const refresh = async (currentToken) => {
   const currentHash = hashToken(currentToken);
   const [rows] = await pool.execute(
     `SELECT s.id AS session_id, s.expires_at, s.absolute_expires_at,
-            u.id, u.username, u.email, u.avatar_url, u.role, u.status
+            u.id, u.username, u.email, u.avatar_url, u.role, u.status, u.vip_expires_at
      FROM auth_sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.refresh_token_hash = ? AND s.revoked_at IS NULL
@@ -478,7 +481,7 @@ export const completeMfaChallenge = async (challengeToken, code, metadata = {}) 
       `SELECT c.id AS challenge_id, c.attempts, c.max_attempts, c.expires_at,
               u.id, u.username, u.email, u.avatar_url, u.role, u.status,
               u.mfa_enabled, u.mfa_secret_ciphertext, u.mfa_secret_iv,
-              u.mfa_secret_tag, u.mfa_last_used_step
+              u.mfa_secret_tag, u.mfa_last_used_step, u.vip_expires_at
        FROM auth_mfa_challenges c
        JOIN users u ON u.id = c.user_id
        WHERE c.token_hash = ? AND c.used_at IS NULL

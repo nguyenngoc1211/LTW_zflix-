@@ -36,7 +36,7 @@ export const getListMoviesController = async (req, res) => {
 
 export const getMovieBySlugController = async (req, res) => {
   try {
-    const movie = await getMovieBySlugService(req.params.slug);
+    const movie = await getMovieBySlugService(req.params.slug, req.user);
     res.json(movie);
   } catch (error) {
     res.status(404).json({ error: error.message });

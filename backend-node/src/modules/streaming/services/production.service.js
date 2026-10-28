@@ -3,8 +3,8 @@ import {
   deleteFilesFromR2,
   uploadFileToR2,
 } from "../../../core/storage/upload.helper.js";
-import { toPublicMediaUrl } from "../../../core/storage/public-url.js";
 import { videoServiceProcessEndpoint } from "../../../config/video-service.config.js";
+import { applyEpisodeAccess, isPremiumLocked } from "../playback-access.js";
 import axios from "axios";
 
 const generateCleanSlug = (title) => {
@@ -379,7 +379,7 @@ export const getMoviesService = async () => {
   });
 };
 
-export const getMovieBySlugService = async (slug) => {
+export const getMovieBySlugService = async (slug, viewer = null) => {
   const production = await prisma.productions.findUnique({
     where: { slug },
     include: {
@@ -459,10 +459,13 @@ export const getMovieBySlugService = async (slug) => {
     ...production,
     seasons:
       formattedSeasons.length > 0 ? formattedSeasons : production.seasons,
-    episodes: formattedEpisodes.map((episode) => ({
-      ...episode,
-      video_url: toPublicMediaUrl(episode.video_url),
-    })),
+    locked: isPremiumLocked(production.is_premium, viewer),
+    episodes: formattedEpisodes.map((episode) =>
+      applyEpisodeAccess(episode, {
+        premium: Boolean(production.is_premium),
+        user: viewer,
+      }),
+    ),
     genres: production.production_genres.map((pg) => pg.genres),
     actors: production.production_actors.map((pa) => ({
       ...pa.actors,

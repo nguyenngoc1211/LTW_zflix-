@@ -4,8 +4,10 @@ import { API_URL } from "../services/api.js";
 
 // Video trên R2 KHÔNG có CORS (đã kiểm tra: không trả Access-Control-Allow-Origin),
 // nên trình duyệt không tải trực tiếp được. Phải phát qua proxy của backend.
+// Backend trả URL proxy tương đối kèm playback token (bắt buộc cho cả VIP lẫn free).
 export const toPlayableUrl = (url) => {
   if (!url) return url;
+  if (url.startsWith("/")) return `${API_URL}${url}`;
   try {
     const parsed = new URL(url);
     if (parsed.hostname.endsWith(".r2.dev")) {

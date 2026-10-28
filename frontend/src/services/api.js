@@ -2,6 +2,7 @@ export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 let accessToken = null;
 let pendingRefresh = null;
+let sessionBootstrapped = false;
 let sessionInvalidHandler = null;
 let currentUserId = localStorage.getItem("zflix_active_user_id") || "1";
 
@@ -53,12 +54,21 @@ export const refreshSession = async () => {
       })
       .finally(() => {
         pendingRefresh = null;
+        sessionBootstrapped = true;
       });
   }
   return pendingRefresh;
 };
 
+// Chờ phiên đăng nhập được khôi phục trước khi gọi endpoint phụ thuộc người xem
+// (vd: trạng thái khóa VIP), tránh gửi request khi chưa có access token.
+const ensureSessionBootstrapped = () =>
+  sessionBootstrapped ? Promise.resolve() : refreshSession().catch(() => {});
+
 export const apiRequest = async (path, options = {}, retry = true) => {
+  if (!path.startsWith("/api/v1/auth/")) {
+    await ensureSessionBootstrapped();
+  }
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");

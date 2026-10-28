@@ -1,9 +1,13 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { pool } from "../../core/database/pool.js";
-import { toPublicMediaUrl } from "../../core/storage/public-url.js";
-import { requireAuth } from "../../core/middleware/business-auth.bridge.js";
+import { requireAuth, optionalAuth } from "../../core/middleware/business-auth.bridge.js";
+import { canAccessPremium } from "../../core/security/entitlements.js";
 import { asyncHandler, parsePositiveInt } from "../../core/utils/http.js";
+import {
+  applyEpisodeAccess,
+  resolveProductionPremium,
+} from "../streaming/playback-access.js";
 
 export const watchPartyRouter = Router();
 
@@ -103,6 +107,10 @@ watchPartyRouter.post(
     }
     const epId = parsePositiveInt(episodeId, "episodeId");
     const episode = await ensureEpisode(epId);
+    const premium = await resolveProductionPremium(episode.production_id);
+    if (premium && !canAccessPremium(req.user)) {
+      return res.status(403).json({ message: "VIP membership is required for this episode", code: "VIP_REQUIRED" });
+    }
 
     const partyId = generatePartyId();
     const maxP = Math.min(50, Math.max(2, Number(maxParticipants) || 10));
@@ -158,6 +166,7 @@ watchPartyRouter.get(
 // ---------------------------------------------------------------------------
 watchPartyRouter.get(
   "/watch-party/:partyId",
+  optionalAuth,
   asyncHandler(async (req, res) => {
     const { partyId } = req.params;
     const [parties] = await pool.execute(
@@ -175,7 +184,14 @@ watchPartyRouter.get(
     if (!parties.length) return res.status(404).json({ message: "Party not found" });
 
     const party = parties[0];
-    party.video_url = toPublicMediaUrl(party.video_url);
+    const premium = await resolveProductionPremium(party.production_id);
+    Object.assign(
+      party,
+      applyEpisodeAccess(
+        { video_url: party.video_url },
+        { premium, user: req.user },
+      ),
+    );
     delete party.password; // Không trả password về client
 
     // Lấy danh sách participants
@@ -215,7 +231,7 @@ watchPartyRouter.post(
     const { password } = req.body || {};
 
     const [parties] = await pool.execute(
-      "SELECT id, password, max_participants, status FROM watch_parties WHERE id = ? LIMIT 1",
+      "SELECT id, password, max_participants, status, production_id FROM watch_parties WHERE id = ? LIMIT 1",
       [partyId],
     );
     if (!parties.length) return res.status(404).json({ message: "Party not found" });
@@ -224,6 +240,12 @@ watchPartyRouter.post(
     if (party.status === "ended") return res.status(400).json({ message: "Party has ended" });
     if (party.password && party.password !== password) {
       return res.status(403).json({ message: "Wrong password" });
+    }
+    if (
+      (await resolveProductionPremium(party.production_id)) &&
+      !canAccessPremium(req.user)
+    ) {
+      return res.status(403).json({ message: "VIP membership is required for this party", code: "VIP_REQUIRED" });
     }
 
     // Kiểm tra số người tham gia

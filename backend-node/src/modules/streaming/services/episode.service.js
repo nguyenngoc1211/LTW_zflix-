@@ -1,18 +1,16 @@
 import prisma from "../../../core/database/prisma.js";
 import { uploadFileToR2 } from "../../../core/storage/upload.helper.js";
-import { toPublicMediaUrl } from "../../../core/storage/public-url.js";
 import { videoServiceProcessEndpoint } from "../../../config/video-service.config.js";
+import { applyEpisodeAccess, resolveProductionPremium } from "../playback-access.js";
 import axios from "axios";
 
-export const getEpisodesBySeasonService = async (seasonId) => {
+export const getEpisodesBySeasonService = async (seasonId, viewer = null) => {
+  const premium = await resolveProductionPremium(Number(seasonId));
   const episodes = await prisma.episodes.findMany({
     where: { production_id: Number(seasonId) },
     orderBy: { episode_number: "asc" },
   });
-  return episodes.map((episode) => ({
-    ...episode,
-    video_url: toPublicMediaUrl(episode.video_url),
-  }));
+  return episodes.map((episode) => applyEpisodeAccess(episode, { premium, user: viewer }));
 };
 
 export const createSeasonService = async (seriesId, data) => {
