@@ -170,9 +170,15 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
 .suggest-rating { color: #f5c542; font-size: .78rem; }
 
 /* ===== CineLens — AI Visual Shopping Assistant (glassmorphism) ===== */
-.lensy { position: absolute; z-index: 25; right: 14px; bottom: 14px; width: 84px; height: 84px; border-radius: 50%; border: 0; padding: 4px; background: rgba(10,14,24,.55); backdrop-filter: blur(8px); cursor: pointer; transition: transform .25s, box-shadow .35s; touch-action: manipulation; }
-.lensy:hover { transform: scale(1.08); }
+/* Lensy mặc định (PlayerPage cũ): góc dưới-phải khung player. */
+.lensy { position: absolute; z-index: 25; right: 14px; bottom: 14px; width: 60px; height: 60px; border-radius: 50%; border: 0; padding: 3px; background: rgba(10,14,24,.5); backdrop-filter: blur(8px); cursor: pointer; transition: transform .25s, box-shadow .35s, opacity .2s; touch-action: manipulation; }
+.lensy:hover { transform: scale(1.08); opacity: 1; }
 .lensy-svg { width: 100%; height: 100%; }
+
+/* Biến thể gọn cho khung video mới (/watch/:slug): góc trên-phải, nhỏ,
+   không đè thanh điều khiển native ở đáy video. */
+.lensy-compact { right: 10px; top: 10px; bottom: auto; width: 42px; height: 42px; padding: 2px; opacity: .85; }
+.lensy-compact:hover { opacity: 1; }
 .lensy-sleeping .lensy-svg { animation: lensy-breathe 3.6s ease-in-out infinite; }
 @keyframes lensy-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(3px) scale(.97); } }
 .lensy-awake { animation: lensy-wake .55s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 0 3px rgba(139,92,246,.45), 0 0 24px rgba(34,211,238,.35), 0 .5rem 1.4rem rgba(0,0,0,.5); }

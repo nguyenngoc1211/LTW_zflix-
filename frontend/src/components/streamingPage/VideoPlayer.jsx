@@ -1,4 +1,4 @@
-import { BulbOutlined, ScanOutlined, StepForwardOutlined } from "@ant-design/icons";
+import { BulbOutlined, StepForwardOutlined } from "@ant-design/icons";
 import { Button, Switch, Tooltip, message } from "antd";
 import { useEffect, useRef } from "react";
 
@@ -100,10 +100,15 @@ const VideoPlayer = ({
           onFind={lensy.findOnShopee}
         />
       )}
-      <LensyMascot
-        state={lensy.state}
-        onClick={() => (lensy.state === "SLEEPING" ? lensy.wake() : lensy.sleep())}
-      />
+      {/* Ẩn mascot khi đang chọn vùng để không vướng thao tác kéo chuột;
+          hiện lại ở các state khác để bấm ngủ/thức. */}
+      {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && (
+        <LensyMascot
+          compact
+          state={lensy.state}
+          onClick={() => (lensy.state === "SLEEPING" ? lensy.wake() : lensy.sleep())}
+        />
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-[#18181b] p-3">
         <div className="flex items-center gap-4 text-sm text-gray-300">
@@ -116,13 +121,6 @@ const VideoPlayer = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Tooltip title="Lensy — quét đồ vật trong phim">
-            <Button
-              type="text"
-              icon={<ScanOutlined />}
-              onClick={() => (lensy.state === "SLEEPING" ? lensy.wake() : lensy.sleep())}
-            />
-          </Tooltip>
           <Tooltip title={isLightOff ? "Bật đèn" : "Tắt đèn"}>
             <Button type="text" icon={<BulbOutlined />} onClick={() => setLightOff(!isLightOff)} />
           </Tooltip>
