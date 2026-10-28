@@ -1,3 +1,5 @@
+import jwt from "jsonwebtoken";
+import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../../core/database/pool.js";
 
 /**
@@ -20,8 +22,44 @@ import { pool } from "../../core/database/pool.js";
  *   error            { message }
  */
 
+// Xác thực socket bằng access token (JWT + session trong DB). Danh tính lấy từ
+// server, không tin userId/username do client gửi kèm sự kiện.
+const authenticateSocket = async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error("Authentication required"));
+
+    const payload = jwt.verify(token, securityConfig.jwtAccessSecret, {
+      algorithms: securityConfig.jwtAlgorithms,
+    });
+    const [rows] = await pool.execute(
+      `SELECT s.id AS session_id, u.id AS user_id, u.username, u.avatar_url
+       FROM auth_sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.id = ? AND s.user_id = ?
+         AND s.revoked_at IS NULL
+         AND s.expires_at > UTC_TIMESTAMP()
+         AND s.absolute_expires_at > UTC_TIMESTAMP()
+         AND u.status = 'active'
+       LIMIT 1`,
+      [payload.sid, payload.sub],
+    );
+    if (!rows.length) return next(new Error("Session is invalid or expired"));
+
+    socket.data.sessionId = rows[0].session_id;
+    socket.data.userId = rows[0].user_id;
+    socket.data.username = rows[0].username;
+    socket.data.avatarUrl = rows[0].avatar_url;
+    return next();
+  } catch {
+    return next(new Error("Authentication required"));
+  }
+};
+
 export const registerWatchPartySocket = (io) => {
   const partyNamespace = io.of("/watch-party");
+
+  partyNamespace.use(authenticateSocket);
 
   partyNamespace.on("connection", (socket) => {
     console.log(`[WatchParty] Socket connected: ${socket.id}`);
@@ -29,8 +67,10 @@ export const registerWatchPartySocket = (io) => {
     // -------------------------------------------------------------------
     // JOIN PARTY
     // -------------------------------------------------------------------
-    socket.on("join-party", async ({ partyId, userId, username, avatarUrl }) => {
+    socket.on("join-party", async ({ partyId } = {}) => {
       if (!partyId) return socket.emit("error", { message: "partyId is required" });
+
+      const { userId, username, avatarUrl } = socket.data;
 
       try {
         // Kiểm tra phòng tồn tại
@@ -44,9 +84,6 @@ export const registerWatchPartySocket = (io) => {
         // Join socket room
         socket.join(partyId);
         socket.data.partyId = partyId;
-        socket.data.userId = userId;
-        socket.data.username = username;
-        socket.data.avatarUrl = avatarUrl;
 
         // Thông báo cho những người khác trong phòng
         socket.to(partyId).emit("party-joined", {

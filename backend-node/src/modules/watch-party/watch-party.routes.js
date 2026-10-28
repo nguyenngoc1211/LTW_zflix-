@@ -1,6 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { pool } from "../../core/database/pool.js";
+import { toPublicMediaUrl } from "../../core/storage/public-url.js";
 import { requireAuth } from "../../core/middleware/business-auth.bridge.js";
 import { asyncHandler, parsePositiveInt } from "../../core/utils/http.js";
 
@@ -125,6 +126,34 @@ watchPartyRouter.post(
 );
 
 // ---------------------------------------------------------------------------
+// GET /watch-party/my-parties  –  Phòng mà user đang tham gia
+// Đăng ký TRƯỚC route động :partyId để không bị route đó bắt nhầm.
+// ---------------------------------------------------------------------------
+watchPartyRouter.get(
+  "/watch-party/my-parties",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const [items] = await pool.execute(
+      `SELECT wp.id, wp.title, wp.status, wp.created_at,
+              p.title AS production_title, p.poster_url,
+              e.title AS episode_title,
+              u.username AS host_name,
+              wpp.role,
+              (SELECT COUNT(*) FROM watch_party_participants p2 WHERE p2.party_id = wp.id) AS participant_count
+       FROM watch_party_participants wpp
+       JOIN watch_parties wp ON wp.id = wpp.party_id
+       JOIN productions p ON p.id = wp.production_id
+       JOIN episodes e ON e.id = wp.episode_id
+       JOIN users u ON u.id = wp.host_id
+       WHERE wpp.user_id = ? AND wp.status != 'ended'
+       ORDER BY wp.created_at DESC`,
+      [req.user.id],
+    );
+    res.json({ items });
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // GET /watch-party/:partyId  –  Chi tiết phòng
 // ---------------------------------------------------------------------------
 watchPartyRouter.get(
@@ -146,6 +175,7 @@ watchPartyRouter.get(
     if (!parties.length) return res.status(404).json({ message: "Party not found" });
 
     const party = parties[0];
+    party.video_url = toPublicMediaUrl(party.video_url);
     delete party.password; // Không trả password về client
 
     // Lấy danh sách participants
@@ -493,32 +523,5 @@ watchPartyRouter.patch(
     params.push(partyId);
     await pool.execute(`UPDATE watch_parties SET ${updates.join(", ")} WHERE id = ?`, params);
     res.json({ updated: true });
-  }),
-);
-
-// ---------------------------------------------------------------------------
-// GET /watch-party/my-parties  –  Phòng mà user đang tham gia
-// ---------------------------------------------------------------------------
-watchPartyRouter.get(
-  "/watch-party/my-parties",
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const [items] = await pool.execute(
-      `SELECT wp.id, wp.title, wp.status, wp.created_at,
-              p.title AS production_title, p.poster_url,
-              e.title AS episode_title,
-              u.username AS host_name,
-              wpp.role,
-              (SELECT COUNT(*) FROM watch_party_participants p2 WHERE p2.party_id = wp.id) AS participant_count
-       FROM watch_party_participants wpp
-       JOIN watch_parties wp ON wp.id = wpp.party_id
-       JOIN productions p ON p.id = wp.production_id
-       JOIN episodes e ON e.id = wp.episode_id
-       JOIN users u ON u.id = wp.host_id
-       WHERE wpp.user_id = ? AND wp.status != 'ended'
-       ORDER BY wp.created_at DESC`,
-      [req.user.id],
-    );
-    res.json({ items });
   }),
 );

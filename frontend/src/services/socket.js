@@ -1,5 +1,5 @@
 import { io } from "socket.io-client";
-import { API_URL } from "./api.js";
+import { API_URL, getAccessToken } from "./api.js";
 
 let socketInstance = null;
 
@@ -9,6 +9,8 @@ export const getPartySocket = () => {
       autoConnect: true,
       withCredentials: true,
       transports: ["websocket", "polling"],
+      // Đọc token mỗi lần kết nối/reconnect để dùng access token mới nhất.
+      auth: (callback) => callback({ token: getAccessToken() || "" }),
     });
 
     socketInstance.on("connect", () => {

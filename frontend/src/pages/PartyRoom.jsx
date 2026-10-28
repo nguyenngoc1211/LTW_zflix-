@@ -70,16 +70,8 @@ export default function PartyRoom() {
 
     const socket = getPartySocket();
 
-    const currentParticipant = participants.find((p) => p.user_id === currentUserId);
-    const myUsername = currentParticipant?.username || `User #${currentUserId}`;
-
-    // Join room
-    socket.emit("join-party", {
-      partyId,
-      userId: currentUserId,
-      username: myUsername,
-      avatarUrl: currentParticipant?.avatar_url,
-    });
+    // Join room — danh tính do backend lấy từ access token của socket.
+    socket.emit("join-party", { partyId });
 
     // Lắng nghe sự kiện đồng bộ video từ Host
     const handlePlaybackSync = ({ currentPosition, isPlaying, updatedBy }) => {
