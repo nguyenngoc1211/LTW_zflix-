@@ -29,7 +29,10 @@ const MovieDetailPage = () => {
   if (!movie) return <main className="page-shell"><p className="empty">{message || "Đang tải..."}</p></main>;
   return <main className="page-shell detail-page">
     <section className="detail-hero">
-      <div className="detail-poster"><span>{movie.title.slice(0, 1)}</span></div>
+      <div className="detail-poster">
+        <span>{movie.title.slice(0, 1)}</span>
+        {movie.poster_url && <img src={movie.poster_url} alt={movie.title} onError={(event) => { event.currentTarget.style.display = "none"; }} />}
+      </div>
       <div><p className="eyebrow">{movie.type} · {movie.status}</p><h1>{movie.title}</h1><p>{movie.description}</p><p>{movie.release_year} · {movie.country} · {movie.language} · ⭐ {Number(movie.rating_avg).toFixed(1)} ({movie.rating_count})</p><div className="chips">{movie.genres.map((genre) => <span key={genre}>{genre}</span>)}</div>
         <div className="actions"><button onClick={() => action(`/api/v1/favorites/${id}`, "PUT")}>♥ Yêu thích</button><button className="secondary" onClick={() => action(`/api/v1/interests/${id}`, "PUT")}>🔔 Quan tâm</button></div>
         {message && <p className="status-message">{message}</p>}
