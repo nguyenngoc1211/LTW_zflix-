@@ -2,6 +2,7 @@ import "dotenv/config";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import app from "./app.js";
+import { securityConfig } from "./config/security.config.js";
 import { pool } from "./core/database/pool.js";
 import { setSecurityLogSink } from "./core/security/security-logger.js";
 import { syncProductionIndex } from "./modules/discovery/search.service.js";
@@ -31,15 +32,15 @@ setSecurityLogSink((line) => {
 });
 
 const PORT = Number(process.env.PORT) || 3000;
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
 
 // Tạo HTTP server từ Express app để dùng chung cho Socket.IO
 const httpServer = createServer(app);
 
-// Khởi tạo Socket.IO
+// Khởi tạo Socket.IO — dùng chung danh sách origin với Express CORS
+// (FRONTEND_ORIGIN có thể chứa nhiều origin, phải truyền dạng mảng).
 const io = new Server(httpServer, {
   cors: {
-    origin: FRONTEND_ORIGIN,
+    origin: securityConfig.frontendOrigins,
     credentials: true,
   },
 });

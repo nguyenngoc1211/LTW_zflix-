@@ -1,4 +1,10 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+// API chạy cùng máy, khác port: suy ra từ host đang mở để máy khác trong LAN
+// (mở http://<ip>:5173) vẫn gọi đúng API http://<ip>:3000 thay vì localhost của nó.
+// Chỉ đặt VITE_API_URL khi API nằm ở host khác (vd production https://api.example.com).
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+
+export const API_URL =
+  configuredApiUrl || `${window.location.protocol}//${window.location.hostname}:3000`;
 
 let accessToken = null;
 let pendingRefresh = null;

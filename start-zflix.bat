@@ -95,6 +95,17 @@ if not "!PRISMA_ERR!"=="0" (
 )
 echo.
 
+REM ---------- Dong bo IP LAN (CORS + API URL) ----------
+REM Frontend tu goi API theo host dang mo; backend can cho phep origin cua may khac trong LAN.
+node "%~dp0tools\zflix-network.mjs"
+if errorlevel 1 (
+    echo       CANH BAO: Khong dong bo duoc IP LAN^! May khac trong mang co the bi loi CORS.
+) else (
+    netstat -ano | findstr ":3000 " | findstr "LISTENING" >nul
+    if not errorlevel 1 echo       Backend dang chay - khoi dong lai de ap dung CORS moi.
+)
+echo.
+
 REM ---------- 1. MariaDB ----------
 echo [1/5] Kiem tra database...
 
@@ -329,11 +340,19 @@ for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"VIDEO_WEBHOOK_SECRET=" "bac
 if "!WH_EMPTY!"=="1" echo       CANH BAO: VIDEO_WEBHOOK_SECRET dang trong - webhook HLS se bi tu choi.
 echo.
 
+REM IP LAN de huong dan truy cap tu may khac trong cung mang
+set "LAN_IP="
+for /f "delims=" %%I in ('node "%~dp0tools\zflix-network.mjs" --ip 2^>nul') do if not defined LAN_IP set "LAN_IP=%%I"
+
 echo ============================================
 echo   TAT CA SERVER DA SAN SANG^!
 echo.
 echo   Web       : http://localhost:5173
 echo   API       : http://localhost:3000
+if defined LAN_IP (
+    echo   Web LAN   : http://!LAN_IP!:5173  ^(may khac trong mang^)
+    echo   API LAN   : http://!LAN_IP!:3000
+)
 echo   Quet do   : http://localhost:5173/watch/1128
 echo   Admin     : http://localhost:5173/admin-login
 echo   Kho phim  : http://localhost:5173/admin/content

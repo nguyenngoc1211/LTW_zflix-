@@ -28,6 +28,24 @@ start-zflix.bat
 
 Mở http://localhost:5173 → đăng nhập `admin@moviehub.com` / `Zflix@2026`.
 
+### Truy cập từ máy khác trong cùng mạng (LAN)
+
+`start-zflix.bat` tự dò IP LAN, thêm origin của máy đó vào `FRONTEND_ORIGIN`
+trong `backend-node/.env`, rồi in `Web LAN` khi khởi động xong. Máy khác trong
+mạng mở `http://<ip-may-chay>:5173`.
+
+`frontend/.env` để trống `VITE_API_URL`: frontend tự gọi API cùng host với trang
+đang mở, nên IP đổi (DHCP) cũng không phải sửa gì.
+
+Nếu máy kia bị timeout, mở firewall trên máy chạy server (PowerShell Admin):
+
+```powershell
+netsh advfirewall firewall add rule name="Zflix 5173" dir=in action=allow protocol=TCP localport=5173
+netsh advfirewall firewall add rule name="Zflix 3000" dir=in action=allow protocol=TCP localport=3000
+```
+
+Sau khi đổi `backend-node/.env`, phải khởi động lại backend để CORS có hiệu lực.
+
 ---
 
 ## 3 chế độ database
