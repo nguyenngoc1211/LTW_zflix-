@@ -56,7 +56,7 @@ const MovieInfoPage = () => {
               <RelatedMovies movies={related} />
             </div>
 
-            <CommentSection />
+            <CommentSection productionId={productionData?.id} />
           </div>
 
           {/* --- CỘT PHẢI --- */}

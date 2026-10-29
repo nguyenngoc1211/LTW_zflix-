@@ -114,7 +114,9 @@ const WatchPage = () => {
             className={`mt-8 grid grid-cols-1 xl:grid-cols-12 gap-6 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
           >
             <div className="xl:col-span-9">
-              <CommentSection />
+              <CommentSection
+                productionId={productionData?.id ?? currentEpisode.production_id}
+              />
             </div>
 
             <div className="xl:col-span-3">

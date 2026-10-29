@@ -16,6 +16,8 @@
     "seed:omdb": "node scripts/seed-omdb.mjs",
     "fill:seasons": "node scripts/fill-missing-seasons.mjs",
     "restore:r2": "node scripts/restore-r2-demos.mjs",
+    "sync:r2": "node scripts/sync-catalog-from-r2.mjs",
+    "sync:r2:apply": "node scripts/sync-catalog-from-r2.mjs --apply",
     "catalog:index": "node scripts/catalog-index.mjs",
     "benchmark:visual": "node scripts/benchmark-visual.mjs"
   },

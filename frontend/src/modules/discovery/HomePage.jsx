@@ -27,6 +27,7 @@ const HomePage = () => {
   }, []);
   useEffect(() => {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
+    query.set("limit", "50");
     apiRequest(`/api/v1/productions?${query}`).then(setResult).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, [filters]);
 

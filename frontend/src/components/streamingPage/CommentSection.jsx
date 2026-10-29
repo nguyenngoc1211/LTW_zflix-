@@ -1,73 +1,152 @@
-import { Avatar, Input, Button } from "antd";
-import { UserOutlined, SendOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../../hooks/useAuth.js";
+import { apiRequest } from "../../services/api.js";
 
-const CommentSection = () => {
-  const comments = [
-    {
-      id: 1,
-      user: "Peterpan",
-      time: "an hour ago",
-      content: "When does the dub come out 😭",
-      avatar: "https://xsgames.co/randomusers/assets/avatars/male/1.jpg",
+const MAX_LENGTH = 3000;
+
+const formatTime = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("vi-VN");
+};
+
+const CommentAvatar = ({ comment }) =>
+  comment.avatar_url ? (
+    <img
+      src={comment.avatar_url}
+      alt=""
+      className="w-8 h-8 rounded-full object-cover border border-gray-700"
+    />
+  ) : (
+    <div className="w-8 h-8 rounded-full bg-gray-700 border border-gray-600 text-gray-200 text-xs font-bold flex items-center justify-center">
+      {(comment.username || "U").charAt(0).toUpperCase()}
+    </div>
+  );
+
+const CommentSection = ({ productionId }) => {
+  const { user } = useAuth();
+  const [comments, setComments] = useState([]);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadComments = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!productionId) return;
+      if (!silent) setLoading(true);
+      try {
+        const data = await apiRequest(`/api/v1/productions/${productionId}/comments`);
+        setComments(Array.isArray(data.items) ? data.items : []);
+        setError("");
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        if (!silent) setLoading(false);
+      }
     },
-    {
-      id: 2,
-      user: "Emma_Chan",
-      time: "4 hours ago",
-      content: "This episode is fire! 🔥🔥🔥",
-      avatar: "https://xsgames.co/randomusers/assets/avatars/female/2.jpg",
-    },
-  ];
+    [productionId],
+  );
+
+  useEffect(() => {
+    loadComments();
+  }, [loadComments]);
+
+  if (!productionId) return null;
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const content = draft.trim();
+    if (!content || submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await apiRequest(`/api/v1/productions/${productionId}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      });
+      setDraft("");
+      await loadComments({ silent: true });
+    } catch (err) {
+      setError(err.status === 401 ? "Bạn cần đăng nhập để bình luận." : err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="mt-8">
-      <h3 className="text-pink-500 font-bold text-lg mb-4">Comments</h3>
+      <h3 className="text-pink-500 font-bold text-lg mb-4">
+        Bình luận
+        {comments.length > 0 && (
+          <span className="text-gray-500 text-sm font-normal ml-2">({comments.length})</span>
+        )}
+      </h3>
 
-      {/* Input */}
-      <div className="bg-[#18181b] p-4 rounded-xl border border-gray-800 mb-6 flex gap-3">
-        <Avatar icon={<UserOutlined />} className="bg-gray-700" />
-        <div className="flex-1 relative">
-          <Input.TextArea
-            placeholder="Leave a comment..."
-            autoSize={{ minRows: 2, maxRows: 4 }}
-            className="bg-[#121212] border-gray-700 text-white placeholder-gray-600 mb-2"
+      {user ? (
+        <form
+          onSubmit={handleSubmit}
+          className="bg-[#18181b] p-4 rounded-xl border border-gray-800 mb-6"
+        >
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Viết bình luận..."
+            rows={2}
+            maxLength={MAX_LENGTH}
+            className="w-full resize-y rounded-lg bg-[#121212] border border-gray-700 px-3 py-2 text-sm text-white placeholder:text-gray-500 outline-none focus:border-pink-500 transition-colors"
           />
-          <div className="flex justify-end">
-            <Button
-              type="primary"
-              size="small"
-              icon={<SendOutlined />}
-              className="bg-pink-600 border-none"
+          <div className="flex items-center justify-between mt-2">
+            <span className="text-xs text-gray-500">
+              {draft.length}/{MAX_LENGTH}
+            </span>
+            <button
+              type="submit"
+              disabled={!draft.trim() || submitting}
+              className="px-4 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 disabled:opacity-40 disabled:hover:bg-pink-600 text-white text-xs font-bold transition-colors"
             >
-              Comment
-            </Button>
+              {submitting ? "Đang gửi..." : "Bình luận"}
+            </button>
           </div>
+          {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+        </form>
+      ) : (
+        <div className="bg-[#18181b] p-4 rounded-xl border border-gray-800 mb-6 text-sm text-gray-400">
+          <Link to="/login" className="text-pink-400 hover:text-pink-300 font-semibold">
+            Đăng nhập
+          </Link>{" "}
+          để tham gia bình luận.
         </div>
-      </div>
+      )}
 
-      {/* List */}
-      <div className="flex flex-col gap-4">
-        {comments.map((c) => (
-          <div key={c.id} className="flex gap-3">
-            <Avatar src={c.avatar} />
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-gray-200 font-bold text-sm">
-                  {c.user}
-                </span>
-                <span className="text-gray-600 text-xs">{c.time}</span>
-              </div>
-              <p className="text-gray-400 text-sm bg-[#18181b] p-2 rounded-lg inline-block border border-gray-800">
-                {c.content}
-              </p>
-              <div className="flex gap-3 mt-1 ml-1 text-xs text-gray-500 font-medium cursor-pointer">
-                <span className="hover:text-white">Reply</span>
-                <span className="hover:text-white">Like</span>
+      {loading ? (
+        <p className="text-sm text-gray-500">Đang tải bình luận...</p>
+      ) : comments.length === 0 ? (
+        <p className="text-sm text-gray-500">Chưa có bình luận nào. Hãy là người đầu tiên!</p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {comments.map((comment) => (
+            <div key={comment.id} className="flex gap-3">
+              <CommentAvatar comment={comment} />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-gray-200 font-bold text-sm truncate">
+                    {comment.username}
+                  </span>
+                  <span className="text-gray-500 text-xs shrink-0">
+                    {formatTime(comment.created_at)}
+                  </span>
+                </div>
+                <p className="text-gray-300 text-sm bg-[#18181b] p-2 rounded-lg border border-gray-800 whitespace-pre-wrap break-words">
+                  {comment.content}
+                </p>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {!user && error && <p className="text-xs text-red-400 mt-3">{error}</p>}
     </div>
   );
 };

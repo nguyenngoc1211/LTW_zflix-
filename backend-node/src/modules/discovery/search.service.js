@@ -17,7 +17,7 @@ export const buildElasticQuery = ({ search, genre, country, year, minRating, sor
   const must = search
     ? [{ multi_match: { query: search, fields: ["title^3", "description", "genres"], fuzziness: "AUTO", operator: "and" } }]
     : [{ match_all: {} }];
-  const filter = [];
+  const filter = [{ terms: { type: ["movie", "series"] } }];
   if (genre) filter.push({ term: { "genres.keyword": genre } });
   if (country) filter.push({ term: { "country.keyword": country } });
   if (year) filter.push({ term: { release_year: Number(year) } });
@@ -38,6 +38,7 @@ const productionRows = async () => {
     FROM productions p
     LEFT JOIN production_genres pg ON pg.production_id = p.id
     LEFT JOIN genres g ON g.id = pg.genre_id
+    WHERE p.type IN ('movie', 'series')
     GROUP BY p.id
   `);
   return rows.map((row) => ({
@@ -82,7 +83,7 @@ export const syncProductionIndex = async () => {
 };
 
 const mysqlFallback = async (filters, offset, limit) => {
-  const clauses = [];
+  const clauses = ["p.type IN ('movie', 'series')"];
   const params = [];
   if (filters.search) {
     clauses.push("(LOWER(p.title) LIKE LOWER(?) OR LOWER(p.description) LIKE LOWER(?))");

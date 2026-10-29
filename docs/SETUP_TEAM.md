@@ -222,26 +222,40 @@ curl http://127.0.0.1:8001/docs
 
 Không có R2 key thì **chỉ luồng upload hỏng** — xem phim, tìm kiếm, admin, Lensy vẫn chạy bình thường.
 
-### ⚠️ `npm run seed:omdb` XOÁ TOÀN BỘ phim cũ
+### Catalog phim demo trong `init.sql`
 
-Script này bước ① xoá **mọi** `productions` / `episodes` / `seasons` (chỉ giữ `users`),
-rồi nạp lại từ OMDb. Hậu quả:
+`database/init.sql` chứa sẵn **50 phim demo** (20 phim lẻ, 10 phim bộ với 22 mùa) cùng dữ liệu
+mẫu (đánh giá, bình luận, bookmark, watch history...). Tên phim, mô tả, poster, cờ VIP lấy đúng
+theo dữ liệu demo; 61 tập phim trỏ tới 6 playlist HLS thật trên Cloudflare R2 (xoay vòng) nên
+import xong là phát được ngay, không cần gọi OMDb.
 
-- **Mất 2 phim demo HLS của nhánh Nam** (`Phim Demo Nam — Lẻ/Bộ (HLS R2)`) vì
-  chúng không có trong danh sách OMDb. File video vẫn còn trên R2 nên khôi phục được.
-- **Mất mọi phim bạn tự upload** qua trang quản trị.
+Poster/banner trong `init.sql` là đường dẫn demo (`/posters/*.jpg`, `/banners/*.jpg`); repo chưa
+kèm các file ảnh này nên trình duyệt hiển thị placeholder cho tới khi bạn upload poster thật
+qua trang admin.
 
-Sau khi chạy `seed:omdb`, khôi phục phim demo R2:
+### Đồng bộ catalog theo R2 (`npm run sync:r2`) — tuỳ chọn
+
+Script coi `hls/<id>/playlist.m3u8` trên R2 là nguồn sự thật. Với catalog `init.sql` hiện tại,
+mỗi thư mục HLS được dùng cho nhiều phim (xoay vòng), nên script **bỏ qua** các thư mục dùng
+chung để không ghi đè dữ liệu:
 
 ```cmd
 cd backend-node
-npm run restore:r2
+npm run sync:r2          # dry-run: liệt kê hls/* trên R2, khớp production, in kế hoạch
+npm run sync:r2:apply    # ghi DB + trích poster/banner từ video và upload lại R2
 ```
 
-> Trước khi chạy `seed:omdb` trên DB có dữ liệu thật, hãy backup:
+- Thư mục HLS chưa có trong DB → tự tạo phim (metadata trong `KNOWN_DIRS` của script).
+- Thư mục dùng cho nhiều production → bỏ qua; thêm `-- --allow-shared-videos` nếu thật sự muốn ép.
+- Phim không còn video R2 → **xoá khỏi DB** (cascade episodes/seasons/comments/...).
+
+> Trước khi chạy `--apply` trên DB có dữ liệu thật, hãy backup:
 > ```cmd
 > mysqldump -u root -p movie_streaming_db > backup.sql
 > ```
+
+`npm run seed:omdb` chỉ còn là công cụ demo metadata OMDb (video link ngoài, không phát qua R2);
+chạy nó sẽ thay catalog demo bằng dữ liệu OMDb.
 
 ### Phim không phát được (player quay vòng)
 

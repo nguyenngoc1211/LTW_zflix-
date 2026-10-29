@@ -136,10 +136,10 @@ npm install
 npm run dev                 # chạy tại http://localhost:5173
 ```
 
-> **Ghi chú MariaDB:** `init.sql` là dump từ MySQL 8.0 nên chứa `utf8mb4_0900_ai_ci` — collation
-> mà MariaDB không có (lỗi `1273 Unknown collation`). Thay trước khi import:
-> `sed 's/utf8mb4_0900_ai_ci/utf8mb4_unicode_ci/g' database/init.sql | mysql -u root -p movie_streaming_db`
-> (`setup-zflix.bat` tự làm bước này.)
+> **Ghi chú MariaDB:** `database/init.sql` đã được chuẩn hoá cho MariaDB 10.4
+> (`utf8mb4_unicode_ci`, procedure tạo trước trigger). Nếu import một dump MySQL 8.0 mới
+> có `utf8mb4_0900_ai_ci`, thay collation trước khi import:
+> `sed 's/utf8mb4_0900_ai_ci/utf8mb4_unicode_ci/g' dump.sql | mysql -u root -p movie_streaming_db`
 
 ## 🔐 Biến môi trường
 
@@ -173,9 +173,9 @@ cd backend-node
 npm test                    # 30 unit test
 npm run catalog:index       # tải catalog CSV, tạo CLIP embeddings + rebuild HNSW index (auth, MFA, schema, search, security logger, vision parser)
 npm run test:integration    # smoke test luồng auth (cần DB đang chạy)
-npm run seed:omdb           # nạp dữ liệu phim THẬT từ OMDb (cần OMDB_API_KEY, key free tại omdbapi.com/apikey.aspx)
-                            # + video hợp pháp: Blender open movies / Archive.org
-                            # Lưu ý: script xóa nội dung content tables, giữ nguyên users
+npm run sync:r2             # dry-run: đối chiếu catalog với thư mục HLS trên R2
+npm run sync:r2:apply       # đồng bộ catalog R2 (bỏ qua thư mục HLS dùng chung cho nhiều phim)
+                            # Lưu ý: xoá production không có video R2, giữ nguyên users
 
 cd frontend
 npm run lint                # ESLint

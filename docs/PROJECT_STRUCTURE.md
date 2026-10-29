@@ -113,8 +113,8 @@ giữ nguyên `Range` để tua video.
 cd backend-node
 npm test                  # node:test, 35 test hiện tại
 npm run test:integration  # smoke auth/MFA/password/registration
-npm run seed:omdb         # seed dữ liệu phim (xóa dữ liệu cũ, đọc kỹ cảnh báo)
-npm run restore:r2        # phục hồi 2 phim demo HLS sau khi seed
+npm run sync:r2           # dry-run: đối chiếu catalog với thư mục HLS trên R2
+npm run sync:r2:apply     # đồng bộ catalog R2 (bỏ qua thư mục dùng chung, sinh poster từ video)
 npm run catalog:index     # build index catalog cho visual shopping
 ```
 

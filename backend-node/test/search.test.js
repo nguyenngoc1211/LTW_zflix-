@@ -20,6 +20,7 @@ test("search uses Elasticsearch full-text matching (case-insensitive analyzer)",
 test("multiple movie filters are combined in one bool query", () => {
   const query = buildElasticQuery({ genre: "Hành động", country: "USA", year: "2019", minRating: "4", sortYear: "asc" }, 12, 6);
   assert.deepEqual(query.query.bool.filter, [
+    { terms: { type: ["movie", "series"] } },
     { term: { "genres.keyword": "Hành động" } },
     { term: { "country.keyword": "USA" } },
     { term: { release_year: 2019 } },

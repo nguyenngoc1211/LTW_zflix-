@@ -42,7 +42,7 @@ discoveryRouter.get("/productions/suggest", asyncHandler(async (req, res) => {
   if (q.length < 1) return res.json({ items: [] });
   const [rows] = await pool.execute(
     `SELECT id, title, poster_url, release_year, rating_avg FROM productions
-     WHERE title LIKE ? ORDER BY rating_avg DESC, rating_count DESC LIMIT 8`,
+     WHERE title LIKE ? AND type IN ('movie', 'series') ORDER BY rating_avg DESC, rating_count DESC LIMIT 8`,
     [`${q}%`],
   );
   res.json({ items: rows });
