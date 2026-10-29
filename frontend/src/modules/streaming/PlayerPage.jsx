@@ -72,6 +72,16 @@ const PlayerPage = () => {
     lastSaved.current = seconds;
     apiRequest(`/api/v1/history/${episodeId}`, { method: "PUT", body: JSON.stringify({ position: seconds }) }).catch(() => {});
   };
+  // "Xem tiếp" từ lịch sử truyền ?pos=<giây>; tua tới đó khi video đã có metadata.
+  const handleLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const seconds = Number(new URLSearchParams(window.location.search).get("pos"));
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    const maxPosition = Number.isFinite(video.duration) ? Math.max(0, video.duration - 1) : seconds;
+    video.currentTime = Math.min(seconds, maxPosition);
+    lastSaved.current = video.currentTime;
+  };
   if (!episode) return <main className="page-shell"><p className="empty">Đang tải tập phim...</p></main>;
 
   // === CineLens: điều khiển trạng thái Lensy ===
@@ -141,6 +151,7 @@ const PlayerPage = () => {
               autoPlay
               {...(videoNoCors ? {} : { crossOrigin: "anonymous" })}
               onError={() => { if (!videoNoCors) setVideoNoCors(true); }}
+              onLoadedMetadata={handleLoadedMetadata}
               onTimeUpdate={(e) => { setPosition(e.currentTarget.currentTime); save(Math.floor(e.currentTarget.currentTime)); }}
               onPause={(e) => save(Math.floor(e.currentTarget.currentTime))}
             />
