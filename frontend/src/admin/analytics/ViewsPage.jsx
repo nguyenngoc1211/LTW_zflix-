@@ -58,7 +58,7 @@ const ViewsPage = () => {
         <h2 className="font-semibold text-slate-900">Lượt xem theo ngày</h2>
         <div className="mt-4 flex h-48 items-end gap-1">
           {data.daily.map((day) => (
-            <div key={day.stat_date} className="group relative flex-1" title={`${shortDate(day.stat_date)}: ${formatNumber(day.total_views)} lượt`}>
+            <div key={day.stat_date} className="group relative flex h-full flex-1 items-end" title={`${shortDate(day.stat_date)}: ${formatNumber(day.total_views)} lượt`}>
               <div
                 className="w-full rounded-t bg-red-500 transition-all group-hover:bg-red-600"
                 style={{ height: `${Math.max(4, (day.total_views / maxViews) * 100)}%` }}
@@ -77,13 +77,13 @@ const ViewsPage = () => {
         <p className="text-xs text-slate-500">Cột xanh: người dùng hoạt động trong ngày · Chấm đỏ: người dùng mới</p>
         <div className="mt-4 flex h-40 items-end gap-1">
           {data.daily.map((day) => (
-            <div key={day.stat_date} className="group relative flex-1" title={`${shortDate(day.stat_date)}: ${formatNumber(day.active_users)} hoạt động · ${formatNumber(day.new_users)} mới`}>
+            <div key={day.stat_date} className="group relative flex h-full flex-1 items-end" title={`${shortDate(day.stat_date)}: ${formatNumber(day.active_users)} hoạt động · ${formatNumber(day.new_users)} mới`}>
               <div
                 className="w-full rounded-t bg-indigo-400 transition-all group-hover:bg-indigo-500"
                 style={{ height: `${Math.max(4, (day.active_users / maxActive) * 100)}%` }}
               />
               <div
-                className="absolute bottom-0 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-red-500"
+                className="absolute left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-red-500"
                 style={{ bottom: `${Math.max(2, (day.new_users / maxActive) * 100)}%` }}
               />
             </div>

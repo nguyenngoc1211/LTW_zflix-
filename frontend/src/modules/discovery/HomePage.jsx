@@ -87,7 +87,7 @@ const HomePage = () => {
           <button type="button" className="secondary" onClick={() => { setDraft(initialFilters); setLoading(true); setError(""); setFilters(initialFilters); }}>Xóa lọc</button>
         </div>
       </form>
-      <div className="section-title"><h2>Kho phim</h2><span>{result.total} kết quả</span></div>
+      <div className="section-title"><h2>Kho phim</h2><span>{loading ? "Đang tải..." : `${result.total} kết quả`}</span></div>
       {error && <p className="alert">{error}</p>}
       {loading ? <p className="empty">Đang tải phim...</p> : result.items.length ? <div className="movie-grid">{result.items.map((movie) => <MovieCard key={movie.id} movie={movie} />)}</div> : <p className="empty">Không tìm thấy phim phù hợp.</p>}
     </main>

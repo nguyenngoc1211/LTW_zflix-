@@ -14,7 +14,7 @@ const App = () => {
     <div className="app">
       <header className="site-header">
         <Link to="/" className="brand">Z<span>FLIX</span></Link>
-        <nav>
+        <nav className="main-nav">
           <NavLink to="/">Khám phá</NavLink>
           <NavLink to="/library">Thư viện</NavLink>
           <NavLink to="/history">Lịch sử</NavLink>
@@ -24,7 +24,7 @@ const App = () => {
         <div className="auth-nav">
           {user ? (
             <>
-              <span className="auth-user">{user.username} ({user.role})</span>
+              <span className="auth-user" title={user.username}>{user.username}<span className="auth-role"> ({user.role})</span></span>
               <Link to="/account/security">Bảo mật</Link>
               {user.role === "admin" && <Link to="/admin">Admin</Link>}
               <button type="button" onClick={handleLogout} className="logout-button">

@@ -1,19 +1,13 @@
-import Logo_Icon from "../assets/react.svg";
 const Logo = (props) => {
   const { theme } = props;
   return (
-    <div className="flex justify-center items-center gap-[15px]">
-      <figure className="max-w-[32px]">
-        <img srcSet={`${Logo_Icon} 2x`} alt="logo" />
-      </figure>
-      <span
-        className={`poppins-bold leading-[32px] ${
-          theme == "dark" ? "text-white" : "text-black"
-        }`}
-      >
-        Logo Here
-      </span>
-    </div>
+    <span
+      className={`text-2xl font-black tracking-tight ${
+        theme == "dark" ? "text-white" : "text-black"
+      }`}
+    >
+      Z<span className="text-[#e50914]">FLIX</span>
+    </span>
   );
 };
 

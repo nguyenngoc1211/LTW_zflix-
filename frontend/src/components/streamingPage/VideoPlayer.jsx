@@ -169,10 +169,10 @@ const VideoPlayer = ({
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-[#18181b] p-3">
         <div className="flex items-center gap-4 text-sm text-gray-300">
-          <span>
+          <span className="whitespace-nowrap">
             Đang xem: <strong className="text-white">Tập {currentEpisode.episode_number}</strong>
           </span>
-          <div className="hidden items-center gap-4 md:flex">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="flex items-center gap-2">
               Auto Play
               <Toggle

@@ -30,8 +30,6 @@ const InfoHero = ({ production }) => {
   );
   if (!production) return null;
 
-  console.log(production);
-
   let firstEpLink = createWatchNowUrl(production);
 
   const durationDisplay = calcDurationDisplay(production);

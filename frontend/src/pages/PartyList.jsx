@@ -98,14 +98,14 @@ export default function PartyList() {
             <form onSubmit={handleJoinDirect} className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder="Nhập mã phòng (vd: ABC123)"
+                placeholder="Mã phòng (vd: ABC123)"
                 value={directCode}
                 onChange={(e) => setDirectCode(e.target.value)}
-                className="bg-black/60 border border-white/15 text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-red-500 w-48 uppercase font-mono"
+                className="bg-black/60 border border-white/15 text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-red-500 w-52 max-w-full uppercase font-mono"
               />
               <button
                 type="submit"
-                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-sm transition-all"
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-sm transition-all whitespace-nowrap shrink-0"
               >
                 Vào phòng
               </button>
@@ -137,13 +137,14 @@ export default function PartyList() {
               placeholder="Tìm theo tên phòng, tên phim..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-neutral-900 border border-white/10 text-white text-sm rounded-xl px-4 py-2.5 pl-9 outline-none focus:border-red-500"
+              className="w-full bg-neutral-900 border border-white/10 text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-red-500"
+              style={{ paddingLeft: "2.25rem" }}
             />
-            <span className="absolute left-3 top-3 text-neutral-500 text-sm">🔍</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 text-sm pointer-events-none">🔍</span>
           </div>
           <button
             type="submit"
-            className="px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-sm font-semibold transition-all"
+            className="px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-sm font-semibold transition-all whitespace-nowrap"
           >
             Tìm
           </button>
@@ -270,7 +271,7 @@ export default function PartyList() {
 
                 <button
                   onClick={() => handleJoinClick(p)}
-                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all shadow-md hover:shadow-red-600/30"
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all shadow-md hover:shadow-red-600/30 whitespace-nowrap"
                 >
                   Tham gia →
                 </button>

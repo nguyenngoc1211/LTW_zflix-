@@ -17,7 +17,7 @@ const EpisodeSelector = ({ episodes, currentEpisodeId, onEpisodeClick }) => {
         </div>
         <Input
           prefix={<SearchOutlined className="text-gray-500" />}
-          placeholder="Number..."
+          placeholder="Tìm tập..."
           className="bg-[#121212] border-gray-700 text-white placeholder-gray-600 text-xs h-8 rounded"
         />
       </div>

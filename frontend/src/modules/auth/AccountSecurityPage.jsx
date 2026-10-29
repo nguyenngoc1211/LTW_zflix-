@@ -4,15 +4,15 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 
 const inputClass =
-  "mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100";
+  "mt-2 w-full rounded-lg border border-white/15 bg-[#0e1017] px-3 py-2.5 text-white outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20";
 const primaryButton =
   "rounded-lg bg-red-600 px-4 py-2.5 font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60";
 const secondaryButton =
-  "rounded-lg border border-slate-300 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+  "rounded-lg border border-white/15 px-4 py-2.5 font-semibold text-slate-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60";
 
 const ErrorMessage = ({ children }) =>
   children ? (
-    <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+    <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300" role="alert">
       {children}
     </p>
   ) : null;
@@ -30,12 +30,12 @@ const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
   };
 
   return (
-    <section className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-5">
-      <h2 className="text-xl font-bold text-slate-900">Lưu mã khôi phục của bạn</h2>
-      <p className="mt-2 text-sm text-slate-700">
+    <section className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
+      <h2 className="text-xl font-bold text-amber-100">Lưu mã khôi phục của bạn</h2>
+      <p className="mt-2 text-sm text-amber-100/80">
         Hãy lưu những mã này ở nơi an toàn. Mỗi mã chỉ dùng được một lần và sẽ không hiển thị lại.
       </p>
-      <ul className="mt-4 grid gap-2 rounded-lg bg-white p-4 font-mono text-sm sm:grid-cols-2">
+      <ul className="mt-4 grid gap-2 rounded-lg bg-black/30 p-4 font-mono text-sm text-amber-50 sm:grid-cols-2">
         {codes.map((code) => (
           <li key={code}>{code}</li>
         ))}
@@ -43,7 +43,7 @@ const RecoveryCodes = ({ codes, afterEnrollment, onDone }) => {
       <button type="button" className={`${secondaryButton} mt-4`} onClick={copyAll}>
         {copied ? "Đã copy" : "Copy tất cả"}
       </button>
-      <label className="mt-5 flex items-start gap-2 text-sm text-slate-700">
+      <label className="mt-5 flex items-start gap-2 text-sm text-amber-100">
         <input
           className="mt-1"
           type="checkbox"
@@ -97,20 +97,20 @@ const ChangePasswordSection = ({ changePassword }) => {
   };
 
   return (
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-bold text-slate-900">Đổi mật khẩu</h2>
-      <p className="mt-2 text-sm text-slate-600">Đổi mật khẩu sẽ đăng xuất toàn bộ phiên đăng nhập.</p>
+    <section className="mt-6 rounded-2xl border border-white/10 bg-[#12151d] p-6">
+      <h2 className="text-xl font-bold text-white">Đổi mật khẩu</h2>
+      <p className="mt-2 text-sm text-slate-400">Đổi mật khẩu sẽ đăng xuất toàn bộ phiên đăng nhập.</p>
       <form className="mt-5 space-y-4" onSubmit={submit}>
-        <label className="block text-sm font-medium text-slate-700">
+        <label className="block text-sm font-medium text-slate-300">
           Mật khẩu hiện tại
           <input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} maxLength={128} required />
         </label>
-        <label className="block text-sm font-medium text-slate-700">
+        <label className="block text-sm font-medium text-slate-300">
           Mật khẩu mới
           <input className={inputClass} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} maxLength={128} required />
         </label>
         <p className="text-xs text-slate-500">Dùng 8–128 ký tự, tối đa 72 byte UTF-8.</p>
-        <label className="block text-sm font-medium text-slate-700">
+        <label className="block text-sm font-medium text-slate-300">
           Nhập lại mật khẩu mới
           <input className={inputClass} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} maxLength={128} required />
         </label>
@@ -328,13 +328,13 @@ const AccountSecurityPage = () => {
   };
 
   if (!status && !error) {
-    return <main className="grid min-h-[60vh] place-items-center text-slate-600">Đang tải cài đặt bảo mật...</main>;
+    return <main className="grid min-h-[60vh] place-items-center text-slate-400">Đang tải cài đặt bảo mật...</main>;
   }
 
   if (recovery) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-3xl font-bold text-slate-900">Bảo mật tài khoản</h1>
+        <h1 className="text-3xl font-bold text-white">Bảo mật tài khoản</h1>
         <RecoveryCodes
           codes={recovery.codes}
           afterEnrollment={recovery.afterEnrollment}
@@ -354,12 +354,12 @@ const AccountSecurityPage = () => {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-3xl font-bold text-slate-900">Bảo mật tài khoản</h1>
+      <h1 className="text-3xl font-bold text-white">Bảo mật tài khoản</h1>
       <ChangePasswordSection changePassword={changePassword} />
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold text-slate-900">Xác thực hai bước (2FA)</h2>
+      <section className="mt-6 rounded-2xl border border-white/10 bg-[#12151d] p-6">
+        <h2 className="text-xl font-bold text-white">Xác thực hai bước (2FA)</h2>
         {status && (
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="mt-2 text-sm text-slate-400">
             Trạng thái: <strong>{status.enabled ? "Bật" : "Tắt"}</strong>
             {status.enabled ? ` · còn ${status.recoveryCodesRemaining} mã khôi phục` : ""}
           </p>
@@ -382,9 +382,9 @@ const AccountSecurityPage = () => {
         </div>
 
         {action === "enable" && (
-          <form className="mt-6 space-y-4 border-t border-slate-200 pt-6" onSubmit={beginSetup}>
-            <h3 className="font-semibold text-slate-900">Xác nhận mật khẩu của bạn</h3>
-            <label className="block text-sm font-medium text-slate-700">
+          <form className="mt-6 space-y-4 border-t border-white/10 pt-6" onSubmit={beginSetup}>
+            <h3 className="font-semibold text-white">Xác nhận mật khẩu của bạn</h3>
+            <label className="block text-sm font-medium text-slate-300">
               Mật khẩu hiện tại
               <input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
             </label>
@@ -397,16 +397,16 @@ const AccountSecurityPage = () => {
         )}
 
         {action === "setup" && setup && (
-          <form className="mt-6 space-y-5 border-t border-slate-200 pt-6" onSubmit={confirmSetup}>
+          <form className="mt-6 space-y-5 border-t border-white/10 pt-6" onSubmit={confirmSetup}>
             <div>
-              <h3 className="font-semibold text-slate-900">1. Quét mã QR</h3>
+              <h3 className="font-semibold text-white">1. Quét mã QR</h3>
               <div className="mt-4 inline-block rounded-lg border border-slate-200 bg-white p-4" role="img" aria-label="Mã QR xác thực">
                 <QRCodeSVG value={setup.otpauthUrl} size={200} />
               </div>
-              <p className="mt-3 text-sm text-slate-600">Khóa cài đặt thủ công:</p>
-              <code className="mt-1 block break-all rounded bg-slate-100 p-3 text-sm">{setup.secret}</code>
+              <p className="mt-3 text-sm text-slate-400">Khóa cài đặt thủ công:</p>
+              <code className="mt-1 block break-all rounded border border-white/10 bg-white/5 p-3 text-sm text-slate-100">{setup.secret}</code>
             </div>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-sm font-medium text-slate-300">
               2. Nhập mã 6 chữ số
               <input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required />
             </label>
@@ -419,51 +419,51 @@ const AccountSecurityPage = () => {
         )}
 
         {action === "regenerate" && (
-          <form className="mt-6 space-y-4 border-t border-slate-200 pt-6" onSubmit={regenerate}>
-            <h3 className="font-semibold text-slate-900">Tạo lại mã khôi phục</h3>
-            <p className="text-sm text-slate-600">Các mã khôi phục cũ sẽ hết hiệu lực.</p>
-            <label className="block text-sm font-medium text-slate-700">Mật khẩu hiện tại<input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
-            <label className="block text-sm font-medium text-slate-700">Mã xác thực<input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></label>
+          <form className="mt-6 space-y-4 border-t border-white/10 pt-6" onSubmit={regenerate}>
+            <h3 className="font-semibold text-white">Tạo lại mã khôi phục</h3>
+            <p className="text-sm text-slate-400">Các mã khôi phục cũ sẽ hết hiệu lực.</p>
+            <label className="block text-sm font-medium text-slate-300">Mật khẩu hiện tại<input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
+            <label className="block text-sm font-medium text-slate-300">Mã xác thực<input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></label>
             <ErrorMessage>{error}</ErrorMessage>
             <div className="flex gap-3"><button className={primaryButton} type="submit" disabled={submitting}>Tạo lại mã</button><button className={secondaryButton} type="button" onClick={cancelAction}>Hủy</button></div>
           </form>
         )}
 
         {action === "disable" && (
-          <form className="mt-6 space-y-4 border-t border-slate-200 pt-6" onSubmit={disable}>
-            <h3 className="font-semibold text-slate-900">Tắt xác thực hai bước</h3>
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Tắt xác thực hai bước làm giảm bảo mật tài khoản và sẽ đăng xuất bạn khỏi hệ thống.</p>
-            <label className="block text-sm font-medium text-slate-700">Mật khẩu hiện tại<input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
-            <label className="block text-sm font-medium text-slate-700">Mã xác thực<input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></label>
+          <form className="mt-6 space-y-4 border-t border-white/10 pt-6" onSubmit={disable}>
+            <h3 className="font-semibold text-white">Tắt xác thực hai bước</h3>
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">Tắt xác thực hai bước làm giảm bảo mật tài khoản và sẽ đăng xuất bạn khỏi hệ thống.</p>
+            <label className="block text-sm font-medium text-slate-300">Mật khẩu hiện tại<input className={inputClass} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
+            <label className="block text-sm font-medium text-slate-300">Mã xác thực<input className={inputClass} type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value)} required /></label>
             <ErrorMessage>{error}</ErrorMessage>
             <div className="flex gap-3"><button className={primaryButton} type="submit" disabled={submitting}>Tắt MFA và đăng xuất</button><button className={secondaryButton} type="button" onClick={cancelAction}>Hủy</button></div>
           </form>
         )}
       </section>
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold text-slate-900">Phiên đăng nhập</h2>
-        <p className="mt-2 text-sm text-slate-600">
+      <section className="mt-6 rounded-2xl border border-white/10 bg-[#12151d] p-6">
+        <h2 className="text-xl font-bold text-white">Phiên đăng nhập</h2>
+        <p className="mt-2 text-sm text-slate-400">
           "Dùng gần nhất" là lần làm mới phiên mới nhất được hệ thống xác thực ghi lại.
         </p>
         {sessionsLoading ? (
-          <p className="mt-5 text-sm text-slate-600">Đang tải phiên đăng nhập...</p>
+          <p className="mt-5 text-sm text-slate-400">Đang tải phiên đăng nhập...</p>
         ) : (
           <ul className="mt-5 space-y-3">
             {sessions.map((session) => (
-              <li key={session.id} className="rounded-xl border border-slate-200 p-4">
+              <li key={session.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="break-all font-medium text-slate-900">
+                      <p className="break-all font-medium text-white">
                         {session.userAgent || "Trình duyệt/thiết bị không rõ"}
                       </p>
                       {session.current && (
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">
+                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-300">
                           Phiên hiện tại
                         </span>
                       )}
                     </div>
-                    <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm text-slate-600 sm:grid-cols-2">
+                    <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm text-slate-400 sm:grid-cols-2">
                       <div><dt className="inline font-medium">IP: </dt><dd className="inline">{session.ipAddress || "Không có"}</dd></div>
                       <div><dt className="inline font-medium">Tạo lúc: </dt><dd className="inline">{formatDate(session.createdAt)}</dd></div>
                       <div><dt className="inline font-medium">Dùng gần nhất: </dt><dd className="inline">{formatDate(session.lastUsedAt)}</dd></div>
@@ -486,7 +486,7 @@ const AccountSecurityPage = () => {
           </ul>
         )}
         <ErrorMessage>{sessionsError}</ErrorMessage>
-        <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-200 pt-5">
+        <div className="mt-5 flex flex-wrap gap-3 border-t border-white/10 pt-5">
           <button type="button" className={secondaryButton} disabled={Boolean(sessionAction)} onClick={signOutOthers}>
             {sessionAction === "others" ? "Đang đăng xuất..." : "Đăng xuất các phiên khác"}
           </button>

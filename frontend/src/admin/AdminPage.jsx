@@ -14,11 +14,12 @@ import {
   SettingOutlined,
   ShoppingOutlined,
 } from "@ant-design/icons";
-import { Layout, Menu, Dropdown, Space, Avatar } from "antd";
+import { Layout, Menu, Dropdown, Space, Avatar, ConfigProvider } from "antd";
+import { ProConfigProvider, viVNIntl } from "@ant-design/pro-components";
+import viVN from "antd/locale/vi_VN";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import React, { useEffect, useState, memo } from "react";
 import Logo from "../components/Logo";
-import Logo_Icon from "../assets/react.svg";
 import { useAuth } from "../hooks/useAuth.js";
 
 const { Content, Sider, Header: AntHeader } = Layout;
@@ -38,8 +39,6 @@ const MemoizedHeader = memo(({ collapsed, onToggle, username, onLogout }) => {
       danger: true,
     },
   ];
-
-  const urlAvatar = ``;
 
   return (
     <AntHeader className="!p-0 flex items-center justify-between shadow-sm sticky top-0 z-10 ">
@@ -64,7 +63,7 @@ const MemoizedHeader = memo(({ collapsed, onToggle, username, onLogout }) => {
           trigger={["click"]}
         >
           <Space className="cursor-pointer p-2 rounded-md">
-            <Avatar src={urlAvatar} />
+            <Avatar icon={<UserOutlined />} />
             <span className="font-medium text-white">{username}</span>
           </Space>
         </Dropdown>
@@ -211,7 +210,9 @@ const AdminPage = () => {
   }
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <ConfigProvider locale={viVN}>
+      <ProConfigProvider intl={viVNIntl}>
+        <Layout style={{ minHeight: "100vh" }}>
       <Sider
         width={230}
         trigger={null}
@@ -221,11 +222,7 @@ const AdminPage = () => {
         className="shadow-sm transition-all duration-300 ease-in-out transform-gpu will-change-transform"
       >
         <div className="flex items-center justify-center h-16">
-          {collapsed ? (
-            <img src={Logo_Icon} alt="Icon" className="h-8" />
-          ) : (
-            <Logo theme={"dark"} />
-          )}
+          <Logo theme={"dark"} />
         </div>
         <Menu
           theme="dark"
@@ -244,7 +241,9 @@ const AdminPage = () => {
         />
         <MemoizedContent />
       </Layout>
-    </Layout>
+        </Layout>
+      </ProConfigProvider>
+    </ConfigProvider>
   );
 };
 

@@ -21,7 +21,7 @@ const DescriptionBox = ({ description }) => {
         className="custom-scrollbar pr-2"
       >
         {description ? (
-          <Paragraph className="mb-0 text-gray-300 whitespace-pre-wrap">
+          <Paragraph className="mb-0 whitespace-pre-wrap !text-[#c3c7d0]">
             {description}
           </Paragraph>
         ) : (

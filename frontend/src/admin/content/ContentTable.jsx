@@ -46,7 +46,7 @@ const ContentTable = () => {
         setEditingProduction(fullData);
         setModalCreateOpen(true);
       }
-    } catch (error) {
+    } catch {
       message.error("Lỗi khi tải dữ liệu chi tiết phim!");
     }
   };
@@ -185,7 +185,10 @@ const ContentTable = () => {
           return { data: data, success: true };
         }}
         rowKey="id"
-        pagination={{ pageSize: 4 }}
+        pagination={{
+          pageSize: 4,
+          showTotal: (total, range) => `${range[0]}-${range[1]} / ${total} phim`,
+        }}
         headerTitle="QUẢN LÝ KHO PHIM"
         toolBarRender={() => [
           <Button

@@ -10,18 +10,24 @@ const formatTime = (value) => {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("vi-VN");
 };
 
-const CommentAvatar = ({ comment }) =>
-  comment.avatar_url ? (
-    <img
-      src={comment.avatar_url}
-      alt=""
-      className="w-8 h-8 rounded-full object-cover border border-gray-700"
-    />
-  ) : (
+const CommentAvatar = ({ comment }) => {
+  const [failed, setFailed] = useState(false);
+  if (comment.avatar_url && !failed) {
+    return (
+      <img
+        src={comment.avatar_url}
+        alt=""
+        onError={() => setFailed(true)}
+        className="w-8 h-8 rounded-full object-cover border border-gray-700"
+      />
+    );
+  }
+  return (
     <div className="w-8 h-8 rounded-full bg-gray-700 border border-gray-600 text-gray-200 text-xs font-bold flex items-center justify-center">
       {(comment.username || "U").charAt(0).toUpperCase()}
     </div>
   );
+};
 
 const CommentSection = ({ productionId }) => {
   const { user } = useAuth();

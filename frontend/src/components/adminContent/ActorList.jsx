@@ -7,7 +7,6 @@ import ActorDetailModal from "./ActorDetailModal";
 const ActorList = ({ actors }) => {
   const scrollRef = useRef(null);
   const [selectedActor, setSelectedActor] = useState(null);
-  console.log(actors);
 
   // Hàm xử lý cuộn
   const scroll = (direction) => {
@@ -71,7 +70,7 @@ const ActorList = ({ actors }) => {
               <div className="font-semibold text-sm truncate w-full text-center px-1">
                 {actor.name}
               </div>
-              <div className="text-xs text-gray-500 truncate w-full text-center px-1">
+              <div className="text-xs text-gray-400 truncate w-full text-center px-1">
                 {actor.character_name || "Diễn viên"}
               </div>
             </div>
