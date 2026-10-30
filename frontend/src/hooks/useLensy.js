@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { API_URL } from "../services/api.js";
 import { scanRegion as scanRegionApi } from "../services/scanApi.js";
 import { captureVideoRegion } from "../utils/videoCapture.js";
@@ -8,17 +8,11 @@ import { captureVideoRegion } from "../utils/videoCapture.js";
 // /watch-episode/:id (PlayerPage) mà không lặp code.
 //
 // Trạng thái: SLEEPING -> AWAKE -> SELECTING -> SCANNING -> RESULTS / ERROR
-export const useLensy = ({ videoRef, stageRef, productionId, position }) => {
+export const useLensy = ({ videoRef, stageRef, productionId, positionRef }) => {
   const [state, setState] = useState("SLEEPING");
   const [result, setResult] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [error, setError] = useState("");
-  const lastPosition = useRef(0);
-
-  // Giữ vị trí video mới nhất mà không cần truyền lại mỗi lần render
-  if (typeof position === "number" && position !== lastPosition.current) {
-    lastPosition.current = position;
-  }
 
   const wake = useCallback(() => {
     setError("");
@@ -46,7 +40,7 @@ export const useLensy = ({ videoRef, stageRef, productionId, position }) => {
         const res = await scanRegionApi({
           blob,
           movieId: productionId,
-          position: Math.floor(lastPosition.current || 0),
+          position: Math.floor(positionRef?.current || 0),
           cropMs,
         });
         setResult(res);
@@ -56,7 +50,7 @@ export const useLensy = ({ videoRef, stageRef, productionId, position }) => {
         setState("ERROR");
       }
     },
-    [videoRef, stageRef, productionId],
+    [videoRef, stageRef, productionId, positionRef],
   );
 
   const buy = useCallback(

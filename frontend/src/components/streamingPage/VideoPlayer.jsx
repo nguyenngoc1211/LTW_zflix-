@@ -67,7 +67,7 @@ const VideoPlayer = ({
     videoRef,
     stageRef,
     productionId: productionId ?? currentEpisode?.production_id,
-    position: positionRef.current,
+    positionRef,
   });
 
   // Phát video: proxy R2 qua backend + hls.js cho .m3u8 (Chrome/Firefox).
@@ -81,10 +81,13 @@ const VideoPlayer = ({
   }, [currentEpisode, settings.autoPlay]);
 
   const handleLoadedMetadata = () => {
-    const position = new URLSearchParams(window.location.search).get("pos");
-    if (position && videoRef.current && !Number.isNaN(Number(position))) {
-      videoRef.current.currentTime = Number(position);
-    }
+    const position = Number(new URLSearchParams(window.location.search).get("pos"));
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(position) || position <= 0) return;
+    const maxPosition = Number.isFinite(video.duration)
+      ? Math.max(0, video.duration - 1)
+      : position;
+    video.currentTime = Math.min(position, maxPosition);
   };
 
   const handleTimeUpdate = () => {

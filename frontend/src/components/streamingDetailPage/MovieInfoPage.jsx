@@ -8,6 +8,8 @@ import {
 } from "../../services/movieService";
 
 import InfoHero from "./InfoHero";
+import RatingSection from "./RatingSection";
+import ProductPlacements from "./ProductPlacements";
 import RelatedMovies from "../streamingPage/RelatedMovies";
 import RecommendedList from "../streamingPage/RecommendedList";
 import CommentSection from "../streamingPage/CommentSection";
@@ -46,6 +48,11 @@ const MovieInfoPage = () => {
 
   const related = productionData?.related || [];
 
+  const refreshProduction = () => {
+    if (!productionData?.slug) return;
+    getMovieBySlug(productionData.slug).then(setProductionData).catch(() => {});
+  };
+
   return (
     <div className="min-h-screen bg-[#121212] text-gray-300 font-sans pb-10">
       {/* 1. HERO SECTION  */}
@@ -60,6 +67,11 @@ const MovieInfoPage = () => {
               <RelatedMovies movies={related} />
             </div>
 
+            <ProductPlacements productionId={productionData?.id} />
+            <RatingSection
+              productionId={productionData?.id}
+              onSaved={refreshProduction}
+            />
             <CommentSection productionId={productionData?.id} />
           </div>
 
