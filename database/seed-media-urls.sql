@@ -64,3 +64,10 @@ WHERE s.`id` IN (51);
 UPDATE `productions` s JOIN `productions` p ON p.`id` = 30
 SET s.`poster_url` = p.`poster_url`, s.`banner_url` = p.`banner_url`
 WHERE s.`id` IN (52);
+
+-- Thumbnail tập phim dùng lại banner/poster của phim.
+-- Các path /thumbnails/... trong init.sql không tồn tại trong repo.
+UPDATE `episodes` e
+JOIN `productions` p ON p.`id` = e.`production_id`
+SET e.`thumbnail_url` = IF(p.`banner_url` LIKE 'http%', p.`banner_url`, p.`poster_url`)
+WHERE e.`thumbnail_url` LIKE '/thumbnails/%';
