@@ -84,7 +84,7 @@ services:
     volumes:
       - ./backend-node:/app
       - /app/node_modules
-    command: sh -c "npm install && npx prisma generate && npm run migrate:auth && npm run dev"
+    command: sh -c "npm install --no-audit --no-fund --no-package-lock && npx prisma generate && npm run migrate:auth && npm run dev"
 
   # Python Video Service
   video-processor:
@@ -95,10 +95,12 @@ services:
     volumes:
       - ./backend-python/video-processor:/app
     environment:
-      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
-      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+      # boto3 cần endpoint hợp lệ ngay khi import; dùng placeholder để service
+      # vẫn khởi động khi chưa cấu hình R2 (upload sẽ báo lỗi khi gọi thật).
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-dev-placeholder}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-dev-placeholder}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-dev-placeholder}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-dev-placeholder}
       R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:-}
       NODE_WEBHOOK_URL: ${NODE_WEBHOOK_URL:-http://backend-node:3000/api/streaming/episodes/webhook/video-done}
       VIDEO_WEBHOOK_SECRET: ${VIDEO_WEBHOOK_SECRET:-}
@@ -127,7 +129,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     stdin_open: true
-    command: sh -c "npm install && npm run dev"
+    command: sh -c "npm install --no-audit --no-fund --no-package-lock && npm run dev"
 
 volumes:
   db_data:

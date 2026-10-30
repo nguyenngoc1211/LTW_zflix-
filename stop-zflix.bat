@@ -1,34 +1,49 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
-title Zflix - tat server
+title Zflix - tat server (Docker)
 color 0C
+cd /d "%~dp0"
 
 echo ============================================
-echo        ZFLIX - TAT SERVER
+echo        ZFLIX - TAT SERVER (DOCKER)
 echo ============================================
 echo.
 
-echo [1/4] Dang tat Frontend (Vite)...
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":5173 " ^| findstr "LISTENING"') do taskkill /F /PID %%p >nul 2>&1
-echo       Done.
+set "DOCKER="
+where docker >nul 2>&1 && set "DOCKER=docker"
+if not defined DOCKER if exist "%ProgramFiles%\Docker\Docker\resources\bin\docker.exe" (
+    set "PATH=%ProgramFiles%\Docker\Docker\resources\bin;!PATH!"
+    set "DOCKER=%ProgramFiles%\Docker\Docker\resources\bin\docker.exe"
+)
 
-echo [2/4] Dang tat Backend (Node API)...
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":3000 " ^| findstr "LISTENING"') do taskkill /F /PID %%p >nul 2>&1
-echo       Done.
+if not defined DOCKER (
+    echo Khong tim thay Docker - co the stack da khong chay.
+    pause
+    exit /b 0
+)
 
-echo [3/4] Dang tat Video Processor (Python)...
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8001 " ^| findstr "LISTENING"') do taskkill /F /PID %%p >nul 2>&1
-echo       Done.
+"%DOCKER%" info >nul 2>&1
+if errorlevel 1 (
+    echo Docker dang tat - stack cung da dung.
+    pause
+    exit /b 0
+)
 
-echo [4/4] Dang tat MariaDB...
-REM mysqld tu tat an toan khi nhan tin hinh - chi kill neu con treo
-taskkill /F /IM mysqld.exe >nul 2>&1
-echo       Done.
+echo Dang tat cac container...
+"%DOCKER%" compose down
+if errorlevel 1 (
+    echo.
+    echo LOI: Khong tat duoc stack. Xem thong bao phia tren.
+    pause
+    exit /b 1
+)
 
 echo.
 echo ============================================
 echo   DA TAT TOAN BO SERVER ZFLIX
+echo   Du lieu DB van duoc giu trong volume Docker.
+echo   Muon xoa ca du lieu: docker compose down -v
 echo ============================================
 echo.
 pause
