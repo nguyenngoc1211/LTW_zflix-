@@ -1,10 +1,13 @@
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-# hnswlib-node là native addon, cần toolchain để node-gyp biên dịch.
-# openssl để Prisma phát hiện đúng libssl 3.x thay vì mặc định 1.1.x
-RUN apk add --no-cache python3 make g++ openssl
+# onnxruntime-node (CLIP cho Lensy) là binary glibc, không chạy trên Alpine/musl.
+# hnswlib-node cần toolchain để node-gyp biên dịch; libgomp1 cho onnxruntime.
+# openssl để Prisma phát hiện đúng libssl 3.x.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ openssl ca-certificates libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 RUN npm ci
