@@ -5,12 +5,13 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { apiRequest } from "../../services/api.js";
 import {
   getEpisodesBySeason,
+  getMovieById,
   getMovieBySlug,
 } from "../../services/movieService";
 import { calcTargetSeasonIdAndTargetEpisodes } from "../../utils/streaming/common";
 
 export const useWatchPage = () => {
-  const { slug } = useParams();
+  const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -36,8 +37,9 @@ export const useWatchPage = () => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
 
-    getMovieBySlug(slug)
-      .then((production) => {
+    getMovieById(id)
+      .then((base) => getMovieBySlug(base.slug))
+      .then(async (production) => {
         setProductionData(production);
 
         const mappedData = {
@@ -46,7 +48,11 @@ export const useWatchPage = () => {
         };
 
         let { targetSeasonId, targetEpisodes } =
-          calcTargetSeasonIdAndTargetEpisodes(mappedData, currentEpNumber);
+          await calcTargetSeasonIdAndTargetEpisodes(
+            mappedData,
+            currentSeasonParam,
+          );
+        targetEpisodes = targetEpisodes || [];
 
         setCurrentSeasonId(targetSeasonId);
         setEpisodeList(targetEpisodes);
@@ -68,7 +74,7 @@ export const useWatchPage = () => {
       .finally(() => {
         setLoading(false);
       });
-  }, [slug]);
+  }, [id]);
 
   // --- EFFECT 2: SYNC EPISODE FROM URL ---
   useEffect(() => {
@@ -93,8 +99,13 @@ export const useWatchPage = () => {
 
     // Update URL chuẩn
     if (productionData.type === "series") {
+      const seasonNumber =
+        productionData.seasons?.find((s) => s.id === currentSeasonId)
+          ?.season_number ??
+        currentSeasonParam ??
+        1;
       setSearchParams({
-        ss: currentSeasonParam,
+        ss: seasonNumber,
         ep: episode.episode_number,
       });
     } else {

@@ -176,7 +176,7 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
 .lensy:hover { transform: scale(1.08); opacity: 1; }
 .lensy-svg { width: 100%; height: 100%; }
 
-/* Biến thể gọn cho khung video mới (/watch/:slug): góc trên-phải, nhỏ,
+/* Biến thể gọn cho khung video mới (/movies/:id?ep=): góc trên-phải, nhỏ,
    không đè thanh điều khiển native ở đáy video. */
 .lensy-compact { right: 10px; top: 10px; bottom: auto; width: 42px; height: 42px; padding: 2px; opacity: .85; }
 .lensy-compact:hover { opacity: 1; }

@@ -16,16 +16,16 @@ export const createWatchNowUrl = (production) => {
 
   if (production.type === "movie") {
     // Nếu là Movie: Chỉ cần ?ep=1
-    firstEpLink = `/watch/${production.slug}?ep=1`;
+    firstEpLink = `/movies/${production.id}?ep=1`;
   } else {
     // Nếu là Series: Cần thêm ?ss=X&ep=1
     const firstSeasonNum = production.seasons?.[0]?.season_number || 1;
-    firstEpLink = `/watch/${production.slug}?ss=${firstSeasonNum}&ep=1`;
+    firstEpLink = `/movies/${production.id}?ss=${firstSeasonNum}&ep=1`;
   }
   return firstEpLink;
 };
 
-export const calcTargetSeasonIdAndTargetEpisodes = (
+export const calcTargetSeasonIdAndTargetEpisodes = async (
   data,
   currentSeasonParam,
 ) => {
@@ -55,8 +55,8 @@ export const calcTargetSeasonIdAndTargetEpisodes = (
       data.production.seasons?.[0]?.id;
 
     if (targetSeasonId !== defaultLoadedSeasonId) {
-      const res = getEpisodesBySeason(targetSeasonId);
-      targetEpisodes = res.data;
+      const res = await getEpisodesBySeason(targetSeasonId);
+      targetEpisodes = Array.isArray(res) ? res : res?.data || [];
     } else {
       targetEpisodes = data.episodes;
     }

@@ -2,11 +2,11 @@ import { useSearchParams } from "react-router-dom";
 import WatchPage from "./WatchPage";
 import MovieInfoPage from "../../components/streamingDetailPage/MovieInfoPage";
 
-const WatchPageWrapper = () => {
+const MoviePage = () => {
   const [searchParams] = useSearchParams();
   const episode = searchParams.get("ep");
 
   return episode ? <WatchPage /> : <MovieInfoPage />;
 };
 
-export default WatchPageWrapper;
+export default MoviePage;

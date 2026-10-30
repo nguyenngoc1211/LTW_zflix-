@@ -72,10 +72,8 @@ const RelatedMovies = ({ movies }) => {
             const durationDisplay = calcDurationDisplay(movie);
 
             return (
-              <Link to={`/watch/${movie.slug}`}>
+              <Link key={`${movie.id}-${index}`} to={`/movies/${movie.id}`}>
                 <div
-                  // Dùng index trong key vì bạn đang duplicate data để test
-                  key={`${movie.id}-${index}`}
                   className="w-[160px] md:w-[180px] lg:w-[210px] shrink-0 snap-start select-none group cursor-pointer"
                 >
                   {/* Poster Card */}

@@ -4,7 +4,7 @@ import { scanRegion as scanRegionApi } from "../services/scanApi.js";
 import { captureVideoRegion } from "../utils/videoCapture.js";
 
 // CineLens: quét đồ vật trong khung hình -> CLIP + HNSW ở backend.
-// Tách thành hook để dùng được ở cả route /watch/:slug (VideoPlayer) và
+// Tách thành hook để dùng được ở cả route /movies/:id?ep= (VideoPlayer) và
 // /watch-episode/:id (PlayerPage) mà không lặp code.
 //
 // Trạng thái: SLEEPING -> AWAKE -> SELECTING -> SCANNING -> RESULTS / ERROR

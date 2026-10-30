@@ -16,9 +16,8 @@ const RecommendedList = ({ list }) => {
           const durationDisplay = calcDurationDisplay(item);
 
           return (
-            <Link to={`/watch/${item.slug}`}>
+            <Link key={item.id} to={`/movies/${item.id}`}>
               <div
-                key={item.id}
                 className="flex gap-3 p-3 hover:bg-[#202024] transition-colors cursor-pointer border-b border-gray-800/50 last:border-none group"
               >
                 <div className="relative w-12 h-16 flex-shrink-0">

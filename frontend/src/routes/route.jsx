@@ -20,12 +20,11 @@ import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
 import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
 import RegisterPage from "../modules/auth/RegisterPage";
 import ProtectedRoute from "./ProtectedRoute";
-import MovieDetailPage from "../modules/discovery/MovieDetailPage";
+import MoviePage from "../modules/streaming/MoviePage";
 import LibraryPage from "../modules/community/LibraryPage";
 import HistoryPage from "../modules/streaming/HistoryPage";
 import NotificationsPage from "../modules/community/NotificationsPage";
 import PlayerPage from "../modules/streaming/PlayerPage";
-import WatchPageWrapper from "../modules/streaming/WatchPageWrapper";
 import PartyList from "../pages/PartyList.jsx";
 import CreateParty from "../pages/CreateParty.jsx";
 import PartyRoom from "../pages/PartyRoom.jsx";
@@ -39,12 +38,10 @@ export const router = createBrowserRouter([
         index: true,
         element: <HomePage />,
       },
-      { path: "movies/:id", element: <MovieDetailPage /> },
-      // Theo thiết kế (docs/project-analysis §4.7): /watch/:slug
-      //   không có ?ep= -> MovieInfoPage (thông tin phim + seasons)
-      //   có ?ep=      -> WatchPage (trình phát + chọn mùa/tập)
-      // WatchPageWrapper đã implement đúng logic này.
-      { path: "watch/:slug", element: <WatchPageWrapper /> },
+      // Trang chi tiết + trình phát dùng chung một route:
+      //   /movies/:id        -> MovieInfoPage (thông tin phim)
+      //   /movies/:id?ep=1   -> WatchPage (trình phát, chọn mùa/tập)
+      { path: "movies/:id", element: <MoviePage /> },
       // Route xem theo episode id, dùng cho lịch sử xem (không có slug).
       { path: "watch-episode/:episodeId", element: <PlayerPage /> },
       { path: "watch-party", element: <PartyList /> },

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { Spin, message } from "antd";
 import { useParams } from "react-router-dom";
-import { getMovieBySlug, getPopularMovies } from "../../services/movieService";
+import {
+  getMovieById,
+  getMovieBySlug,
+  getPopularMovies,
+} from "../../services/movieService";
 
 import InfoHero from "./InfoHero";
 import RelatedMovies from "../streamingPage/RelatedMovies";
@@ -9,7 +13,7 @@ import RecommendedList from "../streamingPage/RecommendedList";
 import CommentSection from "../streamingPage/CommentSection";
 
 const MovieInfoPage = () => {
-  const { slug } = useParams();
+  const { id } = useParams();
   const [loading, setLoading] = useState(true);
   const [productionData, setProductionData] = useState(null);
   const [popularList, setPopularList] = useState([]);
@@ -18,8 +22,8 @@ const MovieInfoPage = () => {
     window.scrollTo(0, 0);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    // Fetch song song 2 API
-    Promise.all([getMovieBySlug(slug), getPopularMovies()])
+    // Fetch song song 2 API (đổi id -> slug để dùng chung API chi tiết)
+    Promise.all([getMovieById(id).then((p) => getMovieBySlug(p.slug)), getPopularMovies()])
       .then(([movieData, popularData]) => {
         setProductionData(movieData);
         setPopularList(popularData); // Lưu data popular
@@ -31,7 +35,7 @@ const MovieInfoPage = () => {
       .finally(() => {
         setLoading(false);
       });
-  }, [slug]);
+  }, [id]);
 
   if (loading)
     return (

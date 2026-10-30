@@ -91,7 +91,7 @@ const MovieInfo = ({ production }) => {
         </div>
 
         <div className="pt-[10px]">
-          <Link to={`/watch/${production.slug}`}>
+          <Link to={`/movies/${production.id}`}>
             <Button
               icon={<AppstoreAddOutlined />}
               className="bg-[#2a2a2d] border-none text-gray-300 w-full hover:!border-[#ffdd95] hover:!text-[#ffdd95]"

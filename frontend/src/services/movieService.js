@@ -18,6 +18,8 @@ export const getMovies = async () => apiRequest(`${PRODUCTIONS_API}/list`);
 
 export const getMovieBySlug = async (slug) => apiRequest(`${PRODUCTIONS_API}/detail/${slug}`);
 
+export const getMovieById = async (id) => apiRequest(`/api/v1/productions/${id}`);
+
 // 2. THỂ LOẠI (GENRES)
 
 export const getGenres = async () => apiRequest(`${PRODUCTIONS_API}/genres`);
