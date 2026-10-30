@@ -1,6 +1,7 @@
 // Dong bo dia chi mang LAN vao cau hinh dev.
 //   frontend/.env      -> VITE_API_URL de trong (frontend tu goi API theo host dang mo)
 //   backend-node/.env  -> FRONTEND_ORIGIN (CORS + Socket.IO) them origin cua may khac trong LAN
+//   .env (goc)         -> FRONTEND_ORIGIN cho docker compose (backend trong container)
 // Chay tu dong boi start-zflix.bat. Chay tay:
 //   node tools/zflix-network.mjs        # dong bo .env
 //   node tools/zflix-network.mjs --ip   # chi in IP LAN (dung cho banner)
@@ -11,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT_ENV = path.join(rootDir, ".env");
 const FRONTEND_ENV = path.join(rootDir, "frontend", ".env");
 const BACKEND_ENV = path.join(rootDir, "backend-node", ".env");
 const DEV_PORTS = [5173, 4173];
@@ -106,12 +108,22 @@ const currentOrigins = readEnvValue(BACKEND_ENV, "FRONTEND_ORIGIN")
 const customOrigins = currentOrigins.filter((origin) => !isManagedUrl(origin));
 const mergedOrigins = [...new Set([...origins, ...customOrigins])];
 
+const rootOrigins = readEnvValue(ROOT_ENV, "FRONTEND_ORIGIN")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const rootCustomOrigins = rootOrigins.filter((origin) => !isManagedUrl(origin));
+const mergedRootOrigins = [...new Set([...origins, ...rootCustomOrigins])];
+
 const frontendUpdated = updateEnvFile(
   FRONTEND_ENV,
   keepCustomApiUrl ? {} : { VITE_API_URL: "" },
 );
 const backendUpdated = updateEnvFile(BACKEND_ENV, {
   FRONTEND_ORIGIN: mergedOrigins.join(","),
+});
+const rootUpdated = updateEnvFile(ROOT_ENV, {
+  FRONTEND_ORIGIN: mergedRootOrigins.join(","),
 });
 
 if (results.length === 0) {
@@ -132,6 +144,12 @@ if (backendUpdated) {
   console.log(`[network] backend-node/.env: FRONTEND_ORIGIN=${mergedOrigins.join(",")}`);
 } else {
   console.log("[network] CANH BAO: chua co backend-node/.env - bo qua FRONTEND_ORIGIN");
+}
+
+if (rootUpdated) {
+  console.log(`[network] .env (Docker): FRONTEND_ORIGIN=${mergedRootOrigins.join(",")}`);
+} else {
+  console.log("[network] CANH BAO: chua co .env goc - start-zflix.bat se tao tu .env.example");
 }
 
 const lanEntry = results.find((entry) => !/tailscale/i.test(entry.name)) || results[0];

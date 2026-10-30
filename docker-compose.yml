@@ -123,8 +123,9 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=http://localhost:3000
-      - VITE_STREAMING_API_URL=http://localhost:3000/api/streaming
+      # De trong de frontend tu goi API theo host dang mo (localhost hoac IP LAN).
+      # Chi dat VITE_API_URL trong .env goc khi API nam o may khac.
+      - VITE_API_URL=${VITE_API_URL:-}
     volumes:
       - ./frontend:/app
       - /app/node_modules

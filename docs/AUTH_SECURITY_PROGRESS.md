@@ -193,6 +193,14 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 
 `docs/AUTHORIZATION_INTEGRATION_GUIDE.md` ghi pattern thực tế và checklist cho teammate khi backend bổ sung API mới. Đây là documentation-only; không thêm API, role, ownership helper hoặc thay đổi production source. Các policy trong ma trận là **yêu cầu tương lai**, phải review lại theo resource API thật khi được triển khai.
 
+### Hậu kiểm — truy cập LAN qua Docker (2026-10-30)
+
+- **Lý do:** máy khác trong cùng mạng mở `http://<ip-may-chay>:5173` báo `Failed to fetch`.
+- **Nguyên nhân:** `docker-compose.yml` ép `VITE_API_URL=http://localhost:3000` nên trình duyệt máy khác gọi API vào chính máy đó; đồng thời `FRONTEND_ORIGIN` chỉ có `http://localhost:5173` nên CORS không trả `Access-Control-Allow-Origin` và các route auth bị `origin.middleware` trả `403` cho origin LAN.
+- **Sửa:** bỏ giá trị hardcode, để `VITE_API_URL` trống cho frontend tự suy ra `http://<host đang mở>:3000`; `tools/zflix-network.mjs` phát hiện IPv4 LAN và đồng bộ `FRONTEND_ORIGIN` vào `.env` gốc (cho compose) lẫn `backend-node/.env`; `start-zflix.bat` chạy đồng bộ này trước `docker compose up`.
+- **Không đổi chính sách:** origin vẫn so khớp tuyệt đối theo danh sách cấu hình (localhost + IP LAN do script phát hiện + origin riêng không phải IP nội bộ được giữ nguyên); không mở CORS cho origin tùy ý.
+- **Xác minh:** `GET /api/v1/filters` và refresh-token với `Origin: http://<ip-lan>:5173` trả đúng `Access-Control-Allow-Origin` (login `200`, refresh `200` kèm cookie HttpOnly); Chrome mở `http://<ip-lan>:5173` gọi API tới `http://<ip-lan>:3000`, `0` request failure và `0` ảnh hỏng; `http://localhost:5173` vẫn tải bình thường.
+
 ## Security controls hiện có
 
 - Password dùng bcrypt cost `12`; không dùng SHA-256 để hash password.

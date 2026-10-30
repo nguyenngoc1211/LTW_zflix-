@@ -62,6 +62,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path 'backend-n
 echo       .env: OK
 echo.
 
+REM ---------- 1b. Origin LAN ----------
+REM May khac trong mang mo http://<ip>:5173 va goi API http://<ip>:3000, nen backend
+REM phai cho phep origin do (CORS, Socket.IO va kiem tra Origin cua auth).
+set "LAN_IP="
+where node >nul 2>&1 && for /f "delims=" %%I in ('node "%~dp0tools\zflix-network.mjs" --ip 2^>nul') do if not defined LAN_IP set "LAN_IP=%%I"
+if defined LAN_IP (
+    node "%~dp0tools\zflix-network.mjs" >nul 2>&1
+    echo       Origin LAN: http://!LAN_IP!:5173
+) else (
+    echo       CANH BAO: khong xac dinh duoc IP LAN - can Node.js tren may nay
+    echo                de tu dong cho phep may khac trong mang truy cap.
+)
+echo.
+
 REM ---------- 2. Kiem tra image da build chua ----------
 echo [2/6] Kiem tra image Docker...
 set "NEED_BUILD=0"
@@ -126,9 +140,6 @@ REM ---------- 6. Trang thai ----------
 echo [6/6] Trang thai container:
 "%DOCKER%" compose ps
 echo.
-
-set "LAN_IP="
-where node >nul 2>&1 && for /f "delims=" %%I in ('node "%~dp0tools\zflix-network.mjs" --ip 2^>nul') do if not defined LAN_IP set "LAN_IP=%%I"
 
 echo ============================================
 echo   TAT CA SERVER DA SAN SANG^!
