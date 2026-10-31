@@ -4,14 +4,16 @@ import { fileURLToPath } from "node:url";
 import express, { Router } from "express";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { pool } from "../../core/database/pool.js";
+import { fromMongo, mongoCollection, nextNumericId } from "../../core/database/mongo.js";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler } from "../../core/utils/http.js";
-import { embedImage, clipReady } from "./clip.service.js";
+import { embedImage, clipStats } from "./clip.service.js";
 import { searchByVector, rebuildIndex, indexStats } from "./vector.index.js";
 import { readText } from "./ocr.service.js";
 import { rankProducts, validateAffiliateTarget } from "./ranking.js";
 
 export const visualShoppingRouter = Router();
+const useMongo = () => process.env.DATA_STORE === "mongodb";
 
 // Ảnh base64 lớn hơn json global limit — dùng middleware riêng cho các route ảnh
 const imageBody = express.json({ limit: "5mb" });
@@ -60,7 +62,7 @@ visualShoppingRouter.post(
 visualShoppingRouter.get(
   "/visual-search/stats",
   asyncHandler(async (req, res) => {
-    res.json({ ...(await indexStats()), clip: clipReady() });
+    res.json({ ...(await indexStats()), clip: clipStats() });
   }),
 );
 
@@ -92,12 +94,13 @@ visualShoppingRouter.post(
     const ids = vectorHits.map((hit) => hit.productId);
     let catalog = [];
     if (ids.length) {
-      const [rows] = await pool.query(
-        `SELECT id, name, description, category, color, price, currency, marketplace,
-                product_url, affiliate_url, availability, image_url
-         FROM visual_products WHERE id IN (${ids.map(() => "?").join(",")})`,
-        ids,
-      );
+      const rows = useMongo()
+        ? (await (await mongoCollection("visual_products")).find({ id: { $in: ids } }).toArray()).map(fromMongo)
+        : (await pool.query(
+          `SELECT id, name, description, category, color, price, currency, marketplace,
+                  product_url, affiliate_url, availability, image_url
+           FROM visual_products WHERE id IN (${ids.map(() => "?").join(",")})`, ids,
+        ))[0];
       const byId = new Map(rows.map((row) => [row.id, row]));
       catalog = vectorHits
         .map((hit) => {
@@ -120,18 +123,31 @@ visualShoppingRouter.post(
     timings.totalMs = timings.embedMs + timings.searchMs + timings.rankMs + (timings.cropMs || 0) + (timings.ocrMs || 0);
 
     // Lưu lịch sử tìm kiếm (không lưu ảnh)
-    const [searchResult] = await pool
-      .execute(
+    let searchId = null;
+    if (useMongo()) {
+      try {
+        searchId = await nextNumericId("visual_searches");
+        await (await mongoCollection("visual_searches")).insertOne({ _id: searchId,
+          id: searchId, user_id: req.user?.id ?? null, movie_id: body.movieId ?? null,
+          position: Math.floor(Number(body.position) || 0), results_count: products.length,
+          crop_ms: timings.cropMs, embed_ms: timings.embedMs,
+          search_ms: timings.searchMs, rank_ms: timings.rankMs,
+          total_ms: timings.totalMs, provider: "clip",
+          ai_keyword: ocr?.text ?? null, created_at: new Date() });
+      } catch { searchId = null; }
+    } else {
+      const [searchResult] = await pool.execute(
         `INSERT INTO visual_searches (user_id, movie_id, position, results_count, crop_ms, embed_ms, search_ms, rank_ms, total_ms, provider, ai_keyword)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'clip', ?)`,
         [req.user?.id ?? null, body.movieId ?? null, Math.floor(Number(body.position) || 0), products.length,
-         timings.cropMs, timings.embedMs, timings.searchMs, timings.rankMs, timings.totalMs, ocr?.text ?? null],
-      )
-      .catch(() => [null]);
+          timings.cropMs, timings.embedMs, timings.searchMs, timings.rankMs, timings.totalMs, ocr?.text ?? null],
+      ).catch(() => [null]);
+      searchId = searchResult?.insertId ?? null;
+    }
 
     const ocrQuickSearch = ocr?.text ? { keyword: ocr.text, shopeeUrl: `https://shopee.vn/search?keyword=${encodeURIComponent(ocr.text)}` } : null;
     res.json({
-      searchId: searchResult?.insertId ?? null,
+      searchId,
       ocrText: ocr?.text ?? null,
       products: products.map((product) => ({
         id: product.id,
@@ -161,6 +177,12 @@ visualShoppingRouter.get(
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "invalid id" });
+    if (useMongo()) {
+      const product = await (await mongoCollection("visual_products")).findOne({ id });
+      if (!product) return res.status(404).json({ message: "Product not found" });
+      const { embedding, ...row } = fromMongo(product);
+      return res.json({ ...row, availability: Boolean(row.availability) });
+    }
     const [rows] = await pool.execute("SELECT * FROM visual_products WHERE id = ? LIMIT 1", [id]);
     if (!rows.length) return res.status(404).json({ message: "Product not found" });
     const row = rows[0];
@@ -178,6 +200,23 @@ visualShoppingRouter.get(
   asyncHandler(async (req, res) => {
     const id = Number(req.params.productId);
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "invalid id" });
+    if (useMongo()) {
+      const product = await (await mongoCollection("visual_products")).findOne({ id });
+      if (!product) return res.status(404).json({ message: "Product not found" });
+      const target = product.affiliate_url || product.product_url;
+      if (!target) return res.status(409).json({ message: "Sản phẩm này chưa có liên kết mua hàng" });
+      const validation = validateAffiliateTarget(target);
+      if (!validation.ok) return res.status(409).json({ message: `Liên kết mua không hợp lệ (${validation.reason})` });
+      try {
+        const clickId = await nextNumericId("affiliate_clicks");
+        await (await mongoCollection("affiliate_clicks")).insertOne({ _id: clickId, id: clickId,
+          product_id: id, search_id: Number(req.query.searchId) || null,
+          user_id: req.user?.id ?? null, marketplace: product.marketplace,
+          tracking_id: `vc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          created_at: new Date() });
+      } catch { /* Redirect remains available if click logging fails. */ }
+      return res.redirect(302, target);
+    }
     const [rows] = await pool.execute(
       "SELECT id, marketplace, affiliate_url, product_url FROM visual_products WHERE id = ? LIMIT 1",
       [id],
@@ -226,6 +265,19 @@ visualShoppingRouter.post(
     // Embed ảnh catalog ngay (model đã warm)
     const { embedding, embedMs } = await embedImage(image.buffer);
 
+    if (useMongo()) {
+      const id = await nextNumericId("visual_products");
+      await (await mongoCollection("visual_products")).insertOne({ _id: id, id, name,
+        description: typeof body.description === "string" ? body.description.trim().slice(0, 1000) || null : null,
+        category: typeof body.category === "string" ? body.category.trim().slice(0, 100) || null : null,
+        color: typeof body.color === "string" ? body.color.trim().slice(0, 50) || null : null,
+        price: Number(body.price) || null, currency: "VND", marketplace: "catalog",
+        image_url: `/uploads/${fileName}`, availability: 1,
+        embedding: JSON.stringify(embedding), embedded_at: new Date(), created_at: new Date() });
+      await rebuildIndex();
+      return res.status(201).json({ id, name, price: Number(body.price) || null, embedMs });
+    }
+
     const [result] = await pool.execute(
       `INSERT INTO visual_products (name, description, category, color, price, currency, marketplace, image_url, availability, embedding, embedded_at)
        VALUES (?, ?, ?, ?, ?, 'VND', 'catalog', ?, 1, ?, NOW())`,
@@ -264,6 +316,18 @@ visualShoppingRouter.post(
       const cols = line.match(/("([^"]|"")*"|[^,]*)(,|$)/g)?.map((c) => c.replace(/,$/, "").replace(/^"|"$/g, "").replaceAll('""', '"')) || [];
       const record = Object.fromEntries(header.map((h, i) => [h, cols[i] ?? ""]));
       try {
+        if (useMongo()) {
+          const id = await nextNumericId("visual_products");
+          await (await mongoCollection("visual_products")).insertOne({ _id: id, id,
+            name: record.name || "Không tên", description: record.description || null,
+            category: record.category || null, color: record.color || null,
+            price: Number(record.price) || null, currency: record.currency || "VND",
+            marketplace: record.marketplace || "catalog", product_url: record.product_url || null,
+            affiliate_url: record.affiliate_url || null, image_url: record.image_url || null,
+            availability: 1, embedding: null, embedded_at: null, created_at: new Date() });
+          imported.push(id);
+          continue;
+        }
         const [r] = await pool.execute(
           `INSERT INTO visual_products (name, description, category, color, price, currency, marketplace, product_url, affiliate_url, image_url, availability)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,

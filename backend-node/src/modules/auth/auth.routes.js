@@ -11,7 +11,7 @@ import {
   refreshRateLimiter,
   resetPasswordRateLimiter,
 } from "../../core/middleware/rate-limit.middleware.js";
-import {
+const {
   REFRESH_COOKIE,
   beginMfaSetup,
   changePassword,
@@ -32,7 +32,9 @@ import {
   revokeOtherSessions,
   revokeOwnedSession,
   revokeSession,
-} from "./auth.service.js";
+} = process.env.DATA_STORE === "mongodb"
+  ? await import("./auth.mongo.service.js")
+  : await import("./auth.service.js");
 
 export const authRouter = Router();
 
@@ -70,7 +72,7 @@ authRouter.post("/register", requireFrontendOrigin, registrationRateLimiter, asy
     securityLog("REGISTER_SUCCESS", { userId, ...requestSecurityMetadata(req) });
     return res.status(201).json({ message: "Account created. Please sign in." });
   } catch (error) {
-    if (error.code === "ER_DUP_ENTRY") {
+    if (error.code === "ER_DUP_ENTRY" || error.code === 11000) {
       securityLog("REGISTER_FAILED", {
         ...requestSecurityMetadata(req),
         reason: "duplicate_account",

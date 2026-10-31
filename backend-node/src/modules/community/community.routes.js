@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
+import { fromMongo, mongoCollection, nextNumericId, withMongoTransaction } from "../../core/database/mongo.js";
 import { requireAuth } from "../../core/middleware/business-auth.bridge.js";
 import { asyncHandler, parsePositiveInt } from "../../core/utils/http.js";
 import {
@@ -8,13 +9,42 @@ import {
 } from "./toxic-comment.filter.js";
 
 export const communityRouter = Router();
+const useMongo = () => process.env.DATA_STORE === "mongodb";
+
+const linkedProductions = async (collectionName, userId, dateField, extra = () => ({})) => {
+  const links = await (await mongoCollection(collectionName)).find({ user_id: userId })
+    .sort({ created_at: -1 }).toArray();
+  const productions = await (await mongoCollection("productions"))
+    .find({ id: { $in: links.map((link) => link.production_id) } }).toArray();
+  const byId = new Map(productions.map((production) => [production.id, production]));
+  return links.flatMap((link) => {
+    const production = byId.get(link.production_id);
+    return production ? [{ ...fromMongo(production), ...extra(link), [dateField]: link.created_at }] : [];
+  });
+};
+
+const updateRatingSummary = async (productionId, session) => {
+  const ratings = await mongoCollection("ratings");
+  const summary = await ratings.aggregate([
+    { $match: { production_id: productionId } },
+    { $group: { _id: null, count: { $sum: 1 }, average: { $avg: "$rating" } } },
+  ], { session }).next();
+  await (await mongoCollection("productions")).updateOne({ id: productionId },
+    { $set: { rating_avg: summary?.average || 0, rating_count: summary?.count || 0 } }, { session });
+};
 
 const ensureProduction = async (id) => {
+  if (useMongo()) {
+    if (await (await mongoCollection("productions")).findOne({ id })) return;
+    const error = new Error("Production not found"); error.status = 404; throw error;
+  }
   const [rows] = await pool.execute("SELECT id FROM productions WHERE id=? LIMIT 1", [id]);
   if (!rows.length) { const error = new Error("Production not found"); error.status = 404; throw error; }
 };
 
 communityRouter.get("/favorites", requireAuth, asyncHandler(async (req, res) => {
+  if (useMongo()) return res.json({ items: await linkedProductions("bookmarks", req.user.id,
+    "favorited_at", (link) => ({ note: link.note })) });
   const [items] = await pool.execute(`SELECT p.*, b.note, b.created_at AS favorited_at FROM bookmarks b JOIN productions p ON p.id=b.production_id WHERE b.user_id=? ORDER BY b.created_at DESC`, [req.user.id]);
   res.json({ items });
 }));
@@ -23,17 +53,31 @@ communityRouter.put("/favorites/:productionId", requireAuth, asyncHandler(async 
   const productionId = parsePositiveInt(req.params.productionId, "production id");
   await ensureProduction(productionId);
   const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 1000) : null;
+  if (useMongo()) {
+    await (await mongoCollection("bookmarks")).updateOne(
+      { user_id: req.user.id, production_id: productionId },
+      { $set: { note }, $setOnInsert: { _id: { user_id: req.user.id, production_id: productionId },
+        user_id: req.user.id, production_id: productionId, notify_new_episode: 0,
+        created_at: new Date() } }, { upsert: true });
+    return res.status(200).json({ productionId, isFavorite: true });
+  }
   await pool.execute(`INSERT INTO bookmarks (user_id, production_id, note, notify_new_episode) VALUES (?, ?, ?, 0) ON DUPLICATE KEY UPDATE note=VALUES(note)`, [req.user.id, productionId, note]);
   res.status(200).json({ productionId, isFavorite: true });
 }));
 
 communityRouter.delete("/favorites/:productionId", requireAuth, asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
+  if (useMongo()) {
+    await (await mongoCollection("bookmarks")).deleteOne({ user_id: req.user.id, production_id: productionId });
+    return res.status(204).end();
+  }
   await pool.execute("DELETE FROM bookmarks WHERE user_id=? AND production_id=?", [req.user.id, productionId]);
   res.status(204).end();
 }));
 
 communityRouter.get("/interests", requireAuth, asyncHandler(async (req, res) => {
+  if (useMongo()) return res.json({ items: await linkedProductions("production_interests",
+    req.user.id, "followed_at") });
   const [items] = await pool.execute(`SELECT p.*, i.created_at AS followed_at FROM production_interests i JOIN productions p ON p.id=i.production_id WHERE i.user_id=? ORDER BY i.created_at DESC`, [req.user.id]);
   res.json({ items });
 }));
@@ -41,18 +85,48 @@ communityRouter.get("/interests", requireAuth, asyncHandler(async (req, res) => 
 communityRouter.put("/interests/:productionId", requireAuth, asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
   await ensureProduction(productionId);
+  if (useMongo()) {
+    await (await mongoCollection("production_interests")).updateOne(
+      { user_id: req.user.id, production_id: productionId },
+      { $setOnInsert: { _id: { user_id: req.user.id, production_id: productionId },
+        user_id: req.user.id, production_id: productionId, created_at: new Date() } },
+      { upsert: true });
+    return res.json({ productionId, interested: true });
+  }
   await pool.execute(`INSERT INTO production_interests (user_id, production_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE created_at=created_at`, [req.user.id, productionId]);
   res.json({ productionId, interested: true });
 }));
 
 communityRouter.delete("/interests/:productionId", requireAuth, asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
+  if (useMongo()) {
+    await (await mongoCollection("production_interests")).deleteOne({ user_id: req.user.id,
+      production_id: productionId });
+    return res.status(204).end();
+  }
   await pool.execute("DELETE FROM production_interests WHERE user_id=? AND production_id=?", [req.user.id, productionId]);
   res.status(204).end();
 }));
 
 communityRouter.get("/productions/:productionId/ratings", asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
+  if (useMongo()) {
+    const ratings = await (await mongoCollection("ratings"))
+      .find({ production_id: productionId }).sort({ updated_at: -1 }).toArray();
+    const users = await (await mongoCollection("users"))
+      .find({ id: { $in: ratings.map((rating) => rating.user_id) } },
+        { projection: { id: 1, username: 1, avatar_url: 1 } }).toArray();
+    const byId = new Map(users.map((user) => [user.id, user]));
+    const items = ratings.flatMap((rating) => {
+      const user = byId.get(rating.user_id);
+      return user ? [{ rating: rating.rating, review_title: rating.review_title,
+        review_content: rating.review_content, likes_count: rating.likes_count,
+        is_edited: rating.is_edited, is_toxic: rating.is_toxic,
+        created_at: rating.created_at, updated_at: rating.updated_at,
+        user_id: user.id, username: user.username, avatar_url: user.avatar_url }] : [];
+    });
+    return res.json({ items });
+  }
   const [items] = await pool.execute(`SELECT r.rating, r.review_title, r.review_content, r.likes_count, r.is_edited, r.is_toxic, r.created_at, r.updated_at, u.id AS user_id, u.username, u.avatar_url FROM ratings r JOIN users u ON u.id=r.user_id WHERE r.production_id=? ORDER BY r.updated_at DESC`, [productionId]);
   res.json({ items });
 }));
@@ -63,6 +137,27 @@ communityRouter.put("/productions/:productionId/rating", requireAuth, asyncHandl
   const rating = Number(body.rating);
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ message: "rating must be an integer from 1 to 5" });
   await ensureProduction(productionId);
+  if (useMongo()) {
+    const { isToxic } = await withMongoTransaction(async (session) => {
+      const ratings = await mongoCollection("ratings");
+      const filter = { user_id: req.user.id, production_id: productionId };
+      const existing = await ratings.findOne(filter, { session });
+      const title = body.title === undefined ? existing?.review_title ?? null
+        : typeof body.title === "string" ? body.title.trim().slice(0, 200) || null : null;
+      const review = body.review === undefined ? existing?.review_content ?? null
+        : typeof body.review === "string" ? body.review.trim().slice(0, 5000) || null : null;
+      const isToxic = detectToxicContent([title, review].filter(Boolean).join("\n")).isToxic;
+      const now = new Date();
+      await ratings.updateOne(filter, { $set: { rating, review_title: title,
+        review_content: review, is_toxic: Number(isToxic), is_edited: existing ? 1 : 0,
+        updated_at: now }, $setOnInsert: { _id: filter, ...filter,
+        likes_count: 0, created_at: now } }, { upsert: true, session });
+      await updateRatingSummary(productionId, session);
+      return { title, review, isToxic };
+    });
+    return res.json({ productionId, rating, isToxic,
+      warning: isToxic ? TOXIC_COMMENT_WARNING : null });
+  }
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -97,6 +192,14 @@ communityRouter.put("/productions/:productionId/rating", requireAuth, asyncHandl
 
 communityRouter.delete("/productions/:productionId/rating", requireAuth, asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
+  if (useMongo()) {
+    await withMongoTransaction(async (session) => {
+      await (await mongoCollection("ratings")).deleteOne({ user_id: req.user.id,
+        production_id: productionId }, { session });
+      await updateRatingSummary(productionId, session);
+    });
+    return res.status(204).end();
+  }
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -109,6 +212,22 @@ communityRouter.delete("/productions/:productionId/rating", requireAuth, asyncHa
 
 communityRouter.get("/productions/:productionId/comments", asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
+  if (useMongo()) {
+    const comments = await (await mongoCollection("comments"))
+      .find({ production_id: productionId, status: "active" }).sort({ created_at: -1 }).toArray();
+    const users = await (await mongoCollection("users"))
+      .find({ id: { $in: comments.map((comment) => comment.user_id) } },
+        { projection: { id: 1, username: 1, avatar_url: 1 } }).toArray();
+    const byId = new Map(users.map((user) => [user.id, user]));
+    const items = comments.flatMap((comment) => {
+      const user = byId.get(comment.user_id);
+      return user ? [{ id: comment.id, content: comment.content, parent_id: comment.parent_id,
+        likes_count: comment.likes_count, is_toxic: comment.is_toxic,
+        created_at: comment.created_at, updated_at: comment.updated_at,
+        user_id: user.id, username: user.username, avatar_url: user.avatar_url }] : [];
+    });
+    return res.json({ items });
+  }
   const [items] = await pool.execute(`SELECT c.id, c.content, c.parent_id, c.likes_count, c.is_toxic, c.created_at, c.updated_at, u.id AS user_id, u.username, u.avatar_url FROM comments c JOIN users u ON u.id=c.user_id WHERE c.production_id=? AND c.status='active' ORDER BY c.created_at DESC`, [productionId]);
   res.json({ items });
 }));
@@ -120,10 +239,26 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
   const parentId = req.body?.parentId == null ? null : parsePositiveInt(req.body.parentId, "parent id");
   await ensureProduction(productionId);
   if (parentId) {
+    if (useMongo()) {
+      const parent = await (await mongoCollection("comments")).findOne({ id: parentId,
+        production_id: productionId, status: "active" });
+      if (!parent) return res.status(400).json({ message: "Invalid parent comment" });
+    } else {
     const [parents] = await pool.execute("SELECT id FROM comments WHERE id=? AND production_id=? AND status='active'", [parentId, productionId]);
     if (!parents.length) return res.status(400).json({ message: "Invalid parent comment" });
+    }
   }
   const { isToxic } = detectToxicContent(content);
+  if (useMongo()) {
+    const id = await nextNumericId("comments");
+    const now = new Date();
+    await (await mongoCollection("comments")).insertOne({ _id: id, id,
+      user_id: req.user.id, production_id: productionId, content,
+      parent_id: parentId, likes_count: 0, is_toxic: Number(isToxic),
+      status: "active", created_at: now, updated_at: now });
+    return res.status(201).json({ id, content, parentId, isToxic,
+      warning: isToxic ? TOXIC_COMMENT_WARNING : null });
+  }
   const [result] = await pool.execute("INSERT INTO comments (user_id, production_id, content, parent_id, is_toxic) VALUES (?, ?, ?, ?, ?)", [req.user.id, productionId, content, parentId, isToxic ? 1 : 0]);
   res.status(201).json({
     id: result.insertId,
@@ -139,6 +274,14 @@ communityRouter.patch("/comments/:commentId", requireAuth, asyncHandler(async (r
   const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   if (!content || content.length > 3000) return res.status(400).json({ message: "content is required and must not exceed 3000 characters" });
   const { isToxic } = detectToxicContent(content);
+  if (useMongo()) {
+    const result = await (await mongoCollection("comments")).updateOne({ id: commentId,
+      user_id: req.user.id, status: "active" }, { $set: { content,
+      is_toxic: Number(isToxic), updated_at: new Date() } });
+    if (!result.matchedCount) return res.status(404).json({ message: "Comment not found" });
+    return res.json({ id: commentId, content, isToxic,
+      warning: isToxic ? TOXIC_COMMENT_WARNING : null });
+  }
   const [result] = await pool.execute("UPDATE comments SET content=?, is_toxic=? WHERE id=? AND user_id=? AND status='active'", [content, isToxic ? 1 : 0, commentId, req.user.id]);
   if (!result.affectedRows) return res.status(404).json({ message: "Comment not found" });
   res.json({
@@ -151,24 +294,53 @@ communityRouter.patch("/comments/:commentId", requireAuth, asyncHandler(async (r
 
 communityRouter.delete("/comments/:commentId", requireAuth, asyncHandler(async (req, res) => {
   const commentId = parsePositiveInt(req.params.commentId, "comment id");
+  if (useMongo()) {
+    const result = await (await mongoCollection("comments")).updateOne({ id: commentId,
+      user_id: req.user.id, status: "active" }, { $set: { status: "deleted",
+      content: "[Đã xóa]", updated_at: new Date() } });
+    if (!result.matchedCount) return res.status(404).json({ message: "Comment not found" });
+    return res.status(204).end();
+  }
   const [result] = await pool.execute("UPDATE comments SET status='deleted', content='[Đã xóa]' WHERE id=? AND user_id=? AND status='active'", [commentId, req.user.id]);
   if (!result.affectedRows) return res.status(404).json({ message: "Comment not found" });
   res.status(204).end();
 }));
 
 communityRouter.get("/notifications", requireAuth, asyncHandler(async (req, res) => {
+  if (useMongo()) {
+    const rows = await (await mongoCollection("notifications"))
+      .find({ user_id: req.user.id }).sort({ created_at: -1 }).limit(100).toArray();
+    const items = rows.map((row) => ({ id: row.id, title: row.title, message: row.message,
+      type: row.type, entity_type: row.entity_type, entity_id: row.entity_id,
+      redirect_url: row.redirect_url, is_read: row.is_read,
+      created_at: row.created_at, read_at: row.read_at }));
+    return res.json({ items, unread: items.filter((item) => !item.is_read).length });
+  }
   const [items] = await pool.execute("SELECT id, title, message, type, entity_type, entity_id, redirect_url, is_read, created_at, read_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100", [req.user.id]);
   res.json({ items, unread: items.filter((item) => !item.is_read).length });
 }));
 
 communityRouter.patch("/notifications/:notificationId/read", requireAuth, asyncHandler(async (req, res) => {
   const id = parsePositiveInt(req.params.notificationId, "notification id");
+  if (useMongo()) {
+    const result = await (await mongoCollection("notifications")).updateOne(
+      { id, user_id: req.user.id }, [{ $set: { is_read: 1,
+        read_at: { $ifNull: ["$read_at", new Date()] } } }]);
+    if (!result.matchedCount) return res.status(404).json({ message: "Notification not found" });
+    return res.status(204).end();
+  }
   const [result] = await pool.execute("UPDATE notifications SET is_read=1, read_at=COALESCE(read_at, CURRENT_TIMESTAMP) WHERE id=? AND user_id=?", [id, req.user.id]);
   if (!result.affectedRows) return res.status(404).json({ message: "Notification not found" });
   res.status(204).end();
 }));
 
 communityRouter.patch("/notifications/read-all", requireAuth, asyncHandler(async (req, res) => {
+  if (useMongo()) {
+    await (await mongoCollection("notifications")).updateMany(
+      { user_id: req.user.id, is_read: 0 }, [{ $set: { is_read: 1,
+        read_at: { $ifNull: ["$read_at", new Date()] } } }]);
+    return res.status(204).end();
+  }
   await pool.execute("UPDATE notifications SET is_read=1, read_at=COALESCE(read_at, CURRENT_TIMESTAMP) WHERE user_id=? AND is_read=0", [req.user.id]);
   res.status(204).end();
 }));

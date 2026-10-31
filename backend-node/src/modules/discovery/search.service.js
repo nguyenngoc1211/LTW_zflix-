@@ -1,4 +1,6 @@
 import { pool } from "../../core/database/pool.js";
+import { Decimal128 } from "mongodb";
+import { fromMongo, mongoCollection } from "../../core/database/mongo.js";
 
 const ES_URL = (process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200").replace(/\/$/, "");
 const INDEX = process.env.ELASTICSEARCH_INDEX || "productions";
@@ -51,6 +53,9 @@ const productionRows = async () => {
 };
 
 export const syncProductionIndex = async () => {
+  if (process.env.DATA_STORE === "mongodb") {
+    return (await mongoCollection("productions")).countDocuments({ type: { $in: ["movie", "series"] } });
+  }
   try {
     const exists = await fetch(`${ES_URL}/${INDEX}`, { method: "HEAD", signal: AbortSignal.timeout(5000) });
     if (exists.status === 404) {
@@ -101,6 +106,31 @@ const mysqlFallback = async (filters, offset, limit) => {
 };
 
 export const searchProductions = async (filters, offset, limit) => {
+  if (process.env.DATA_STORE === "mongodb") {
+    const productions = await mongoCollection("productions");
+    const query = { type: { $in: ["movie", "series"] } };
+    if (filters.search) {
+      const escaped = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = ["title", "description"].map((field) => ({ [field]: { $regex: escaped, $options: "i" } }));
+    }
+    if (filters.country) query.country = filters.country;
+    if (filters.year) query.release_year = Number(filters.year);
+    if (filters.minRating) query.rating_avg = { $gte: Decimal128.fromString(String(filters.minRating)) };
+    if (filters.genre) {
+      const genres = await mongoCollection("genres");
+      const genre = await genres.findOne({ name: filters.genre });
+      if (!genre) return { total: 0, items: [] };
+      const links = await (await mongoCollection("production_genres"))
+        .find({ genre_id: genre.id }, { projection: { production_id: 1 } }).toArray();
+      query.id = { $in: links.map((link) => link.production_id) };
+    }
+    const [total, rows] = await Promise.all([
+      productions.countDocuments(query),
+      productions.find(query).sort({ release_year: filters.sortYear === "asc" ? 1 : -1 })
+        .skip(offset).limit(limit).toArray(),
+    ]);
+    return { total, items: rows.map(fromMongo) };
+  }
   try {
     const result = await requestElastic(`/${INDEX}/_search`, { method: "POST", body: JSON.stringify(buildElasticQuery(filters, offset, limit)) });
     return { total: typeof result.hits.total === "number" ? result.hits.total : result.hits.total.value, items: result.hits.hits.map((hit) => hit._source) };

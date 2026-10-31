@@ -22,6 +22,7 @@ import { visualShoppingRouter } from "./modules/visual-shopping/visual-shopping.
 import { scanRouter } from "./modules/visual-shopping/scan.routes.js";
 import { requireAuth } from "./core/middleware/auth.middleware.js";
 import { pool } from "./core/database/pool.js";
+import { mongoCollection } from "./core/database/mongo.js";
 
 export const createApp = () => {
   const app = express();
@@ -100,6 +101,14 @@ export const createApp = () => {
   // Banner phim nổi bật trên trang chủ (công khai, đọc từ app_settings)
   app.get("/api/v1/settings/featured", async (req, res) => {
     try {
+      if (process.env.DATA_STORE === "mongodb") {
+        const settings = await mongoCollection("app_settings");
+        const setting = await settings.findOne({ setting_key: "featured_production_id" });
+        if (!setting) return res.json({ featuredProductionId: null, production: null });
+        const productionId = Number(setting.setting_value);
+        const production = await (await mongoCollection("productions")).findOne({ id: productionId });
+        return res.json({ featuredProductionId: productionId, production: production || null });
+      }
       const [rows] = await pool.execute("SELECT setting_value FROM app_settings WHERE setting_key = 'featured_production_id' LIMIT 1");
       if (!rows.length) return res.json({ featuredProductionId: null, production: null });
       const productionId = Number(rows[0].setting_value);

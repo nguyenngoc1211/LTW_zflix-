@@ -342,7 +342,7 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - Private R2 bucket, presigned URL hoặc Cloudflare Worker cho playback (hiện bucket public nên URL trực tiếp vẫn bypass proxy/token)
 - Admin CRUD và community/content moderation authorization khi có API tương ứng
 - Email verification, OAuth, passkeys/WebAuthn và recovery nâng cao
-- Rate limiting sự kiện Socket.IO, buộc ngắt khi access token hết hạn giữa phiên, và kiểm tra quyền host/co-host cho `participant-action`
+- Rate limiting sự kiện Socket.IO và buộc ngắt khi access token hết hạn giữa phiên; quyền host của `participant-action` đã được kiểm tra trong đường MongoDB cơ bản, còn cần rà các vai trò và tình huống đồng thời.
 
 ## Trạng thái sau Phase 7
 
@@ -357,3 +357,39 @@ Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạ
 5. Nếu tài liệu khác source, source code là technical truth.
 6. Không commit nếu chưa được yêu cầu rõ.
 7. Sau mỗi phase auth/security, cập nhật lại file này.
+
+## Đang triển khai: chuyển backend sang MongoDB (2026-11-01)
+
+- Branch hiện tại: `Du`; mã nguồn đang có thay đổi chưa commit. `docs/AUTH_SCOPE_STATUS.md` là file untracked có sẵn, giữ nguyên.
+- Khi `DATA_STORE=mongodb`, auth routes và `requireAuth` dùng collections MongoDB `users`, `auth_sessions`, `auth_mfa_challenges`, `auth_mfa_recovery_codes`, `password_reset_tokens`. MySQL vẫn là đường cũ khi không bật cờ này.
+- Đã thêm MongoDB cho đăng ký/đăng nhập, refresh, sessions, MFA, đổi/khôi phục mật khẩu và dọn dữ liệu auth hết hạn. Khóa tài khoản tăng bộ đếm bằng cập nhật nguyên tử; dữ liệu nhị phân MFA được đổi về Buffer khi giải mã.
+- Kiểm tra hiện tại: đọc route phim/tập qua MongoDB trả HTTP 200; route `/api/v1/history` và `/api/v1/auth/me` của khách trả 401; dữ liệu MFA qua BSON round trip giải mã đúng. Đã thử đăng ký → đăng nhập → refresh rotation → revoke trên database Atlas thử nghiệm riêng và xóa database thử nghiệm sau đó. Bộ 61 unit test hiện có qua; phần lớn chạy đường MySQL.
+- Chưa coi phase này hoàn tất: nhiều route backend khác vẫn dùng MySQL/Prisma, và đường Mongo auth cần kiểm thử tích hợp với database thử nghiệm trước khi dùng cho production. Không bật `DATA_STORE=mongodb` mặc định cho ứng dụng lúc này.
+
+### Tiếp tục chuyển quyền quản trị (2026-11-01)
+
+- `admin.routes.js` đã có nhánh MongoDB cho dashboard stats, danh sách/sửa user, danh sách/sửa production và views. Middleware `requireAuth`, `requireAdmin`, `requireStaff` vẫn chặn truy cập theo role lấy từ database.
+- Đã thử các GET admin và PATCH production bằng tài khoản admin trong database Atlas thử nghiệm riêng; các route trả 200, database thử nghiệm đã được xóa.
+- Tại thời điểm kiểm tra đầu tiên, ba router `admin.content`, `admin.moderation`, `admin.system` còn dùng MySQL; tiến độ mới hơn ở mục ngay dưới.
+
+### Tiếp tục chuyển trang quản trị và phân quyền (2026-11-01)
+
+- `admin.moderation.routes.js` có đường MongoDB cho danh sách/xóa bình luận, đánh giá và gửi thông báo; `admin.system.routes.js` có đường MongoDB cho phòng xem chung, gói VIP, nhật ký, xuất CSV và cài đặt phim nổi bật. Các middleware role hiện có vẫn áp dụng trước mỗi route.
+- Đã thử các GET admin system, thay đổi phim nổi bật, cấp VIP và xuất CSV trên database Atlas thử nghiệm riêng; các request trả 200 và database thử nghiệm đã được xóa.
+- `admin.content.routes.js`, watch party chính và các module visual shopping/Prisma vẫn cần chuyển tiếp. Không coi toàn bộ chức năng admin đã hoàn tất.
+
+### Watch Party MongoDB và kiểm tra quyền Socket.IO (2026-11-01)
+
+- `watch-party.routes.js` có nhánh MongoDB cho danh sách phim/tập, phòng, tạo/tham gia/rời phòng, chat, playback và quản lý thành viên/cài đặt. `watch-party.socket.js` xác thực access token bằng MongoDB session + user active khi `DATA_STORE=mongodb`.
+- Sự kiện Socket.IO `participant-action` chỉ phát cho host đang ở trong phòng; MongoDB `join-party` yêu cầu user đã tham gia phòng bằng REST trước. Đã thử socket host/guest, chat, sync và từ chối guest tự gửi lệnh kick trên database Atlas thử nghiệm riêng.
+- Kiểm tra quyền chỉ xác nhận các luồng vừa nêu; cần rà thêm toàn bộ các sự kiện Socket.IO khi chuyển MongoDB hoàn chỉnh.
+
+### Webhook video trên MongoDB (2026-11-01)
+
+- Webhook `/api/streaming/episodes/webhook/video-done` vẫn yêu cầu `x-webhook-secret`; đã thử request thiếu secret trả 401 và request có secret thử nghiệm trả 200 trên database Atlas thử nghiệm riêng.
+- Sau webhook, `episodes.video_url` trong database thử nghiệm đã đổi đúng; database thử nghiệm đã xóa. Chưa thử upload R2 và Python processor thật.
+
+### Phát HLS từ R2 sau chuyển MongoDB (2026-11-01)
+
+- Khi `R2_PUBLIC_DOMAIN` thiếu trong `.env` local, API tập vẫn cấp URL proxy có token nhưng proxy trả 503 `R2 public domain is not configured`. Đã cấu hình domain public đúng theo host của 62 URL tập phim trong Atlas; chỉ sửa file `.env` không theo Git.
+- Sau khi khởi động lại backend, thử một tập miễn phí: API tập trả 200 và `locked:false`, playlist HLS qua proxy trả 200, segment đầu trả 200. Quy tắc token và quyền premium không thay đổi; chưa kiểm thử trực quan player trên trình duyệt hoặc mọi tập phim.

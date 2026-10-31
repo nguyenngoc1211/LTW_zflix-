@@ -3,12 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pool } from "../../core/database/pool.js";
+import { fromMongo, mongoCollection, nextNumericId } from "../../core/database/mongo.js";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { shopeeAffiliateConfigured, generateShortLink, searchProducts } from "./shopee.affiliate.js";
 import { visionConfigured, identifyProduct } from "./vision.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 
 export const shoppingRouter = Router();
+const useMongo = () => process.env.DATA_STORE === "mongodb";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.join(__dirname, "../../../uploads");
@@ -73,6 +75,11 @@ shoppingRouter.get(
   "/shopping/productions/:id/products",
   asyncHandler(async (req, res) => {
     const productionId = parsePositiveInt(req.params.id, "production id");
+    if (useMongo()) {
+      const rows = await (await mongoCollection("production_products"))
+        .find({ production_id: productionId }).sort({ timestamp_start: 1 }).toArray();
+      return res.json({ items: rows.map(toProductView), affiliateEnabled: Boolean(AFFILIATE_PREFIX) });
+    }
     const [rows] = await pool.execute(
       "SELECT * FROM production_products WHERE production_id = ? ORDER BY timestamp_start ASC",
       [productionId],
@@ -114,7 +121,14 @@ shoppingRouter.post(
     const ai = photo && visionConfigured() ? await identifyProduct(imageBase64, imagePath) : null;
 
     // Match sản phẩm theo mốc thời gian của tập đang xem
-    const [matches] = await pool.execute(
+    const [matches] = useMongo() ? [await (async () => {
+      const episode = await (await mongoCollection("episodes")).findOne({ id: episodeId });
+      return (await (await mongoCollection("production_products")).find({
+        $or: [{ episode_id: episodeId }, { episode_id: null,
+          production_id: episode?.production_id ?? -1 }],
+        timestamp_start: { $lte: position }, timestamp_end: { $gte: position },
+      }).toArray());
+    })()] : await pool.execute(
       `SELECT pp.* FROM production_products pp
        WHERE (pp.episode_id = ? OR pp.episode_id IS NULL AND pp.production_id = (SELECT e.production_id FROM episodes e WHERE e.id = ?))
          AND ? BETWEEN pp.timestamp_start AND pp.timestamp_end`,
@@ -122,10 +136,18 @@ shoppingRouter.post(
     );
 
     const usedKeyword = keyword || ai?.keyword || null;
-    await pool.execute(
-      "INSERT INTO product_snapshots (user_id, episode_id, position, image_path, matched_product_id, keyword_used) VALUES (?, ?, ?, ?, ?, ?)",
-      [req.user?.id ?? null, episodeId, position, imagePath, matches[0]?.id ?? null, usedKeyword],
-    ).catch(() => {});
+    if (useMongo()) {
+      const id = await nextNumericId("product_snapshots");
+      await (await mongoCollection("product_snapshots")).insertOne({ _id: id, id,
+        user_id: req.user?.id ?? null, episode_id: episodeId, position,
+        image_path: imagePath, matched_product_id: matches[0]?.id ?? null,
+        keyword_used: usedKeyword, created_at: new Date() }).catch(() => {});
+    } else {
+      await pool.execute(
+        "INSERT INTO product_snapshots (user_id, episode_id, position, image_path, matched_product_id, keyword_used) VALUES (?, ?, ?, ?, ?, ?)",
+        [req.user?.id ?? null, episodeId, position, imagePath, matches[0]?.id ?? null, usedKeyword],
+      ).catch(() => {});
+    }
 
     // Có từ khoá thủ công thì trả luôn link Shopee tìm với từ khoá đó
     const quickSearch = usedKeyword ? { keyword: usedKeyword, shopeeUrl: buildShopeeLink(usedKeyword) } : null;
@@ -173,6 +195,15 @@ shoppingRouter.post(
   "/shopping/products/:id/buy",
   asyncHandler(async (req, res) => {
     const productId = parsePositiveInt(req.params.id, "product id");
+    if (useMongo()) {
+      const products = await mongoCollection("production_products");
+      const row = await products.findOneAndUpdate({ id: productId },
+        { $inc: { click_count: 1 } }, { returnDocument: "after" });
+      if (!row) return res.status(404).json({ message: "Product not found" });
+      const shopeeUrl = buildShopeeLink(row.shopee_keyword);
+      const resolved = await resolveBuyUrl(shopeeUrl);
+      return res.json({ id: productId, shopeeUrl, ...resolved, clickCount: row.click_count });
+    }
     const [rows] = await pool.execute("SELECT id, shopee_keyword, click_count FROM production_products WHERE id = ?", [productId]);
     if (!rows.length) return res.status(404).json({ message: "Product not found" });
     await pool.execute("UPDATE production_products SET click_count = click_count + 1 WHERE id = ?", [productId]);
@@ -228,6 +259,17 @@ shoppingRouter.get(
   requireStaff,
   asyncHandler(async (req, res) => {
     const { page, limit, offset } = clampPagination({ ...req.query, limit: req.query.limit || 20 });
+    if (useMongo()) {
+      const products = await mongoCollection("production_products");
+      const [total, rows] = await Promise.all([products.countDocuments(),
+        products.find({}).sort({ created_at: -1 }).skip(offset).limit(limit).toArray()]);
+      const productions = await (await mongoCollection("productions"))
+        .find({ id: { $in: rows.map((row) => row.production_id) } }).toArray();
+      const titles = new Map(productions.map((row) => [row.id, row.title]));
+      return res.json({ items: rows.filter((row) => titles.has(row.production_id))
+        .map((row) => ({ ...toProductView(row), productionTitle: titles.get(row.production_id) })),
+      page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) });
+    }
     const [countRows] = await pool.execute("SELECT COUNT(*) AS total FROM production_products");
     const [rows] = await pool.execute(
       `SELECT pp.*, p.title AS production_title FROM production_products pp
@@ -260,6 +302,21 @@ shoppingRouter.post(
     if (!productName || !shopeeKeyword) {
       return res.status(400).json({ message: "productName và shopeeKeyword là bắt buộc" });
     }
+    if (useMongo()) {
+      const production = await (await mongoCollection("productions")).findOne({ id: productionId });
+      if (!production) return res.status(404).json({ message: "Production not found" });
+      const id = await nextNumericId("production_products");
+      const row = { _id: id, id, production_id: productionId, episode_id: episodeId,
+        timestamp_start: timestampStart, timestamp_end: timestampEnd,
+        product_name: productName,
+        category: typeof body.category === "string" ? body.category.trim().slice(0, 100) || null : null,
+        image_url: typeof body.imageUrl === "string" ? body.imageUrl.trim().slice(0, 500) || null : null,
+        shopee_keyword: shopeeKeyword,
+        note: typeof body.note === "string" ? body.note.trim().slice(0, 500) || null : null,
+        created_by: req.user?.id ?? null, click_count: 0, created_at: new Date() };
+      await (await mongoCollection("production_products")).insertOne(row);
+      return res.status(201).json(toProductView(row));
+    }
     const [existing] = await pool.execute("SELECT id FROM productions WHERE id = ? LIMIT 1", [productionId]);
     if (!existing.length) return res.status(404).json({ message: "Production not found" });
 
@@ -290,6 +347,11 @@ shoppingRouter.delete(
   requireStaff,
   asyncHandler(async (req, res) => {
     const productId = parsePositiveInt(req.params.id, "product id");
+    if (useMongo()) {
+      const result = await (await mongoCollection("production_products")).deleteOne({ id: productId });
+      if (!result.deletedCount) return res.status(404).json({ message: "Product not found" });
+      return res.status(204).end();
+    }
     const [result] = await pool.execute("DELETE FROM production_products WHERE id = ?", [productId]);
     if (!result.affectedRows) return res.status(404).json({ message: "Product not found" });
     res.status(204).end();
@@ -303,6 +365,24 @@ shoppingRouter.get(
   requireStaff,
   asyncHandler(async (req, res) => {
     const { page, limit, offset } = clampPagination({ ...req.query, limit: req.query.limit || 20 });
+    if (useMongo()) {
+      const snapshots = await mongoCollection("product_snapshots");
+      const [total, rows] = await Promise.all([snapshots.countDocuments(),
+        snapshots.find({}).sort({ created_at: -1 }).skip(offset).limit(limit).toArray()]);
+      const [users, products, episodes] = await Promise.all([
+        (await mongoCollection("users")).find({ id: { $in: rows.map((row) => row.user_id) } }).toArray(),
+        (await mongoCollection("production_products")).find({ id: { $in: rows.map((row) => row.matched_product_id) } }).toArray(),
+        (await mongoCollection("episodes")).find({ id: { $in: rows.map((row) => row.episode_id) } }).toArray(),
+      ]);
+      const usernames = new Map(users.map((row) => [row.id, row.username]));
+      const productNames = new Map(products.map((row) => [row.id, row.product_name]));
+      const episodeTitles = new Map(episodes.map((row) => [row.id, row.title]));
+      return res.json({ items: rows.map((row) => ({ ...fromMongo(row),
+        username: usernames.get(row.user_id) ?? null,
+        matched_product: productNames.get(row.matched_product_id) ?? null,
+        episode_title: episodeTitles.get(row.episode_id) ?? null })),
+      page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) });
+    }
     const [countRows] = await pool.execute("SELECT COUNT(*) AS total FROM product_snapshots");
     const [rows] = await pool.execute(
       `SELECT ps.*, u.username, pp.product_name AS matched_product, e.title AS episode_title

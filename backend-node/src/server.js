@@ -4,6 +4,7 @@ import { Server } from "socket.io";
 import app from "./app.js";
 import { securityConfig } from "./config/security.config.js";
 import { pool } from "./core/database/pool.js";
+import { mongoCollection, nextNumericId } from "./core/database/mongo.js";
 import { setSecurityLogSink } from "./core/security/security-logger.js";
 import { syncProductionIndex } from "./modules/discovery/search.service.js";
 import { registerWatchPartySocket } from "./modules/watch-party/watch-party.socket.js";
@@ -12,6 +13,17 @@ import { registerWatchPartySocket } from "./modules/watch-party/watch-party.sock
 setSecurityLogSink((line) => {
   try {
     const record = JSON.parse(line);
+    if (process.env.DATA_STORE === "mongodb") {
+      nextNumericId("security_events")
+        .then(async (id) => (await mongoCollection("security_events")).insertOne({
+          _id: id, id, event: record.event, user_id: record.userId ?? null,
+          session_id: record.sessionId ?? null, ip: record.ip ?? null,
+          user_agent: record.userAgent ?? null, reason: record.reason ?? null,
+          factor: record.factor ?? null, created_at: new Date(),
+        }))
+        .catch(() => {});
+      return;
+    }
     pool
       .execute(
         "INSERT INTO security_events (event, user_id, session_id, ip, user_agent, reason, factor) VALUES (?, ?, ?, ?, ?, ?, ?)",

@@ -1,7 +1,36 @@
 import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../../core/database/pool.js";
+import { mongoCollection } from "../../core/database/mongo.js";
 
 export const cleanupAuthData = async () => {
+  if (process.env.DATA_STORE === "mongodb") {
+    const now = Date.now();
+    const before = (days) => new Date(now - days * 24 * 60 * 60 * 1000);
+    const [sessions, passwordResets, mfaChallenges, usedRecoveryCodes] = await Promise.all([
+      (await mongoCollection("auth_sessions")).deleteMany({ $or: [
+        { revoked_at: { $lt: before(securityConfig.cleanup.sessionRetentionDays) } },
+        { expires_at: { $lt: before(securityConfig.cleanup.sessionRetentionDays) } },
+        { absolute_expires_at: { $lt: before(securityConfig.cleanup.sessionRetentionDays) } },
+      ] }),
+      (await mongoCollection("password_reset_tokens")).deleteMany({ $or: [
+        { used_at: { $lt: before(securityConfig.cleanup.passwordResetRetentionDays) } },
+        { expires_at: { $lt: before(securityConfig.cleanup.passwordResetRetentionDays) } },
+      ] }),
+      (await mongoCollection("auth_mfa_challenges")).deleteMany({ $or: [
+        { used_at: { $lt: before(securityConfig.cleanup.mfaChallengeRetentionDays) } },
+        { expires_at: { $lt: before(securityConfig.cleanup.mfaChallengeRetentionDays) } },
+      ] }),
+      (await mongoCollection("auth_mfa_recovery_codes")).deleteMany({
+        used_at: { $lt: before(securityConfig.cleanup.usedRecoveryCodeRetentionDays) },
+      }),
+    ]);
+    return {
+      auth_sessions_deleted: sessions.deletedCount,
+      password_reset_tokens_deleted: passwordResets.deletedCount,
+      mfa_challenges_deleted: mfaChallenges.deletedCount,
+      used_recovery_codes_deleted: usedRecoveryCodes.deletedCount,
+    };
+  }
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();

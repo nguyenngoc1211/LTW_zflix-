@@ -4,6 +4,7 @@
 import multer from "multer";
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
+import { fromMongo, mongoCollection, nextNumericId } from "../../core/database/mongo.js";
 import { embedImage, clipReady } from "./clip.service.js";
 import { searchByVector } from "./vector.index.js";
 import { rankProducts, similarityThreshold } from "./ranking.js";
@@ -12,6 +13,7 @@ import { searchMarketplace } from "./marketplace.js";
 import { visionConfigured, visionProviderName, identifyProduct } from "../shopping/vision.js";
 
 export const scanRouter = Router();
+const useMongo = () => process.env.DATA_STORE === "mongodb";
 
 // Multipart upload: ảnh vùng quét tối đa 5MB, giữ trong bộ nhớ
 const upload = multer({
@@ -58,12 +60,13 @@ const searchCatalog = async (imageBuffer, timings) => {
   const ids = hits.map((hit) => hit.productId);
   if (!ids.length) return [];
 
-  const [rows] = await pool.query(
-    `SELECT id, name, description, category, color, price, currency, marketplace,
-            product_url, affiliate_url, availability, image_url
-     FROM visual_products WHERE id IN (${ids.map(() => "?").join(",")})`,
-    ids,
-  );
+  const rows = useMongo()
+    ? (await (await mongoCollection("visual_products")).find({ id: { $in: ids } }).toArray()).map(fromMongo)
+    : (await pool.query(
+      `SELECT id, name, description, category, color, price, currency, marketplace,
+              product_url, affiliate_url, availability, image_url
+       FROM visual_products WHERE id IN (${ids.map(() => "?").join(",")})`, ids,
+    ))[0];
   const byId = new Map(rows.map((row) => [row.id, row]));
   const catalog = hits
     .map((hit) => {
@@ -182,15 +185,25 @@ scanRouter.post(
       const aiKeyword = ai?.keyword ?? ocr?.text ?? null;
 
       // Lưu lịch sử (không lưu ảnh)
-      pool
-        .execute(
+      if (useMongo()) {
+        nextNumericId("visual_searches").then(async (id) =>
+          (await mongoCollection("visual_searches")).insertOne({ _id: id, id,
+            user_id: req.user?.id ?? null, movie_id: Number(req.body?.movieId) || null,
+            position: Math.floor(Number(req.body?.position) || 0), results_count: products.length,
+            crop_ms: timings.cropMs, embed_ms: timings.embedMs,
+            search_ms: timings.searchMs, rank_ms: timings.rankMs,
+            total_ms: timings.totalMs,
+            provider: ai?.keyword ? (products.length ? "ai+tiki" : "ai") : "clip",
+            ai_keyword: aiKeyword, created_at: new Date() })).catch(() => {});
+      } else {
+        pool.execute(
           `INSERT INTO visual_searches (user_id, movie_id, position, results_count, crop_ms, embed_ms, search_ms, rank_ms, total_ms, provider, ai_keyword)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [req.user?.id ?? null, Number(req.body?.movieId) || null, Math.floor(Number(req.body?.position) || 0),
-           products.length, timings.cropMs, timings.embedMs, timings.searchMs, timings.rankMs, timings.totalMs,
-           ai?.keyword ? (products.length ? "ai+tiki" : "ai") : "clip", aiKeyword],
-        )
-        .catch(() => {});
+            products.length, timings.cropMs, timings.embedMs, timings.searchMs, timings.rankMs, timings.totalMs,
+            ai?.keyword ? (products.length ? "ai+tiki" : "ai") : "clip", aiKeyword],
+        ).catch(() => {});
+      }
 
       res.json({
         mode,
@@ -218,6 +231,12 @@ scanRouter.post(
 scanRouter.get("/scan/products/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "invalid id" });
+  if (useMongo()) {
+    const product = await (await mongoCollection("visual_products")).findOne({ id });
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    const { embedding, ...row } = fromMongo(product);
+    return res.json({ ...row, availability: Boolean(row.availability) });
+  }
   const [rows] = await pool.execute("SELECT * FROM visual_products WHERE id = ? LIMIT 1", [id]);
   if (!rows.length) return res.status(404).json({ message: "Product not found" });
   const row = rows[0];

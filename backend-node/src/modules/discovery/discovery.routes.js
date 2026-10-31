@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
+import { fromMongo, mongoCollection, nextNumericId, withMongoTransaction } from "../../core/database/mongo.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 import { requireAuth, requireRole, optionalAuth } from "../../core/middleware/business-auth.bridge.js";
 import { searchProductions, syncProductionIndex } from "./search.service.js";
@@ -11,7 +12,61 @@ import {
 
 export const discoveryRouter = Router();
 
+const mongoProductionDetail = async (id, viewer) => {
+  const [production, genreLinks, seasonRows] = await Promise.all([
+    (await mongoCollection("productions")).findOne({ id }),
+    (await mongoCollection("production_genres")).find({ production_id: id }).toArray(),
+    (await mongoCollection("seasons")).find({ series_id: id }).sort({ season_number: 1 }).toArray(),
+  ]);
+  if (!production) return null;
+  const genreIds = genreLinks.map((link) => link.genre_id);
+  const genres = genreIds.length
+    ? await (await mongoCollection("genres")).find({ id: { $in: genreIds } }).sort({ name: 1 }).toArray()
+    : [];
+  const seasonIds = seasonRows.map((season) => season.id);
+  const seasonProductions = seasonIds.length
+    ? await (await mongoCollection("productions")).find({ id: { $in: seasonIds } }).toArray()
+    : [];
+  const seasonMap = new Map(seasonRows.map((season) => [season.id, season]));
+  const seasonProductionMap = new Map(seasonProductions.map((item) => [item.id, item]));
+  const episodes = await (await mongoCollection("episodes"))
+    .find({ production_id: seasonIds.length ? { $in: seasonIds } : id }).toArray();
+  let visibleEpisodes;
+  if (seasonIds.length) {
+    episodes.sort((a, b) => seasonMap.get(a.production_id).season_number - seasonMap.get(b.production_id).season_number
+      || a.episode_number - b.episode_number);
+    visibleEpisodes = episodes.map((item, index) => ({
+      ...fromMongo(item), episode_in_season: item.episode_number,
+      season_id: item.production_id, season_number: seasonMap.get(item.production_id).season_number,
+      episode_number: index + 1,
+      display_title: `S${seasonMap.get(item.production_id).season_number}E${item.episode_number} · ${item.title}`,
+    }));
+  } else {
+    visibleEpisodes = episodes.sort((a, b) => a.episode_number - b.episode_number).map(fromMongo);
+  }
+  const premium = await resolveProductionPremium(id);
+  return {
+    ...fromMongo(production), locked: isPremiumLocked(premium, viewer),
+    genres: genres.map((genre) => genre.name),
+    seasons: seasonRows.map((season) => ({
+      id: season.id, season_number: season.season_number,
+      total_episodes: season.total_episodes,
+      title: season.season_number ? `Mùa ${season.season_number}` : seasonProductionMap.get(season.id)?.title,
+      poster_url: seasonProductionMap.get(season.id)?.poster_url,
+    })),
+    episodes: visibleEpisodes.map((episode) => applyEpisodeAccess(episode, { premium, user: viewer })),
+  };
+};
+
 discoveryRouter.get("/filters", asyncHandler(async (req, res) => {
+  if (process.env.DATA_STORE === "mongodb") {
+    const [genres, countries, years] = await Promise.all([
+      (await mongoCollection("genres")).find({}, { projection: { _id: 0, id: 1, name: 1, slug: 1 } }).sort({ name: 1 }).toArray(),
+      (await mongoCollection("productions")).distinct("country", { country: { $ne: null } }),
+      (await mongoCollection("productions")).distinct("release_year", { release_year: { $ne: null } }),
+    ]);
+    return res.json({ genres, countries: countries.sort(), years: years.map(Number).sort((a, b) => b - a) });
+  }
   const [[genres], [countries], [years]] = await Promise.all([
     pool.execute("SELECT id, name, slug FROM genres ORDER BY name"),
     pool.execute("SELECT DISTINCT country FROM productions WHERE country IS NOT NULL ORDER BY country"),
@@ -40,6 +95,14 @@ discoveryRouter.get("/productions", asyncHandler(async (req, res) => {
 discoveryRouter.get("/productions/suggest", asyncHandler(async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
   if (q.length < 1) return res.json({ items: [] });
+  if (process.env.DATA_STORE === "mongodb") {
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rows = await (await mongoCollection("productions")).find({
+      title: { $regex: `^${escaped}`, $options: "i" }, type: { $in: ["movie", "series"] },
+    }, { projection: { _id: 0, id: 1, title: 1, poster_url: 1, release_year: 1, rating_avg: 1 } })
+      .sort({ rating_avg: -1, rating_count: -1 }).limit(8).toArray();
+    return res.json({ items: rows.map(fromMongo) });
+  }
   const [rows] = await pool.execute(
     `SELECT id, title, poster_url, release_year, rating_avg FROM productions
      WHERE title LIKE ? AND type IN ('movie', 'series') ORDER BY rating_avg DESC, rating_count DESC LIMIT 8`,
@@ -50,6 +113,10 @@ discoveryRouter.get("/productions/suggest", asyncHandler(async (req, res) => {
 
 discoveryRouter.get("/productions/:id", optionalAuth, asyncHandler(async (req, res) => {
   const id = parsePositiveInt(req.params.id, "production id");
+  if (process.env.DATA_STORE === "mongodb") {
+    const detail = await mongoProductionDetail(id, req.user);
+    return detail ? res.json(detail) : res.status(404).json({ message: "Production not found" });
+  }
   const [rows] = await pool.execute(`SELECT p.*, GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR '||') AS genres FROM productions p LEFT JOIN production_genres pg ON pg.production_id=p.id LEFT JOIN genres g ON g.id=pg.genre_id WHERE p.id=? GROUP BY p.id`, [id]);
   if (!rows.length) return res.status(404).json({ message: "Production not found" });
 
@@ -129,6 +196,34 @@ discoveryRouter.post("/productions/:id/episodes", requireAuth, requireRole("admi
   if (!title || title.length > 255) return res.status(400).json({ message: "title is required and must not exceed 255 characters" });
   const videoUrl = typeof req.body.videoUrl === "string" ? req.body.videoUrl.trim().slice(0, 500) || null : null;
   const thumbnailUrl = typeof req.body.thumbnailUrl === "string" ? req.body.thumbnailUrl.trim().slice(0, 255) || null : null;
+  if (process.env.DATA_STORE === "mongodb") {
+    const result = await withMongoTransaction(async (session) => {
+      const [productions, episodes, interests, notifications] = await Promise.all([
+        mongoCollection("productions"), mongoCollection("episodes"),
+        mongoCollection("production_interests"), mongoCollection("notifications"),
+      ]);
+      const production = await productions.findOne({ id: productionId }, { session });
+      if (!production) { const error = new Error("Production not found"); error.status = 404; throw error; }
+      if (await episodes.findOne({ production_id: productionId, episode_number: episodeNumber }, { session })) {
+        const error = new Error("Episode number already exists"); error.status = 409; throw error;
+      }
+      const id = await nextNumericId("episodes");
+      await episodes.insertOne({ _id: id, id, production_id: productionId,
+        episode_number: episodeNumber, title, video_url: videoUrl, duration,
+        thumbnail_url: thumbnailUrl, intro_start: null, intro_end: null,
+        preview_enabled: 0, views_count: 0, created_at: new Date(), updated_at: new Date() }, { session });
+      const subscribers = await interests.find({ production_id: productionId }, { session }).toArray();
+      for (const subscriber of subscribers) {
+        const noticeId = await nextNumericId("notifications");
+        await notifications.insertOne({ _id: noticeId, id: noticeId, user_id: subscriber.user_id,
+          title: "Có tập mới!", message: `${production.title} đã có tập ${episodeNumber}`,
+          type: "new_episode", entity_type: "episode", entity_id: id,
+          redirect_url: `/watch/${id}`, is_read: 0, created_at: new Date() }, { session });
+      }
+      return { id, productionId, episodeNumber, title };
+    });
+    return res.status(201).json(result);
+  }
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();

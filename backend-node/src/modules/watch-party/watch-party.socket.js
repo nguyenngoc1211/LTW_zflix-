@@ -1,6 +1,21 @@
 import jwt from "jsonwebtoken";
 import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../../core/database/pool.js";
+import { mongoCollection, nextNumericId } from "../../core/database/mongo.js";
+
+const useMongo = () => process.env.DATA_STORE === "mongodb";
+const mongoParticipant = async (partyId, userId) =>
+  (await mongoCollection("watch_party_participants")).findOne({ party_id: partyId, user_id: userId });
+const mongoParty = async (partyId) =>
+  (await mongoCollection("watch_parties")).findOne({ id: partyId });
+const insertMongoChat = async (partyId, userId, message, timestamp = 0, system = false) => {
+  const id = await nextNumericId("watch_party_chats");
+  const createdAt = new Date();
+  await (await mongoCollection("watch_party_chats")).insertOne({ _id: id, id,
+    party_id: partyId, user_id: userId, message,
+    timestamp_in_video: timestamp, is_system_message: Number(system), created_at: createdAt });
+  return { id, createdAt };
+};
 
 /**
  * Watch Party Socket.IO handler
@@ -32,6 +47,21 @@ const authenticateSocket = async (socket, next) => {
     const payload = jwt.verify(token, securityConfig.jwtAccessSecret, {
       algorithms: securityConfig.jwtAlgorithms,
     });
+    if (useMongo()) {
+      const userId = Number(payload.sub);
+      const session = await (await mongoCollection("auth_sessions")).findOne({
+        id: payload.sid, user_id: userId, revoked_at: null,
+        expires_at: { $gt: new Date() }, absolute_expires_at: { $gt: new Date() },
+      });
+      const user = session ? await (await mongoCollection("users"))
+        .findOne({ id: userId, status: "active" }) : null;
+      if (!user) return next(new Error("Session is invalid or expired"));
+      socket.data.sessionId = session.id;
+      socket.data.userId = user.id;
+      socket.data.username = user.username;
+      socket.data.avatarUrl = user.avatar_url;
+      return next();
+    }
     const [rows] = await pool.execute(
       `SELECT s.id AS session_id, u.id AS user_id, u.username, u.avatar_url
        FROM auth_sessions s
@@ -74,12 +104,16 @@ export const registerWatchPartySocket = (io) => {
 
       try {
         // Kiểm tra phòng tồn tại
-        const [parties] = await pool.execute(
-          "SELECT id, status FROM watch_parties WHERE id = ? LIMIT 1",
-          [partyId],
-        );
+        const parties = useMongo() ? [await mongoParty(partyId)].filter(Boolean)
+          : (await pool.execute("SELECT id, status FROM watch_parties WHERE id = ? LIMIT 1", [partyId]))[0];
         if (!parties.length) return socket.emit("error", { message: "Party not found" });
         if (parties[0].status === "ended") return socket.emit("error", { message: "Party has ended" });
+        let memberRole = "participant";
+        if (useMongo()) {
+          const part = await mongoParticipant(partyId, userId);
+          if (!part) return socket.emit("error", { message: "Not in this party" });
+          memberRole = part.role;
+        }
 
         // Join socket room
         socket.join(partyId);
@@ -90,14 +124,12 @@ export const registerWatchPartySocket = (io) => {
           userId,
           username,
           avatarUrl,
-          role: "participant",
+          role: memberRole,
         });
 
         // Gửi trạng thái playback hiện tại cho người vừa join
-        const [partyState] = await pool.execute(
-          "SELECT current_position, is_playing, status FROM watch_parties WHERE id = ?",
-          [partyId],
-        );
+        const partyState = useMongo() ? parties
+          : (await pool.execute("SELECT current_position, is_playing, status FROM watch_parties WHERE id = ?", [partyId]))[0];
         if (partyState.length) {
           socket.emit("playback-sync", {
             currentPosition: partyState[0].current_position,
@@ -135,6 +167,22 @@ export const registerWatchPartySocket = (io) => {
       try {
         const msg = message.trim().slice(0, 1000);
         const ts = Number(timestampInVideo) || 0;
+
+        if (useMongo()) {
+          const [part, party] = await Promise.all([
+            mongoParticipant(partyId, socket.data.userId), mongoParty(partyId),
+          ]);
+          if (!part || !part.can_send_chat || part.is_muted || !party?.allow_chat
+              || party.status === "ended") {
+            return socket.emit("error", { message: "You are muted or chat is disabled" });
+          }
+          const { id, createdAt } = await insertMongoChat(partyId, socket.data.userId, msg, ts);
+          partyNamespace.to(partyId).emit("new-chat", { id, userId: socket.data.userId,
+            username: socket.data.username, avatarUrl: socket.data.avatarUrl,
+            message: msg, timestampInVideo: ts, isSystemMessage: false,
+            createdAt: createdAt.toISOString() });
+          return;
+        }
 
         // Kiểm tra quyền chat
         const [parts] = await pool.execute(
@@ -176,6 +224,22 @@ export const registerWatchPartySocket = (io) => {
       if (!partyId) return;
 
       try {
+        if (useMongo()) {
+          const part = await mongoParticipant(partyId, socket.data.userId);
+          if (!part) return socket.emit("error", { message: "Not in this party" });
+          if (!["host", "co-host"].includes(part.role) && !part.can_control_playback) {
+            return socket.emit("error", { message: "No playback control permission" });
+          }
+          const pos = Math.max(0, Number(currentPosition) || 0);
+          const playing = Boolean(isPlaying);
+          const result = await (await mongoCollection("watch_parties")).updateOne({ id: partyId,
+            status: { $ne: "ended" } }, { $set: { current_position: pos,
+            is_playing: Number(playing), status: playing ? "playing" : "paused" } });
+          if (!result.matchedCount) return socket.emit("error", { message: "Party has ended" });
+          socket.to(partyId).emit("playback-sync", { currentPosition: pos,
+            isPlaying: playing, updatedBy: socket.data.username });
+          return;
+        }
         // Kiểm tra quyền playback control
         const [parts] = await pool.execute(
           "SELECT role, can_control_playback FROM watch_party_participants WHERE party_id = ? AND user_id = ?",
@@ -211,6 +275,15 @@ export const registerWatchPartySocket = (io) => {
     socket.on("request-sync", async ({ partyId }) => {
       if (!partyId) return;
       try {
+        if (useMongo()) {
+          if (!await mongoParticipant(partyId, socket.data.userId)) {
+            return socket.emit("error", { message: "Not in this party" });
+          }
+          const party = await mongoParty(partyId);
+          if (party) socket.emit("playback-sync", { currentPosition: party.current_position,
+            isPlaying: Boolean(party.is_playing), updatedBy: "system" });
+          return;
+        }
         const [partyState] = await pool.execute(
           "SELECT current_position, is_playing FROM watch_parties WHERE id = ?",
           [partyId],
@@ -232,6 +305,20 @@ export const registerWatchPartySocket = (io) => {
     // -------------------------------------------------------------------
     socket.on("participant-action", async ({ partyId, targetUserId, action }) => {
       if (!partyId || !targetUserId || !action) return;
+      if (!["mute", "unmute", "promote", "demote", "kick"].includes(action)
+          || !Number.isInteger(Number(targetUserId)) || !socket.rooms.has(partyId)) {
+        return socket.emit("error", { message: "Invalid participant action" });
+      }
+      try {
+        const host = useMongo() ? await mongoParticipant(partyId, socket.data.userId)
+          : (await pool.execute("SELECT role FROM watch_party_participants WHERE party_id = ? AND user_id = ?",
+            [partyId, socket.data.userId]))[0][0];
+        if (!host || host.role !== "host") {
+          return socket.emit("error", { message: "Only host can manage participants" });
+        }
+      } catch {
+        return socket.emit("error", { message: "Failed to manage participants" });
+      }
 
       // Broadcast action to all in the room
       partyNamespace.to(partyId).emit("participant-updated", {
@@ -245,7 +332,7 @@ export const registerWatchPartySocket = (io) => {
         // Tìm socket của user bị kick
         const sockets = await partyNamespace.in(partyId).fetchSockets();
         for (const s of sockets) {
-          if (s.data.userId === targetUserId) {
+          if (s.data.userId === Number(targetUserId)) {
             s.leave(partyId);
             s.emit("party-ended", { partyId, reason: "You have been kicked from the party" });
           }
@@ -259,6 +346,17 @@ export const registerWatchPartySocket = (io) => {
     socket.on("end-party", async ({ partyId }) => {
       if (!partyId) return;
       try {
+        if (useMongo()) {
+          const part = await mongoParticipant(partyId, socket.data.userId);
+          if (!part || part.role !== "host") {
+            return socket.emit("error", { message: "Only host can end the party" });
+          }
+          await (await mongoCollection("watch_parties")).updateOne({ id: partyId },
+            { $set: { status: "ended" } });
+          partyNamespace.to(partyId).emit("party-ended", { partyId, reason: "Host ended the party" });
+          await insertMongoChat(partyId, socket.data.userId, "Host đã kết thúc phòng xem.", 0, true);
+          return;
+        }
         // Kiểm tra quyền
         const [parts] = await pool.execute(
           "SELECT role FROM watch_party_participants WHERE party_id = ? AND user_id = ?",

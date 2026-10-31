@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../database/pool.js";
+import { mongoCollection } from "../database/mongo.js";
 import { securityLog } from "../security/security-logger.js";
 
 const unauthorized = (req, res, message = "Authentication required", reason = "missing") => {
@@ -16,6 +17,22 @@ const loadSessionUser = async (token) => {
   const payload = jwt.verify(token, securityConfig.jwtAccessSecret, {
     algorithms: securityConfig.jwtAlgorithms,
   });
+  if (process.env.DATA_STORE === "mongodb") {
+    const session = await (await mongoCollection("auth_sessions")).findOne({
+      id: payload.sid, user_id: Number(payload.sub), revoked_at: null,
+      expires_at: { $gt: new Date() }, absolute_expires_at: { $gt: new Date() },
+    });
+    if (!session) return null;
+    const user = await (await mongoCollection("users")).findOne({
+      id: Number(payload.sub), status: "active",
+    });
+    if (!user) return null;
+    return {
+      sessionId: session.id,
+      user: { id: user.id, username: user.username, email: user.email,
+        avatarUrl: user.avatar_url, role: user.role, vipExpiresAt: user.vip_expires_at },
+    };
+  }
   const [sessions] = await pool.execute(
     `SELECT s.id, u.id AS user_id, u.username, u.email, u.avatar_url, u.role,
             u.vip_expires_at

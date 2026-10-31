@@ -1,42 +1,62 @@
 // Vector index HNSW in-process (hnswlib-node native).
-// Embeddings của toàn bộ catalog được lưu trong MySQL (JSON) và build lại index
+// Embeddings của catalog được lưu dạng JSON trong database đang chọn và build lại index
 // khi boot — không tạo lại embedding trong mỗi request.
-// Ghi chú kiến trúc: cùng thuật toán HNSW như pgvector; chọn in-process vì
-// dự án chạy MySQL hiện tại — khi chuyển PostgreSQL, đổi sang pgvector với
-// cùng interface (searchByVector) mà không đổi tầng trên.
+// Nếu native HNSW không khả dụng, tìm cosine chính xác trên catalog trong bộ nhớ.
 
 import { pool } from "../../core/database/pool.js";
-import { embedImage } from "./clip.service.js";
+import { mongoCollection } from "../../core/database/mongo.js";
 
 let indexPromise = null;
 let catalogSize = 0;
 let lastBuildMs = null;
+let exactItems = null;
+
+const parseEmbedding = (value) => {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(parsed) && parsed.every(Number.isFinite) ? parsed : null;
+  } catch { return null; }
+};
+
+const cosine = (a, b) => {
+  let dot = 0;
+  let aNorm = 0;
+  let bNorm = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    aNorm += a[i] * a[i];
+    bNorm += b[i] * b[i];
+  }
+  return aNorm && bNorm ? dot / Math.sqrt(aNorm * bNorm) : 0;
+};
 
 const buildIndex = async () => {
   const t0 = Date.now();
-  const { default: hnswlib } = await import("hnswlib-node");
-  const [rows] = await pool.query(
-    "SELECT id, embedding FROM visual_products WHERE availability = 1 AND embedding IS NOT NULL",
-  );
+  const rows = process.env.DATA_STORE === "mongodb"
+    ? await (await mongoCollection("visual_products")).find({ availability: 1,
+      embedding: { $ne: null } }, { projection: { id: 1, embedding: 1 } }).toArray()
+    : (await pool.query(
+      "SELECT id, embedding FROM visual_products WHERE availability = 1 AND embedding IS NOT NULL",
+    ))[0];
   const items = rows
     .map((row) => {
-      try {
-        return { id: row.id, embedding: JSON.parse(row.embedding) };
-      } catch {
-        return null;
-      }
+      const embedding = parseEmbedding(row.embedding);
+      return embedding ? { id: row.id, embedding } : null;
     })
     .filter(Boolean);
-
-  const index = new hnswlib.HierarchicalNSW("cosine", items[0]?.embedding.length || 512);
-  index.initIndex({ maxElements: Math.max(1000, items.length * 2) });
-  // addPoint từng item (API của hnswlib-node không có addPoints)
-  for (const item of items) {
-    index.addPoint(item.embedding, item.id);
+  exactItems = items;
+  let index = null;
+  try {
+    const { default: hnswlib } = await import("hnswlib-node");
+    index = new hnswlib.HierarchicalNSW("cosine", items[0]?.embedding.length || 512);
+    index.initIndex({ maxElements: Math.max(1000, items.length * 2) });
+    for (const item of items) index.addPoint(item.embedding, item.id);
+  } catch (error) {
+    console.warn(`[VectorIndex] HNSW không khả dụng, dùng cosine JS: ${error.message.split("\n")[0]}`);
   }
   catalogSize = items.length;
   lastBuildMs = Date.now() - t0;
-  console.log(`[VectorIndex] HNSW dựng lại ${items.length} sản phẩm trong ${lastBuildMs}ms`);
+  console.log(`[VectorIndex] dựng lại ${items.length} sản phẩm trong ${lastBuildMs}ms`);
   return index;
 };
 
@@ -66,16 +86,23 @@ export const searchByVector = async (embedding, k = 20) => {
   let index = await getIndex();
   // Auto-heal: index trống nhưng DB có embedding (boot lúc DB trống / import sau boot)
   if (catalogSize === 0) {
-    const [countRows] = await pool.query(
-      "SELECT COUNT(*) AS n FROM visual_products WHERE availability = 1 AND embedding IS NOT NULL",
-    );
-    if (countRows[0].n > 0) {
-      console.log(`[VectorIndex] index trống nhưng DB có ${countRows[0].n} sản phẩm — rebuild tự động`);
+    const count = process.env.DATA_STORE === "mongodb"
+      ? await (await mongoCollection("visual_products")).countDocuments({ availability: 1,
+        embedding: { $ne: null } })
+      : (await pool.query("SELECT COUNT(*) AS n FROM visual_products WHERE availability = 1 AND embedding IS NOT NULL"))[0][0].n;
+    if (count > 0) {
+      console.log(`[VectorIndex] index trống nhưng DB có ${count} sản phẩm — rebuild tự động`);
       index = await rebuildIndex();
     }
   }
-  if (catalogSize === 0) return [];
+  if (catalogSize === 0) return { items: [], searchMs: 0 };
   const t0 = Date.now();
+  if (!index) {
+    const items = exactItems.filter((item) => item.embedding.length === embedding.length)
+      .map((item) => ({ productId: item.id, similarity: Number(cosine(embedding, item.embedding).toFixed(4)) }))
+      .sort((a, b) => b.similarity - a.similarity).slice(0, k);
+    return { items, searchMs: Date.now() - t0 };
+  }
   const results = await index.searchKnn(embedding, Math.min(k, catalogSize));
   const searchMs = Date.now() - t0;
   // hnswlib cosine distance = 1 - cosine similarity

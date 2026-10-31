@@ -1,10 +1,19 @@
 import { pool } from "../../core/database/pool.js";
+import { mongoCollection } from "../../core/database/mongo.js";
 import { buildPlaybackUrl } from "../../core/security/playback-token.js";
 import { canAccessPremium } from "../../core/security/entitlements.js";
 
 // Premium nằm trên production gốc của series; season chỉ là vỏ production con.
 export const resolveProductionPremium = async (productionId) => {
   if (!productionId) return false;
+  if (process.env.DATA_STORE === "mongodb") {
+    const production = await (await mongoCollection("productions")).findOne({ id: Number(productionId) });
+    if (!production) return false;
+    const season = await (await mongoCollection("seasons")).findOne({ id: Number(productionId) });
+    const series = season
+      ? await (await mongoCollection("productions")).findOne({ id: season.series_id }) : null;
+    return Boolean(production.is_premium) || Boolean(series?.is_premium);
+  }
   const [rows] = await pool.execute(
     `SELECT p.is_premium, sp.is_premium AS series_premium
      FROM productions p

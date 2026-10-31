@@ -1,9 +1,19 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
+import { fromMongo, mongoCollection } from "../../core/database/mongo.js";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 
 export const adminRouter = Router();
+const useMongo = () => process.env.DATA_STORE === "mongodb";
+const number = (value) => Number(value?.toString?.() ?? value ?? 0);
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+const sumField = async (collectionName, field) => {
+  const result = await (await mongoCollection(collectionName)).aggregate([
+    { $group: { _id: null, total: { $sum: `$${field}` } } },
+  ]).next();
+  return number(result?.total);
+};
 
 // Toàn bộ router yêu cầu đăng nhập; mỗi nhóm endpoint kiểm tra role riêng:
 // - admin: mọi thứ; moderator: chỉ nội dung (phim/tập, stats, views)
@@ -30,6 +40,28 @@ adminRouter.get(
   "/stats",
   requireStaff,
   asyncHandler(async (req, res) => {
+    if (useMongo()) {
+      const [users, productions, episodes, ratings, comments, totalViews,
+        totalWatchTime, totalRevenue, recentUsers, ratingSummary] = await Promise.all([
+        (await mongoCollection("users")).countDocuments(),
+        (await mongoCollection("productions")).countDocuments(),
+        (await mongoCollection("episodes")).countDocuments(),
+        (await mongoCollection("ratings")).countDocuments(),
+        (await mongoCollection("comments")).countDocuments(),
+        sumField("daily_stats", "total_views"),
+        sumField("daily_stats", "total_watch_time"),
+        sumField("daily_stats", "total_revenue"),
+        (await mongoCollection("users")).find({}, { projection: { id: 1, username: 1,
+          email: 1, role: 1, status: 1, created_at: 1 } }).sort({ created_at: -1 }).limit(5).toArray(),
+        (await mongoCollection("ratings")).aggregate([
+          { $group: { _id: null, avg: { $avg: "$rating" } } },
+        ]).next(),
+      ]);
+      return res.json({ totalUsers: users, totalProductions: productions,
+        totalEpisodes: episodes, totalViews, totalRatings: ratings,
+        avgRating: Number(number(ratingSummary?.avg).toFixed(2)), totalComments: comments,
+        totalWatchTime, totalRevenue, recentUsers: recentUsers.map(fromMongo) });
+    }
     const [[users], [productions], [episodes], [views], [ratings], [comments], [watchTime], [revenue], [recentUsers]] =
       await Promise.all([
         pool.execute("SELECT COUNT(*) AS total FROM users"),
@@ -68,6 +100,21 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     const { page, limit, offset } = clampPagination(req.query);
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    if (useMongo()) {
+      const filter = search ? { $or: [
+        { username: { $regex: escapeRegex(search), $options: "i" } },
+        { email: { $regex: escapeRegex(search), $options: "i" } },
+      ] } : {};
+      const users = await mongoCollection("users");
+      const [total, rows] = await Promise.all([
+        users.countDocuments(filter),
+        users.find(filter, { projection: { id: 1, username: 1, email: 1,
+          role: 1, status: 1, avatar_url: 1, vip_expires_at: 1,
+          created_at: 1, last_login: 1 } }).sort({ created_at: -1 }).skip(offset).limit(limit).toArray(),
+      ]);
+      return res.json({ items: rows.map(fromMongo), page, limit, total,
+        pages: Math.max(1, Math.ceil(total / limit)) });
+    }
     const where = "";
     const params = [];
     if (search) {
@@ -115,6 +162,23 @@ adminRouter.patch(
       return res.status(400).json({ message: "Không thể tự hạ quyền hoặc khóa chính mình" });
     }
 
+    if (useMongo()) {
+      const users = await mongoCollection("users");
+      const updates = {};
+      if (role !== undefined) updates.role = role;
+      if (status !== undefined) {
+        updates.status = status;
+        updates.disabled_at = status === "disabled" ? new Date() : null;
+      }
+      const result = Object.keys(updates).length
+        ? await users.updateOne({ id: userId }, { $set: updates })
+        : { matchedCount: await users.countDocuments({ id: userId }) };
+      if (!result.matchedCount) return res.status(404).json({ message: "User not found" });
+      const user = await users.findOne({ id: userId }, { projection: { id: 1,
+        username: 1, email: 1, role: 1, status: 1, created_at: 1 } });
+      return res.json(fromMongo(user));
+    }
+
     const [existing] = await pool.execute("SELECT id FROM users WHERE id = ? LIMIT 1", [userId]);
     if (!existing.length) return res.status(404).json({ message: "User not found" });
 
@@ -143,6 +207,32 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     const { page, limit, offset } = clampPagination(req.query);
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    if (useMongo()) {
+      const filter = search ? { title: { $regex: escapeRegex(search), $options: "i" } } : {};
+      const productions = await mongoCollection("productions");
+      const [total, rows, episodes, history] = await Promise.all([
+        productions.countDocuments(filter), productions.find(filter).toArray(),
+        (await mongoCollection("episodes")).find({}, { projection: { id: 1, production_id: 1 } }).toArray(),
+        (await mongoCollection("watch_history")).find({}, { projection: { episode_id: 1 } }).toArray(),
+      ]);
+      const episodeProduction = new Map(episodes.map((episode) => [episode.id, episode.production_id]));
+      const episodeCounts = new Map();
+      const viewCounts = new Map();
+      for (const episode of episodes) episodeCounts.set(episode.production_id,
+        (episodeCounts.get(episode.production_id) || 0) + 1);
+      for (const view of history) {
+        const productionId = episodeProduction.get(view.episode_id);
+        if (productionId) viewCounts.set(productionId, (viewCounts.get(productionId) || 0) + 1);
+      }
+      const items = rows.map((row) => ({ id: row.id, type: row.type, title: row.title,
+        release_year: row.release_year, status: row.status, is_premium: row.is_premium,
+        rating_avg: number(row.rating_avg), rating_count: row.rating_count,
+        country: row.country, poster_url: row.poster_url,
+        episode_count: episodeCounts.get(row.id) || 0, view_count: viewCounts.get(row.id) || 0 }))
+        .sort((a, b) => b.view_count - a.view_count || number(b.release_year) - number(a.release_year))
+        .slice(offset, offset + limit);
+      return res.json({ items, page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) });
+    }
     const base = `
       FROM productions p
       LEFT JOIN episodes e ON e.production_id = p.id
@@ -187,6 +277,19 @@ adminRouter.patch(
     if (status !== undefined && !["ongoing", "completed"].includes(status)) {
       return res.status(400).json({ message: "status must be 'ongoing' or 'completed'" });
     }
+    if (useMongo()) {
+      const productions = await mongoCollection("productions");
+      const updates = {};
+      if (premium !== undefined) updates.is_premium = Number(premium);
+      if (status !== undefined) updates.status = status;
+      const result = Object.keys(updates).length
+        ? await productions.updateOne({ id: productionId }, { $set: updates })
+        : { matchedCount: await productions.countDocuments({ id: productionId }) };
+      if (!result.matchedCount) return res.status(404).json({ message: "Production not found" });
+      const row = await productions.findOne({ id: productionId },
+        { projection: { id: 1, title: 1, status: 1, is_premium: 1 } });
+      return res.json(fromMongo(row));
+    }
     const [existing] = await pool.execute("SELECT id FROM productions WHERE id = ? LIMIT 1", [productionId]);
     if (!existing.length) return res.status(404).json({ message: "Production not found" });
 
@@ -207,6 +310,51 @@ adminRouter.get(
   "/views",
   requireStaff,
   asyncHandler(async (req, res) => {
+    if (useMongo()) {
+      const [daily, history, episodes, productions, productionGenres, genres] = await Promise.all([
+        (await mongoCollection("daily_stats")).find({}).sort({ stat_date: 1 }).limit(30).toArray(),
+        (await mongoCollection("watch_history")).find({}).toArray(),
+        (await mongoCollection("episodes")).find({}, { projection: { id: 1, production_id: 1 } }).toArray(),
+        (await mongoCollection("productions")).find({}, { projection: { id: 1, title: 1,
+          poster_url: 1 } }).toArray(),
+        (await mongoCollection("production_genres")).find({}).toArray(),
+        (await mongoCollection("genres")).find({}).toArray(),
+      ]);
+      const episodeProduction = new Map(episodes.map((episode) => [episode.id, episode.production_id]));
+      const productionById = new Map(productions.map((production) => [production.id, production]));
+      const genreById = new Map(genres.map((genre) => [genre.id, genre.name]));
+      const genreIdsByProduction = new Map();
+      for (const link of productionGenres) {
+        const ids = genreIdsByProduction.get(link.production_id) || [];
+        ids.push(link.genre_id);
+        genreIdsByProduction.set(link.production_id, ids);
+      }
+      const productionViews = new Map();
+      const genreViews = new Map();
+      for (const view of history) {
+        const productionId = episodeProduction.get(view.episode_id);
+        if (!productionById.has(productionId)) continue;
+        const item = productionViews.get(productionId) || { count: 0, completion: 0 };
+        item.count += 1;
+        item.completion += number(view.watched_percent);
+        productionViews.set(productionId, item);
+        for (const genreId of genreIdsByProduction.get(productionId) || []) {
+          genreViews.set(genreId, (genreViews.get(genreId) || 0) + 1);
+        }
+      }
+      const topProductions = [...productionViews.entries()].map(([id, item]) => ({
+        id, title: productionById.get(id).title, poster_url: productionById.get(id).poster_url,
+        view_count: item.count, avg_completion: Number((item.completion / item.count).toFixed(1)),
+      })).sort((a, b) => b.view_count - a.view_count).slice(0, 10);
+      const byGenre = [...genreViews.entries()].map(([id, view_count]) => ({
+        genre: genreById.get(id), view_count,
+      })).filter((item) => item.genre).sort((a, b) => b.view_count - a.view_count).slice(0, 8);
+      return res.json({ daily: daily.map((row) => ({ stat_date: row.stat_date,
+        total_views: number(row.total_views), new_users: row.new_users,
+        active_users: row.active_users, total_watch_time: number(row.total_watch_time),
+        new_subscriptions: row.new_subscriptions, total_revenue: number(row.total_revenue) })),
+      topProductions, byGenre });
+    }
     const [daily] = await pool.execute(
       `SELECT stat_date, total_views, new_users, active_users, total_watch_time, new_subscriptions, total_revenue
        FROM daily_stats ORDER BY stat_date ASC LIMIT 30`,

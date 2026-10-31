@@ -18,14 +18,17 @@ const getExtractor = async () => {
   if (!extractorPromise) {
     extractorPromise = (async () => {
       const t0 = Date.now();
-      const { pipeline, env } = await import("@xenova/transformers");
+      const { AutoProcessor, CLIPVisionModelWithProjection, RawImage, env } = await import("@xenova/transformers");
       env.cacheDir = MODEL_CACHE_DIR;
       env.allowLocalModels = false;
       env.backends.onnx.wasm.numThreads = Math.min(4, Number(process.env.CLIP_THREADS) || 2);
-      const extractor = await pipeline("image-feature-extraction", MODEL_ID, { quantized: true });
+      const [processor, model] = await Promise.all([
+        AutoProcessor.from_pretrained(MODEL_ID),
+        CLIPVisionModelWithProjection.from_pretrained(MODEL_ID, { quantized: true }),
+      ]);
       loadMs = Date.now() - t0;
       console.log(`[CLIP] model ${MODEL_ID} load sẵn trong ${loadMs}ms`);
-      return extractor;
+      return { processor, model, RawImage };
     })();
     extractorPromise.catch(() => {
       extractorPromise = null; // cho phép thử lại
@@ -60,14 +63,18 @@ const toImageFile = (imageInput) => {
 
 // Nhan Buffer | dataURL | base64 tran | http(s) URL -> Float32Array (da normalize)
 export const embedImage = async (imageInput) => {
-  const extractor = await getExtractor();
+  const { processor, model, RawImage } = await getExtractor();
   const tmpFile = typeof imageInput === "string" && /^https?:\/\//.test(imageInput) ? null : toImageFile(imageInput);
   const input = tmpFile ?? imageInput;
   const t0 = Date.now();
   try {
-    const output = await extractor(input, { pooling: "mean", normalize: true });
+    const image = await RawImage.read(input);
+    const { image_embeds: output } = await model(await processor(image));
+    if (!output?.data?.length) throw new Error("CLIP không trả về image embedding");
     const embedMs = Date.now() - t0;
-    const embedding = Array.from(output.data).map((v) => Number(v.toFixed(6)));
+    const norm = Math.hypot(...output.data);
+    if (!norm) throw new Error("CLIP trả về image embedding rỗng");
+    const embedding = Array.from(output.data, (value) => Number((value / norm).toFixed(6)));
     return { embedding, embedMs, dimensions: embedding.length };
   } finally {
     if (tmpFile) fs.promises.unlink(tmpFile).catch(() => {});

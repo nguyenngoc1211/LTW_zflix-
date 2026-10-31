@@ -6,6 +6,9 @@ import {
 import { videoServiceProcessEndpoint } from "../../../config/video-service.config.js";
 import { applyEpisodeAccess, isPremiumLocked } from "../playback-access.js";
 import axios from "axios";
+import { getMoviesMongo, getMovieBySlugMongo, getGenresMongo,
+  getPopularMoviesMongo, uploadMovieMongo, updateProductionMongo,
+  deleteProductionMongo } from "./production.mongo.service.js";
 
 const generateCleanSlug = (title) => {
   return title
@@ -17,6 +20,7 @@ const generateCleanSlug = (title) => {
 };
 
 export const uploadMovieService = async (file, metadata) => {
+  if (process.env.DATA_STORE === "mongodb") return uploadMovieMongo(file, metadata);
   const {
     title,
     description,
@@ -158,6 +162,7 @@ export const uploadMovieService = async (file, metadata) => {
 };
 
 export const updateProductionService = async (id, metadata) => {
+  if (process.env.DATA_STORE === "mongodb") return updateProductionMongo(id, metadata);
   const {
     title,
     description,
@@ -270,6 +275,7 @@ export const updateProductionService = async (id, metadata) => {
 };
 
 export const deleteProductionService = async (id) => {
+  if (process.env.DATA_STORE === "mongodb") return deleteProductionMongo(id);
   // 1. Lấy thông tin phim và các tập để biết đường dẫn file
   const production = await prisma.productions.findUnique({
     where: { id: Number(id) },
@@ -373,6 +379,7 @@ export const deleteProductionService = async (id) => {
 };
 
 export const getMoviesService = async () => {
+  if (process.env.DATA_STORE === "mongodb") return getMoviesMongo();
   return await prisma.productions.findMany({
     where: { type: { in: ["movie", "series"] } },
     orderBy: { created_at: "desc" },
@@ -380,6 +387,7 @@ export const getMoviesService = async () => {
 };
 
 export const getMovieBySlugService = async (slug, viewer = null) => {
+  if (process.env.DATA_STORE === "mongodb") return getMovieBySlugMongo(slug, viewer);
   const production = await prisma.productions.findUnique({
     where: { slug },
     include: {
@@ -477,10 +485,12 @@ export const getMovieBySlugService = async (slug, viewer = null) => {
 };
 
 export const getGenresService = async () => {
+  if (process.env.DATA_STORE === "mongodb") return getGenresMongo();
   return await prisma.genres.findMany({ orderBy: { name: "asc" } });
 };
 
 export const getPopularMoviesService = async () => {
+  if (process.env.DATA_STORE === "mongodb") return getPopularMoviesMongo();
   const popularDb = await prisma.productions.findMany({
     where: {
       type: { in: ["movie", "series"] },
