@@ -62,6 +62,14 @@ Payload comment:
 { "content": "Nội dung bình luận", "parentId": null }
 ```
 
+When a comment is flagged by the toxic-word filter, the response includes
+`isToxic: true` and the standard warning. Public comment lists expose the
+persisted flag as `is_toxic`; clients keep the content blurred until the reader
+explicitly reveals it.
+
+The same filter applies to rating `title` and `review` text. Rating responses
+include `isToxic` and rating lists expose `is_toxic`.
+
 ## Streaming
 
 | Quyền | Method | Endpoint | Chức năng |
@@ -76,6 +84,9 @@ Payload cập nhật vị trí:
 ```json
 { "position": 120 }
 ```
+
+`GET /history` returns both `items` (full history) and `continueWatching`
+(the latest unfinished episode for each production).
 
 ## Admin
 

@@ -84,7 +84,7 @@ services:
     volumes:
       - ./backend-node:/app
       - /app/node_modules
-    command: sh -c "npm install --no-audit --no-fund --no-package-lock && npx prisma generate && npm run migrate:auth && npm run dev"
+    command: sh -c "npm install --no-audit --no-fund --no-package-lock && npx prisma generate && npm run migrate:auth && npm run migrate:toxic-content && npm run dev"
 
   # Python Video Service
   video-processor:

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import Hls from "hls.js";
 import { apiRequest, API_URL } from "../../services/api.js";
 import { toPlayableUrl } from "../../hooks/useVideoSource.js";
@@ -14,6 +14,8 @@ import ProductPanel from "../../components/ProductPanel.jsx";
 // ---------------------------------------------------------------------------
 const PlayerPage = () => {
   const { episodeId } = useParams();
+  const [searchParams] = useSearchParams();
+  const requestedPosition = Math.max(0, Math.floor(Number(searchParams.get("pos")) || 0));
   const [episode, setEpisode] = useState(null);
   const [position, setPosition] = useState(0);
   const videoRef = useRef(null);
@@ -67,20 +69,24 @@ const PlayerPage = () => {
     });
     return () => hls.destroy();
   }, [episode]);
-  const save = (seconds) => {
-    if (Math.abs(seconds - lastSaved.current) < 10) return;
-    lastSaved.current = seconds;
-    apiRequest(`/api/v1/history/${episodeId}`, { method: "PUT", body: JSON.stringify({ position: seconds }) }).catch(() => {});
+  const save = (seconds, force = false) => {
+    const positionInSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+    if (!force && Math.abs(positionInSeconds - lastSaved.current) < 10) return;
+    lastSaved.current = positionInSeconds;
+    apiRequest(`/api/v1/history/${episodeId}`, {
+      method: "PUT",
+      body: JSON.stringify({ position: positionInSeconds }),
+    }).catch(() => {});
   };
-  // "Xem tiếp" từ lịch sử truyền ?pos=<giây>; tua tới đó khi video đã có metadata.
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
-    if (!video) return;
-    const seconds = Number(new URLSearchParams(window.location.search).get("pos"));
-    if (!Number.isFinite(seconds) || seconds <= 0) return;
-    const maxPosition = Number.isFinite(video.duration) ? Math.max(0, video.duration - 1) : seconds;
-    video.currentTime = Math.min(seconds, maxPosition);
+    if (!video || requestedPosition <= 0) return;
+    const maxPosition = Number.isFinite(video.duration)
+      ? Math.max(0, video.duration - 1)
+      : requestedPosition;
+    video.currentTime = Math.min(requestedPosition, maxPosition);
     lastSaved.current = video.currentTime;
+    setPosition(video.currentTime);
   };
   if (!episode) return <main className="page-shell"><p className="empty">Đang tải tập phim...</p></main>;
 
@@ -153,7 +159,8 @@ const PlayerPage = () => {
               onError={() => { if (!videoNoCors) setVideoNoCors(true); }}
               onLoadedMetadata={handleLoadedMetadata}
               onTimeUpdate={(e) => { setPosition(e.currentTarget.currentTime); save(Math.floor(e.currentTarget.currentTime)); }}
-              onPause={(e) => save(Math.floor(e.currentTarget.currentTime))}
+              onPause={(e) => save(Math.floor(e.currentTarget.currentTime), true)}
+              onEnded={(e) => save(Math.floor(e.currentTarget.duration), true)}
             />
           ) : (
             <div className="video-placeholder"><span>▶</span><p>Chưa có URL video trong dữ liệu mẫu.</p></div>

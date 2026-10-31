@@ -97,6 +97,12 @@ Nếu volume cũ chưa có bảng `production_interests`, chạy thêm:
 docker compose exec -T db mysql -uroot -prootpassword movie_streaming_db < database/migrate-hai.sql
 ```
 
+Nếu volume cũ chưa có cột lọc nội dung toxic cho bình luận/đánh giá, chạy migration một lần:
+
+```bash
+docker compose exec -T db mysql -uroot -prootpassword movie_streaming_db < database/migrate-toxic-comments.sql
+```
+
 ## 💻 Chạy thủ công không dùng Docker (Dev local)
 
 ### Cách nhanh nhất — 1 lệnh (Windows)

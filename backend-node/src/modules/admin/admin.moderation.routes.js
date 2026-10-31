@@ -36,7 +36,7 @@ adminModerationRouter.get(
         [like, like],
       );
       const [rows] = await pool.execute(
-        `SELECT c.id, c.content, c.status, c.created_at, c.updated_at, u.username, p.title AS production_title, p.id AS production_id
+        `SELECT c.id, c.content, c.status, c.is_toxic, c.created_at, c.updated_at, u.username, p.title AS production_title, p.id AS production_id
          FROM comments c JOIN users u ON u.id = c.user_id JOIN productions p ON p.id = c.production_id
          WHERE c.content LIKE ? OR p.title LIKE ?
          ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
@@ -46,7 +46,7 @@ adminModerationRouter.get(
     }
     const [countRows] = await pool.execute(`SELECT COUNT(*) AS total FROM comments ${where}`, params);
     const [rows] = await pool.execute(
-      `SELECT c.id, c.content, c.status, c.created_at, c.updated_at, u.username, p.title AS production_title, p.id AS production_id
+      `SELECT c.id, c.content, c.status, c.is_toxic, c.created_at, c.updated_at, u.username, p.title AS production_title, p.id AS production_id
        FROM comments c JOIN users u ON u.id = c.user_id JOIN productions p ON p.id = c.production_id ${where}
        ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset],
@@ -77,7 +77,7 @@ adminModerationRouter.get(
     const { page, limit, offset } = clampPagination(req.query);
     const [countRows] = await pool.execute("SELECT COUNT(*) AS total FROM ratings");
     const [rows] = await pool.execute(
-      `SELECT r.user_id, r.production_id, r.rating, r.review_title, r.review_content, r.created_at,
+      `SELECT r.user_id, r.production_id, r.rating, r.review_title, r.review_content, r.is_toxic, r.created_at,
               u.username, p.title AS production_title
        FROM ratings r JOIN users u ON u.id = r.user_id JOIN productions p ON p.id = r.production_id
        ORDER BY r.updated_at DESC LIMIT ? OFFSET ?`,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { message } from "antd";
+import ToxicComment from "../community/ToxicComment.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { apiRequest } from "../../services/api.js";
 
@@ -17,6 +18,7 @@ const RatingSection = ({ productionId, onSaved }) => {
   const [review, setReview] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
 
   const loadRatings = useCallback(async () => {
     if (!productionId) return;
@@ -49,11 +51,13 @@ const RatingSection = ({ productionId, onSaved }) => {
     if (submitting) return;
     setSubmitting(true);
     setError("");
+    setWarning("");
     try {
-      await apiRequest(`/api/v1/productions/${productionId}/rating`, {
+      const result = await apiRequest(`/api/v1/productions/${productionId}/rating`, {
         method: "PUT",
         body: JSON.stringify({ rating: Number(score), review: review.trim() }),
       });
+      if (result.warning) setWarning(result.warning);
       message.success("Đã lưu đánh giá của bạn.");
       await loadRatings();
       onSaved?.();
@@ -114,6 +118,7 @@ const RatingSection = ({ productionId, onSaved }) => {
             </button>
           </div>
           {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+          {warning && <p className="toxic-comment-notice">{warning}</p>}
         </form>
       ) : (
         <div className="bg-[#18181b] p-4 rounded-xl border border-gray-800 mb-6 text-sm text-gray-400">
@@ -143,9 +148,11 @@ const RatingSection = ({ productionId, onSaved }) => {
                 <span className="text-gray-500 text-xs">{formatTime(item.updated_at)}</span>
               </div>
               {item.review_content && (
-                <p className="text-gray-300 text-sm mt-1 whitespace-pre-wrap break-words">
-                  {item.review_content}
-                </p>
+                <ToxicComment
+                  content={item.review_content}
+                  isToxic={Boolean(Number(item.is_toxic))}
+                  className="text-gray-300 text-sm mt-1 whitespace-pre-wrap break-words"
+                />
               )}
             </div>
           ))}

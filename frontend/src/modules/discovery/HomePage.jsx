@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import ContinueWatchingRail from "../../components/ContinueWatchingRail.jsx";
 import MovieCard from "../../components/MovieCard.jsx";
+import { useAuth } from "../../hooks/useAuth.js";
 import { apiRequest } from "../../services/api.js";
 
 const initialFilters = { search: "", genre: "", country: "", year: "", minRating: "", sortYear: "desc" };
 
 const HomePage = () => {
+  const { user } = useAuth();
   const [draft, setDraft] = useState(initialFilters);
   const [filters, setFilters] = useState(initialFilters);
   const [options, setOptions] = useState({ genres: [], countries: [], years: [] });
@@ -17,6 +20,7 @@ const HomePage = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [continueWatching, setContinueWatching] = useState([]);
 
   useEffect(() => { apiRequest("/api/v1/filters").then(setOptions).catch((e) => setError(e.message)); }, []);
   useEffect(() => {
@@ -25,6 +29,22 @@ const HomePage = () => {
       .then((data) => setFeatured(data.production || null))
       .catch(() => setFeatured(null));
   }, []);
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    apiRequest("/api/v1/history")
+      .then((data) => {
+        if (active) {
+          setContinueWatching(Array.isArray(data.continueWatching) ? data.continueWatching : []);
+        }
+      })
+      .catch(() => {
+        if (active) setContinueWatching([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
   useEffect(() => {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
     query.set("limit", "50");
@@ -87,6 +107,7 @@ const HomePage = () => {
           <button type="button" className="secondary" onClick={() => { setDraft(initialFilters); setLoading(true); setError(""); setFilters(initialFilters); }}>Xóa lọc</button>
         </div>
       </form>
+      <ContinueWatchingRail items={user ? continueWatching : []} />
       <div className="section-title"><h2>Kho phim</h2><span>{loading ? "Đang tải..." : `${result.total} kết quả`}</span></div>
       {error && <p className="alert">{error}</p>}
       {loading ? <p className="empty">Đang tải phim...</p> : result.items.length ? <div className="movie-grid">{result.items.map((movie) => <MovieCard key={movie.id} movie={movie} />)}</div> : <p className="empty">Không tìm thấy phim phù hợp.</p>}

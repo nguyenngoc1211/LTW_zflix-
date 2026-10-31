@@ -781,6 +781,13 @@ const main = async () => {
   if (migrate.status !== 0) warn("migrate:auth that bai - dang nhap/MFA se loi");
   else ok("migrate:auth");
 
+  const toxicMigration = run("node", ["scripts/migrate-toxic-comments.js"], {
+    cwd: path.join(ROOT, "backend-node"),
+    env: childEnv,
+  });
+  if (toxicMigration.status !== 0) warn("migrate:toxic-content that bai - loc comment/rating se loi");
+  else ok("migrate:toxic-content");
+
   const passwordScript = run("node", ["scripts/set-dev-password.js"], {
     cwd: path.join(ROOT, "backend-node"),
     env: childEnv,

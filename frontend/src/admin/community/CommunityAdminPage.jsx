@@ -76,6 +76,11 @@ const CommentsTab = () => {
                 <span className="font-medium text-red-700">{comment.production_title}</span>
               </p>
               <p className="mt-1 text-sm text-slate-700">{comment.content}</p>
+              {Boolean(Number(comment.is_toxic)) && (
+                <span className="mt-1 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                  Có thể chứa ngôn từ không phù hợp
+                </span>
+              )}
               <p className="mt-1 text-xs text-slate-400">{formatDateTime(comment.created_at)}</p>
             </div>
             <button type="button" className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700" onClick={() => remove(comment)}>Xóa</button>
@@ -153,6 +158,11 @@ const RatingsTab = () => {
                 <td className="max-w-xs px-4 py-3 text-slate-600">
                   {rating.review_title && <strong className="block text-slate-800">{rating.review_title}</strong>}
                   {rating.review_content || "—"}
+                  {Boolean(Number(rating.is_toxic)) && (
+                    <span className="mt-1 block text-xs font-semibold text-amber-700">
+                      Có thể chứa ngôn từ không phù hợp
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-500">{formatDateTime(rating.created_at)}</td>
                 <td className="px-4 py-3">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import ToxicComment from "../community/ToxicComment.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { apiRequest } from "../../services/api.js";
 
@@ -36,6 +37,7 @@ const CommentSection = ({ productionId }) => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
 
   const loadComments = useCallback(
     async ({ silent = false } = {}) => {
@@ -66,11 +68,13 @@ const CommentSection = ({ productionId }) => {
     if (!content || submitting) return;
     setSubmitting(true);
     setError("");
+    setWarning("");
     try {
-      await apiRequest(`/api/v1/productions/${productionId}/comments`, {
+      const result = await apiRequest(`/api/v1/productions/${productionId}/comments`, {
         method: "POST",
         body: JSON.stringify({ content }),
       });
+      if (result.warning) setWarning(result.warning);
       setDraft("");
       await loadComments({ silent: true });
     } catch (err) {
@@ -115,6 +119,7 @@ const CommentSection = ({ productionId }) => {
             </button>
           </div>
           {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+          {warning && <p className="toxic-comment-notice">{warning}</p>}
         </form>
       ) : (
         <div className="bg-[#18181b] p-4 rounded-xl border border-gray-800 mb-6 text-sm text-gray-400">
@@ -143,9 +148,11 @@ const CommentSection = ({ productionId }) => {
                     {formatTime(comment.created_at)}
                   </span>
                 </div>
-                <p className="text-gray-300 text-sm bg-[#18181b] p-2 rounded-lg border border-gray-800 whitespace-pre-wrap break-words">
-                  {comment.content}
-                </p>
+                <ToxicComment
+                  content={comment.content}
+                  isToxic={Boolean(Number(comment.is_toxic))}
+                  className="text-gray-300 text-sm bg-[#18181b] p-2 rounded-lg border border-gray-800 whitespace-pre-wrap break-words"
+                />
               </div>
             </div>
           ))}
