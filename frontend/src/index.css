@@ -94,7 +94,7 @@ button, input, select, textarea { font: inherit; }
 .app button, .app .button-link { border: 0; border-radius: .7rem; padding: .72rem 1.05rem; color: white; background: #e50914; cursor: pointer; font-weight: 700; }
 .app button:hover, .app .button-link:hover { filter: brightness(1.13); }
 .secondary { background: #272b35; }
-.site-header { position: sticky; top: 0; z-index: 10; height: 4.25rem; display: flex; align-items: center; justify-content: space-between; padding: 0 max(1.25rem, calc((100% - 1200px)/2)); background: rgba(8,10,15,.88); border-bottom: 1px solid #252936; backdrop-filter: blur(16px); }
+.site-header { position: relative; z-index: 10; height: 4.25rem; display: flex; align-items: center; justify-content: space-between; padding: 0 max(1.25rem, calc((100% - 1200px)/2)); background: rgba(8,10,15,.88); border-bottom: 1px solid #252936; backdrop-filter: blur(16px); }
 .brand { font-size: 1.55rem; font-weight: 900; letter-spacing: -.08em; }.brand span { color: #e50914; }
 .site-header nav { display: flex; gap: 1.4rem; font-size: .92rem; }.site-header nav a { color: #aeb3c2; }.site-header nav a.active, .site-header nav a:hover { color: white; }
 .auth-nav { display: flex; align-items: center; gap: 1rem; font-size: .9rem; margin-left: 1.5rem; }
@@ -122,6 +122,41 @@ button, input, select, textarea { font: inherit; }
 .settings-content { min-width: 0; border: 1px solid #292d38; border-radius: 1rem; padding: 1.5rem; background: #11141b; }
 .settings-section { scroll-margin-top: 6rem; }
 .settings-security { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #292d38; }
+.movie-comment { display: flex; gap: .85rem; padding: 1.1rem 0; border-bottom: 1px solid #292d38; }
+.watch-discussion { min-width: 0; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #292d38; }
+.comment-pagination { display: flex; justify-content: center; align-items: center; gap: .5rem; margin-top: 1rem; color: #d1d5db; font-size: .8rem; }
+.app .comment-pagination button { padding: .35rem .65rem; border: 1px solid #353946; border-radius: .4rem; background: transparent; color: #c4c8d2; font-size: .8rem; font-weight: 500; }
+.app .comment-pagination button:hover:not(:disabled) { border-color: #e50914; color: #fff; filter: none; }
+.app .comment-pagination button:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
+.app .comment-pagination button:disabled { opacity: .4; cursor: not-allowed; }
+.comment-pagination span { min-width: 1.8rem; padding: .3rem; border-radius: .35rem; color: #fb7185; text-align: center; }
+.movie-comment-avatar { width: 2.5rem; height: 2.5rem; border-radius: 50%; object-fit: cover; flex: none; }
+.movie-comment-main { min-width: 0; flex: 1; }
+.movie-comment-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: .45rem .7rem; }
+.movie-comment-meta strong { color: #f3f4f6; font-size: .95rem; }
+.movie-comment-meta time { color: #858b9a; font-size: .75rem; }
+.movie-comment-content { margin-top: .45rem; color: #d1d5db; font-size: .9rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.movie-comment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .45rem; color: #aeb3c2; font-size: .8rem; }
+.app .movie-comment-actions button { padding: .3rem .45rem; background: transparent; color: #aeb3c2; font-size: .8rem; font-weight: 500; }
+.app .movie-comment-actions button:hover { background: #292d38; color: #fff; filter: none; }
+.app .movie-comment-actions button:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
+.app .movie-comment-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.movie-reply-form { margin-top: .6rem; color: #aeb3c2; font-size: .8rem; }
+.movie-reply-form textarea { display: block; width: 100%; max-width: 100%; margin-top: .35rem; }
+.movie-replies { margin-top: .4rem; padding-left: .8rem; border-left: 1px solid #353946; }
+.app .movie-comment-actions button[aria-pressed="true"] { color: #fb7185; background: #38212b; }
+.movie-comment-menu { position: relative; }
+.movie-comment-menu-list { position: absolute; z-index: 20; top: 100%; right: 0; min-width: 9rem; padding: .3rem; border: 1px solid #353946; border-radius: .5rem; background: #171a22; box-shadow: 0 8px 24px #0009; }
+.app .movie-comment-menu-list button { display: block; width: 100%; text-align: left; }
+.movie-reply-form input[type="checkbox"] { width: 1rem; height: 1rem; padding: 0; vertical-align: middle; }
+.movie-spoiler-option { display: flex; align-items: center; gap: .5rem; margin-top: .5rem; color: #aeb3c2; font-size: .8rem; }
+.app .movie-spoiler-option input[type="checkbox"] { width: 1rem; height: 1rem; padding: 0; flex: none; }
+@media (max-width: 600px) { .movie-comment { gap: .6rem; } .movie-comment-avatar { width: 2rem; height: 2rem; } .movie-replies { padding-left: .45rem; } }
+.app .movie-discussion .discussion-actions { align-items: center; gap: .4rem .8rem; }
+.app .movie-discussion .discussion-actions button, .app .movie-discussion .discussion-comment-toggle, .app .movie-discussion .post-spoiler-toggle { padding: .3rem .4rem; border-radius: .35rem; background: transparent; color: #aeb3c2; font-size: .8rem; font-weight: 500; }
+.app .movie-discussion .discussion-actions button:hover, .app .movie-discussion .discussion-comment-toggle:hover, .app .movie-discussion .post-spoiler-toggle:hover { background: #292d38; color: #fff; filter: none; }
+.app .movie-discussion .discussion-actions button:focus-visible, .app .movie-discussion .discussion-comment-toggle:focus-visible, .app .movie-discussion .post-spoiler-toggle:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
+.app .movie-discussion .discussion-actions button:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 760px) { .settings-layout { grid-template-columns: 1fr; } .settings-nav { position: static; flex-direction: row; } .app .settings-nav button { flex: 1; text-align: center; } .settings-content { padding: 1rem; } .settings-section { scroll-margin-top: 8rem; } }
 .logout-button, .signin-button { padding: .45rem .95rem; border-radius: .55rem; background: #e50914; color: white; font-weight: 700; font-size: .88rem; cursor: pointer; }
 .logout-button:hover, .signin-button:hover { filter: brightness(1.13); color: white; }

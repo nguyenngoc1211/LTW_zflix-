@@ -427,3 +427,13 @@ Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạ
 
 - Hồ sơ và bảo mật cùng hiển thị trên `/settings`; sidebar cuộn đến section, đánh dấu vị trí cuộn và giữ các URL `?tab=profile` / `?tab=security`. Giữ nguyên component, API và luồng bảo mật hiện có.
 - Test trình duyệt dùng API giả lập xác nhận hai section, nút cuộn, trạng thái theo cuộn, sticky desktop, liên kết cũ và mobile; build và ESLint file thay đổi đạt. Lint toàn frontend vẫn có hai lỗi và ba cảnh báo tồn tại ở module khác. Không thay đổi backend/database; chưa thực hiện lại thao tác bảo mật thật.
+
+### Tương tác bình luận phim (2026-11-01)
+
+- Thêm vote và báo cáo bình luận phim yêu cầu phiên đăng nhập hiện có; vote dùng transaction và khóa xác định theo bình luận/người dùng, báo cáo giới hạn tần suất và chặn trùng. Không thay đổi xác thực, session hay quyền tài khoản.
+- Integration test trên `community_test_schema_20261101` xác nhận thiếu token trả 401, vote/chuyển/bỏ vote, báo cáo trùng bị từ chối và không sửa được bình luận người khác. Chưa kiểm thử đầy đủ concurrency, moderation hoặc ảnh đính kèm; không chạy kiểm thử ghi trên database `Zflix`.
+
+### Phân loại hỏi đáp cảnh phim (2026-11-01)
+
+- Tách namespace API câu hỏi cảnh phim và bài cộng đồng theo `content_type`; các thao tác theo ID kiểm tra loại trước khi dùng quyền hiện có. Báo cáo câu hỏi và câu trả lời yêu cầu đăng nhập, kiểm tra bài đang hiển thị, giới hạn tần suất và chống trùng.
+- Integration test trên database test riêng kiểm tra phân tách feed, vote, trả lời, báo cáo và nội dung cũ chưa phân loại. Chưa có kiểm thử tải ảnh R2 thật hoặc rà soát kiểm duyệt thực tế.

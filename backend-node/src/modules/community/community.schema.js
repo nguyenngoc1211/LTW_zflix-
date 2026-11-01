@@ -12,7 +12,7 @@ const indexes = (...items) => items.map(([key, options = {}]) => ({ key, ...opti
 export const communitySchemas = {
   community_posts: {
     validator: schema(['author_id', 'type', 'title', 'content', 'visibility', 'status', 'created_at', 'updated_at'], {
-      author_id: id, type: enumeration('normal', 'screenshot'), title: text(200), content: { bsonType: 'string', maxLength: 10000 },
+      author_id: id, type: enumeration('normal', 'screenshot'), content_type: enumeration('community_post', 'scene_question'), title: text(200), content: { bsonType: 'string', maxLength: 10000 },
       production_id: id, episode_id: id, community_id: id, timestamp_seconds: { bsonType: ['int', 'long', 'double'], minimum: 0 },
       screenshot_key: text(1024), images: { bsonType: 'array', maxItems: 10, items: text(1024) },
       tags: { bsonType: 'array', maxItems: 20, items: text(50) }, is_spoiler: { bsonType: 'bool' },
@@ -20,7 +20,7 @@ export const communitySchemas = {
       upvotes: { bsonType: ['int', 'long'], minimum: 0 }, downvotes: { bsonType: ['int', 'long'], minimum: 0 },
       score: { bsonType: ['int', 'long'] }, comment_count: { bsonType: ['int', 'long'], minimum: 0 }, created_at: date, updated_at: date,
     }),
-    indexes: indexes([{ status: 1, visibility: 1, created_at: -1, _id: -1 }], [{ production_id: 1, episode_id: 1, status: 1, created_at: -1, _id: -1 }], [{ production_id: 1, status: 1, created_at: -1, _id: -1 }], [{ community_id: 1, status: 1, created_at: -1, _id: -1 }], [{ author_id: 1, created_at: -1 }]),
+    indexes: indexes([{ status: 1, visibility: 1, created_at: -1, _id: -1 }], [{ production_id: 1, episode_id: 1, status: 1, created_at: -1, _id: -1 }], [{ production_id: 1, status: 1, created_at: -1, _id: -1 }], [{ community_id: 1, status: 1, created_at: -1, _id: -1 }], [{ author_id: 1, created_at: -1 }], [{ content_type: 1, status: 1, created_at: -1, _id: -1 }], [{ content_type: 1, production_id: 1, status: 1, created_at: -1, _id: -1 }]),
   },
   community_post_comments: {
     validator: schema(['post_id', 'author_id', 'content', 'status', 'created_at', 'updated_at'], { post_id: id, author_id: id, parent_id: id, content: text(3000), status: enumeration('active', 'hidden', 'deleted'), is_spoiler: { bsonType: 'bool' }, score: { bsonType: ['int', 'long'] }, created_at: date, updated_at: date }),

@@ -22,6 +22,7 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
+  const [revealed, setRevealed] = useState({});
 
   const loadComments = useCallback(
     async ({ silent = false } = {}) => {
@@ -56,7 +57,7 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
     try {
       const result = await apiRequest(`/api/v1/productions/${productionId}/comments`, {
         method: "POST",
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, isSpoiler: false }),
       });
       if (result.warning) setWarning(result.warning);
       setDraft("");
@@ -70,7 +71,7 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
   };
 
   return (
-    <div className="mt-8">
+    <div className={composerOnly ? '' : 'mt-8'}>
       <h3 className="text-pink-500 font-bold text-lg mb-4">
         Bình luận
         {!composerOnly && comments.length > 0 && (
@@ -133,11 +134,11 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
                     {formatTime(comment.created_at)}
                   </span>
                 </div>
-                <ToxicComment
+                {comment.is_spoiler && !revealed[comment.id] ? <button type="button" onClick={() => setRevealed((current) => ({ ...current, [comment.id]: true }))}>Hiện nội dung spoiler</button> : <ToxicComment
                   content={comment.content}
                   isToxic={Boolean(Number(comment.is_toxic))}
                   className="text-gray-300 text-sm bg-[#18181b] p-2 rounded-lg border border-gray-800 whitespace-pre-wrap break-words"
-                />
+                />}
               </div>
             </div>
           ))}

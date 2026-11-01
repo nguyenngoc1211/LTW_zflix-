@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
 import { fromMongo, mongoCollection, nextNumericId, withMongoTransaction } from "../../core/database/mongo.js";
-import { requireAuth } from "../../core/middleware/business-auth.bridge.js";
+import { requireAuth, optionalAuth } from "../../core/middleware/business-auth.bridge.js";
+import { rateLimit } from 'express-rate-limit';
 import { asyncHandler, parsePositiveInt } from "../../core/utils/http.js";
 import {
   detectToxicContent,
@@ -210,23 +211,37 @@ communityRouter.delete("/productions/:productionId/rating", requireAuth, asyncHa
   res.status(204).end();
 }));
 
-communityRouter.get("/productions/:productionId/comments", asyncHandler(async (req, res) => {
+communityRouter.get("/productions/:productionId/comments", optionalAuth, asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
   const paged = req.query.page !== undefined || req.query.limit !== undefined;
   const page = paged ? parsePositiveInt(req.query.page ?? '1', 'page') : 1;
   const limit = paged ? parsePositiveInt(req.query.limit ?? '20', 'limit') : null;
   if (paged && (page > 1000 || limit > 50)) return res.status(400).json({ message: 'Pagination exceeds limit' });
+  const parentFilter = req.query.parentId === undefined ? undefined : req.query.parentId === 'root' ? null : parsePositiveInt(req.query.parentId, 'parent id');
   if (useMongo()) {
     if (paged) {
       const rows = await (await mongoCollection('comments')).aggregate([
-        { $match: { production_id: productionId, status: 'active' } },
+        { $match: { production_id: productionId, status: 'active', ...(parentFilter !== undefined && { parent_id: parentFilter }) } },
         { $lookup: { from: 'users', localField: 'user_id', foreignField: 'id', as: 'author' } },
         { $unwind: '$author' },
         { $sort: { created_at: -1, id: -1 } },
         { $skip: (page - 1) * limit }, { $limit: limit + 1 },
-        { $project: { _id: 0, id: 1, content: 1, parent_id: 1, likes_count: 1, is_toxic: 1, created_at: 1, updated_at: 1, user_id: 1, username: '$author.username', avatar_url: '$author.avatar_url' } },
+        { $project: { _id: 0, id: 1, content: 1, parent_id: 1, likes_count: 1, score: 1, is_spoiler: 1, is_toxic: 1, created_at: 1, updated_at: 1, user_id: 1, username: '$author.username', avatar_url: '$author.avatar_url' } },
       ]).toArray();
-      return res.json({ items: rows.slice(0, limit), page, hasMore: rows.length > limit });
+      const visible = rows.slice(0, limit);
+      const counts = await (await mongoCollection('comments')).aggregate([
+        { $match: { production_id: productionId, status: 'active', parent_id: { $in: visible.map((item) => item.id) } } },
+        { $group: { _id: '$parent_id', count: { $sum: 1 } } },
+      ]).toArray();
+      const countById = new Map(counts.map((item) => [item._id, item.count]));
+      const votes = req.user ? await (await mongoCollection('movie_comment_votes')).find({ user_id: req.user.id, comment_id: { $in: visible.map((item) => item.id) } }).toArray() : [];
+      const voteById = new Map(votes.map((vote) => [vote.comment_id, vote.value]));
+      const voteCounts = await (await mongoCollection('movie_comment_votes')).aggregate([
+        { $match: { comment_id: { $in: visible.map((item) => item.id) } } },
+        { $group: { _id: '$comment_id', upvotes: { $sum: { $cond: [{ $eq: ['$value', 1] }, 1, 0] } }, downvotes: { $sum: { $cond: [{ $eq: ['$value', -1] }, 1, 0] } } } },
+      ]).toArray();
+      const countsById = new Map(voteCounts.map((entry) => [entry._id, entry]));
+      return res.json({ items: visible.map((item) => ({ ...item, reply_count: countById.get(item.id) || 0, viewer_vote: voteById.get(item.id) || 0, upvotes: countsById.get(item.id)?.upvotes || 0, downvotes: countsById.get(item.id)?.downvotes || 0 })), page, hasMore: rows.length > limit });
     }
     const comments = await (await mongoCollection("comments"))
       .find({ production_id: productionId, status: "active" }).sort({ created_at: -1 }).toArray();
@@ -237,7 +252,7 @@ communityRouter.get("/productions/:productionId/comments", asyncHandler(async (r
     const items = comments.flatMap((comment) => {
       const user = byId.get(comment.user_id);
       return user ? [{ id: comment.id, content: comment.content, parent_id: comment.parent_id,
-        likes_count: comment.likes_count, is_toxic: comment.is_toxic,
+        likes_count: comment.likes_count, is_spoiler: comment.is_spoiler, is_toxic: comment.is_toxic,
         created_at: comment.created_at, updated_at: comment.updated_at,
         user_id: user.id, username: user.username, avatar_url: user.avatar_url }] : [];
     });
@@ -254,13 +269,23 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
   const productionId = parsePositiveInt(req.params.productionId, "production id");
   const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   if (!content || content.length > 3000) return res.status(400).json({ message: "content is required and must not exceed 3000 characters" });
+  if (req.body?.isSpoiler !== undefined && typeof req.body.isSpoiler !== 'boolean') return res.status(400).json({ message: 'Invalid spoiler flag' });
   const parentId = req.body?.parentId == null ? null : parsePositiveInt(req.body.parentId, "parent id");
   await ensureProduction(productionId);
+  let depth = 0;
   if (parentId) {
     if (useMongo()) {
-      const parent = await (await mongoCollection("comments")).findOne({ id: parentId,
-        production_id: productionId, status: "active" });
-      if (!parent) return res.status(400).json({ message: "Invalid parent comment" });
+      const comments = await mongoCollection('comments');
+      let nextId = parentId;
+      const visited = new Set();
+      while (nextId != null) {
+        if (visited.has(nextId) || depth >= 3) return res.status(400).json({ message: 'Invalid parent or maximum depth reached' });
+        visited.add(nextId);
+        const parent = await comments.findOne({ id: nextId, production_id: productionId, status: 'active' }, { projection: { parent_id: 1 } });
+        if (!parent) return res.status(400).json({ message: 'Invalid parent comment' });
+        depth += 1;
+        nextId = parent.parent_id ?? null;
+      }
     } else {
     const [parents] = await pool.execute("SELECT id FROM comments WHERE id=? AND production_id=? AND status='active'", [parentId, productionId]);
     if (!parents.length) return res.status(400).json({ message: "Invalid parent comment" });
@@ -272,7 +297,7 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
     const now = new Date();
     await (await mongoCollection("comments")).insertOne({ _id: id, id,
       user_id: req.user.id, production_id: productionId, content,
-      parent_id: parentId, likes_count: 0, is_toxic: Number(isToxic),
+      parent_id: parentId, depth, likes_count: 0, score: 0, is_spoiler: req.body?.isSpoiler === true, is_toxic: Number(isToxic),
       status: "active", created_at: now, updated_at: now });
     return res.status(201).json({ id, content, parentId, isToxic,
       warning: isToxic ? TOXIC_COMMENT_WARNING : null });
@@ -287,15 +312,51 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
   });
 }));
 
+communityRouter.put('/comments/:commentId/vote', requireAuth, asyncHandler(async (req, res) => {
+  if (!useMongo()) return res.status(503).json({ message: 'MongoDB required' });
+  const id = parsePositiveInt(req.params.commentId, 'comment id');
+  const value = req.body?.value;
+  if (![0, 1, -1].includes(value) || Object.keys(req.body).some((key) => key !== 'value')) return res.status(400).json({ message: 'Invalid vote' });
+  const result = await withMongoTransaction(async (session) => {
+    const comments = await mongoCollection('comments');
+    const votes = await mongoCollection('movie_comment_votes');
+    if (!await comments.findOne({ id, status: 'active' }, { session })) return null;
+    const voteId = `${id}:${req.user.id}`;
+    const previous = await votes.findOne({ _id: voteId }, { session });
+    if (value === 0) await votes.deleteOne({ _id: voteId }, { session });
+    else await votes.updateOne({ _id: voteId }, { $set: { value }, $setOnInsert: { comment_id: id, user_id: req.user.id } }, { upsert: true, session });
+    const updated = await comments.findOneAndUpdate({ id, status: 'active' }, { $inc: { score: value - (previous?.value || 0) } }, { session, returnDocument: 'after' });
+    if (!updated) return null;
+    const upvotes = await votes.countDocuments({ comment_id: id, value: 1 }, { session });
+    const downvotes = await votes.countDocuments({ comment_id: id, value: -1 }, { session });
+    return { score: updated.score, value, upvotes, downvotes };
+  });
+  return result ? res.json(result) : res.status(404).json({ message: 'Comment not found' });
+}));
+
+const reportLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: 'draft-7', legacyHeaders: false });
+communityRouter.post('/comments/:commentId/reports', requireAuth, reportLimiter, asyncHandler(async (req, res) => {
+  if (!useMongo()) return res.status(503).json({ message: 'MongoDB required' });
+  const id = parsePositiveInt(req.params.commentId, 'comment id');
+  const { reason, description = '' } = req.body || {};
+  if (!['spam', 'harassment', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000) return res.status(400).json({ message: 'Invalid report' });
+  if (!await (await mongoCollection('comments')).findOne({ id, status: 'active' })) return res.status(404).json({ message: 'Comment not found' });
+  try {
+    await (await mongoCollection('community_reports')).insertOne({ _id: `movie-comment:${id}:${req.user.id}`, reporter_id: req.user.id, target_type: 'comment', target_id: id, comment_source: 'movie', reason, description: description.trim(), status: 'open', created_at: new Date() });
+  } catch (error) { if (error.code === 11000) return res.status(409).json({ message: 'Bạn đã báo cáo bình luận này.' }); throw error; }
+  return res.status(201).json({ message: 'Đã gửi báo cáo.' });
+}));
+
 communityRouter.patch("/comments/:commentId", requireAuth, asyncHandler(async (req, res) => {
   const commentId = parsePositiveInt(req.params.commentId, "comment id");
   const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
   if (!content || content.length > 3000) return res.status(400).json({ message: "content is required and must not exceed 3000 characters" });
+  if (req.body?.isSpoiler !== undefined && typeof req.body.isSpoiler !== 'boolean') return res.status(400).json({ message: 'Invalid spoiler flag' });
   const { isToxic } = detectToxicContent(content);
   if (useMongo()) {
     const result = await (await mongoCollection("comments")).updateOne({ id: commentId,
       user_id: req.user.id, status: "active" }, { $set: { content,
-      is_toxic: Number(isToxic), updated_at: new Date() } });
+      is_toxic: Number(isToxic), ...(req.body?.isSpoiler !== undefined && { is_spoiler: req.body.isSpoiler }), updated_at: new Date() } });
     if (!result.matchedCount) return res.status(404).json({ message: "Comment not found" });
     return res.json({ id: commentId, content, isToxic,
       warning: isToxic ? TOXIC_COMMENT_WARNING : null });

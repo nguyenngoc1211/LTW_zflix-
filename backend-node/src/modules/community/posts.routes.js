@@ -3,6 +3,7 @@ import { mongoCollection, nextNumericId, withMongoTransaction } from '../../core
 import { requireAuth, optionalAuth } from '../../core/middleware/auth.middleware.js';
 import { asyncHandler, parsePositiveInt } from '../../core/utils/http.js';
 import multer from 'multer';
+import { rateLimit } from 'express-rate-limit';
 import { uploadPostImages, cleanupPostImages } from './post-images.js';
 import { toPublicMediaUrl } from '../../core/storage/public-url.js';
 
@@ -12,13 +13,17 @@ const present = (post) => ({ ...post, image_urls: (post.images || []).map((key) 
 const presentMany = async (posts, userId) => {
   if (!posts.length) return [];
   const authorIds = [...new Set(posts.map((post) => post.author_id))];
-  const [authors, saved] = await Promise.all([
+  const [authors, saved, votes, totals] = await Promise.all([
     (await mongoCollection('users')).find({ id: { $in: authorIds } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1 } }).toArray(),
     userId ? (await mongoCollection('community_saved_posts')).find({ user_id: userId, post_id: { $in: posts.map((post) => post._id) } }, { projection: { post_id: 1 } }).toArray() : [],
+    userId ? (await mongoCollection('community_post_votes')).find({ user_id: userId, post_id: { $in: posts.map((post) => post._id) } }, { projection: { post_id: 1, value: 1 } }).toArray() : [],
+    (await mongoCollection('community_post_votes')).aggregate([{ $match: { post_id: { $in: posts.map((post) => post._id) } } }, { $group: { _id: '$post_id', upvotes: { $sum: { $cond: [{ $eq: ['$value', 1] }, 1, 0] } }, downvotes: { $sum: { $cond: [{ $eq: ['$value', -1] }, 1, 0] } } } }]).toArray(),
   ]);
   const byId = new Map(authors.map((author) => [author.id, author]));
   const savedIds = new Set(saved.map((entry) => entry.post_id));
-  return posts.map((post) => ({ ...present(post), author: byId.get(post.author_id) || null, is_saved: userId ? savedIds.has(post._id) : false }));
+  const voteById = new Map(votes.map((entry) => [entry.post_id, entry.value]));
+  const totalsById = new Map(totals.map((entry) => [entry._id, entry]));
+  return posts.map((post) => ({ ...present(post), author: byId.get(post.author_id) || null, is_saved: userId ? savedIds.has(post._id) : false, viewer_vote: voteById.get(post._id) || 0, upvotes: totalsById.get(post._id)?.upvotes || 0, downvotes: totalsById.get(post._id)?.downvotes || 0 }));
 };
 const allowed = new Set(['title', 'content', 'productionId', 'episodeId', 'communityId', 'tags', 'isSpoiler', 'visibility']);
 const validate = async (body, previous = {}) => {
@@ -75,6 +80,16 @@ const visibleTo = async (user) => {
   return { $or: [{ visibility: 'public' }, { visibility: 'members', community_id: { $in: groups.map((group) => group._id) } }] };
 };
 postsRouter.use(guardStore);
+const isScene = (req) => req.baseUrl === '/api/v1/scene-questions';
+const contentFilter = (req) => isScene(req) ? 'scene_question' : { $in: ['community_post', null] };
+postsRouter.param('id', async (req, res, next, value) => {
+  try {
+    const id = parsePositiveInt(value);
+    const post = await (await mongoCollection('community_posts')).findOne({ _id: id, content_type: contentFilter(req) }, { projection: { _id: 1 } });
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+    return next();
+  } catch (error) { return next(error); }
+});
 const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 5, fields: 1 } });
 postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.array('images', 5)(req, res, (error) => {
   if (error) return res.status(400).json({ message: 'Invalid upload or image exceeds 5 MB' });
@@ -84,6 +99,7 @@ postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.ar
   let input;
   try { input = JSON.parse(req.body.post); } catch { throw bad('Invalid post JSON'); }
   const { type = 'normal', timestampSeconds, ...postInput } = input || {};
+  if (isScene(req) && (type !== 'screenshot' || 'communityId' in postInput || typeof postInput.title !== 'string' || !postInput.title.trim())) throw bad('Scene questions require a screenshot and question');
   if (!['normal', 'screenshot'].includes(type)) throw bad('Invalid post type');
   if (type === 'normal' && timestampSeconds !== undefined) throw bad('Timestamp requires a screenshot');
   const fields = await validate(postInput);
@@ -97,7 +113,7 @@ postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.ar
   const id = await nextNumericId('community_posts');
   const keys = await uploadPostImages(req.files);
   const now = new Date();
-  const post = { _id: id, id, author_id: req.user.id, type, visibility: 'public', ...fields, images: keys, ...(type === 'screenshot' && { screenshot_key: keys[0], timestamp_seconds: timestampSeconds }), status: 'active', is_spoiler: fields.is_spoiler ?? false, show_on_movie_page: type === 'screenshot', upvotes: 0, downvotes: 0, score: 0, comment_count: 0, created_at: now, updated_at: now };
+  const post = { _id: id, id, author_id: req.user.id, type, content_type: isScene(req) ? 'scene_question' : 'community_post', visibility: 'public', ...fields, images: keys, ...(type === 'screenshot' && { screenshot_key: keys[0], timestamp_seconds: timestampSeconds }), status: 'active', is_spoiler: fields.is_spoiler ?? false, show_on_movie_page: isScene(req), upvotes: 0, downvotes: 0, score: 0, comment_count: 0, created_at: now, updated_at: now };
   try {
     await (await mongoCollection('community_posts')).insertOne(post);
   } catch (error) {
@@ -115,13 +131,15 @@ postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.ar
   res.status(201).json((await presentMany([post], req.user.id))[0]);
 }));
 postsRouter.get('/saved', requireAuth, asyncHandler(async (req, res) => {
+  if (isScene(req)) return res.status(404).json({ message: 'Not found' });
   const saved = await (await mongoCollection('community_saved_posts')).find({ user_id: req.user.id }).sort({ created_at: -1 }).limit(100).toArray();
-  const posts = await (await mongoCollection('community_posts')).find({ _id: { $in: saved.map((item) => item.post_id) }, status: 'active', ...await visibleTo(req.user) }).toArray();
+  const posts = await (await mongoCollection('community_posts')).find({ _id: { $in: saved.map((item) => item.post_id) }, content_type: contentFilter(req), status: 'active', ...await visibleTo(req.user) }).toArray();
   const byId = new Map(posts.map((post) => [post._id, post]));
   res.json({ items: await presentMany(saved.flatMap((item) => byId.has(item.post_id) ? [byId.get(item.post_id)] : []), req.user.id) });
 }));
 postsRouter.get('/', optionalAuth, asyncHandler(async (req, res) => {
-  const filter = { status: 'active', ...await visibleTo(req.user) };
+  const filter = { status: 'active', content_type: contentFilter(req), ...await visibleTo(req.user) };
+  if (isScene(req) && req.query.movieId === undefined) throw bad('movieId is required');
   for (const [key, field] of [['movieId', 'production_id'], ['episodeId', 'episode_id'], ['communityId', 'community_id']]) if (req.query[key] !== undefined) filter[field] = parsePositiveInt(req.query[key], key);
   if (req.query.onMoviePage === 'true') filter.show_on_movie_page = true;
   if (req.query.type !== undefined) {
@@ -146,15 +164,17 @@ postsRouter.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
   res.json((await presentMany([post], req.user?.id))[0]);
 }));
 postsRouter.post('/', requireAuth, asyncHandler(async (req, res) => {
+  if (isScene(req)) return res.status(404).json({ message: 'Not found' });
   const fields = await validate(req.body);
   await requireMembership(fields.community_id, req.user.id);
   const id = await nextNumericId('community_posts');
   const now = new Date();
-  const post = { _id: id, id, author_id: req.user.id, type: 'normal', visibility: 'public', ...fields, status: 'active', is_spoiler: fields.is_spoiler ?? false, show_on_movie_page: false, upvotes: 0, downvotes: 0, score: 0, comment_count: 0, created_at: now, updated_at: now };
+  const post = { _id: id, id, author_id: req.user.id, type: 'normal', content_type: 'community_post', visibility: 'public', ...fields, status: 'active', is_spoiler: fields.is_spoiler ?? false, show_on_movie_page: false, upvotes: 0, downvotes: 0, score: 0, comment_count: 0, created_at: now, updated_at: now };
   await (await mongoCollection('community_posts')).insertOne(post);
   res.status(201).json((await presentMany([post], req.user.id))[0]);
 }));
 postsRouter.patch('/:id', requireAuth, asyncHandler(async (req, res) => {
+  if (isScene(req) && Object.keys(req.body || {}).some((key) => !['title', 'content', 'isSpoiler'].includes(key))) throw bad('Invalid scene question fields');
   const id = parsePositiveInt(req.params.id);
   const collection = await mongoCollection('community_posts');
   const existing = await collection.findOne({ _id: id, author_id: req.user.id, status: 'active' });
@@ -170,6 +190,7 @@ postsRouter.patch('/:id', requireAuth, asyncHandler(async (req, res) => {
   res.json((await presentMany([result], req.user.id))[0]);
 }));
 postsRouter.put('/:id/save', requireAuth, asyncHandler(async (req, res) => {
+  if (isScene(req)) return res.status(404).json({ message: 'Not found' });
   const postId = parsePositiveInt(req.params.id);
   if (!await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', ...await visibleTo(req.user) })) return res.status(404).json({ message: 'Post not found' });
   const saved = await mongoCollection('community_saved_posts');
@@ -191,7 +212,10 @@ postsRouter.put('/:id/vote', requireAuth, asyncHandler(async (req, res) => {
     if (value === 0) await votes.deleteOne({ post_id: postId, user_id: req.user.id }, { session });
     else await votes.updateOne({ post_id: postId, user_id: req.user.id }, { $set: { value }, $setOnInsert: { post_id: postId, user_id: req.user.id } }, { upsert: true, session });
     const updated = await posts.findOneAndUpdate({ _id: postId, status: 'active' }, { $inc: { upvotes: Number(value === 1) - Number(old === 1), downvotes: Number(value === -1) - Number(old === -1), score: value - old }, $set: { updated_at: new Date() } }, { session, returnDocument: 'after' });
-    return updated ? { score: updated.score, upvotes: updated.upvotes, downvotes: updated.downvotes, value } : null;
+    if (!updated) return null;
+    const upvotes = await votes.countDocuments({ post_id: postId, value: 1 }, { session });
+    const downvotes = await votes.countDocuments({ post_id: postId, value: -1 }, { session });
+    return { score: updated.score, upvotes, downvotes, value };
   });
   if (!result) return res.status(404).json({ message: 'Post not found' });
   res.json(result);
@@ -206,7 +230,19 @@ postsRouter.get('/:id/comments', optionalAuth, asyncHandler(async (req, res) => 
   const visible = items.slice(0, 20);
   const authors = await (await mongoCollection('users')).find({ id: { $in: [...new Set(visible.map((item) => item.author_id))] } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1 } }).toArray();
   const byId = new Map(authors.map((author) => [author.id, author]));
-  res.json({ items: visible.map((item) => ({ ...item, author: byId.get(item.author_id) || null })), page, hasMore: items.length > 20 });
+  const counts = await (await mongoCollection('community_post_comments')).aggregate([
+    { $match: { post_id: postId, parent_id: { $in: visible.map((item) => item._id) }, status: { $in: ['active', 'deleted'] } } },
+    { $group: { _id: '$parent_id', count: { $sum: 1 } } },
+  ]).toArray();
+  const countById = new Map(counts.map((entry) => [entry._id, entry.count]));
+  const votes = req.user ? await (await mongoCollection('community_comment_votes')).find({ user_id: req.user.id, comment_id: { $in: visible.map((item) => item._id) } }, { projection: { comment_id: 1, value: 1 } }).toArray() : [];
+  const voteById = new Map(votes.map((entry) => [entry.comment_id, entry.value]));
+  const voteCounts = await (await mongoCollection('community_comment_votes')).aggregate([
+    { $match: { comment_id: { $in: visible.map((item) => item._id) } } },
+    { $group: { _id: '$comment_id', upvotes: { $sum: { $cond: [{ $eq: ['$value', 1] }, 1, 0] } }, downvotes: { $sum: { $cond: [{ $eq: ['$value', -1] }, 1, 0] } } } },
+  ]).toArray();
+  const votesById = new Map(voteCounts.map((entry) => [entry._id, entry]));
+  res.json({ items: visible.map((item) => ({ ...item, author: byId.get(item.author_id) || null, viewer_vote: voteById.get(item._id) || 0, reply_count: countById.get(item._id) || 0, upvotes: votesById.get(item._id)?.upvotes || 0, downvotes: votesById.get(item._id)?.downvotes || 0 })), page, hasMore: items.length > 20 });
 }));
 postsRouter.put('/:id/comments/:commentId/vote', requireAuth, asyncHandler(async (req, res) => {
   const postId = parsePositiveInt(req.params.id);
@@ -227,7 +263,10 @@ postsRouter.put('/:id/comments/:commentId/vote', requireAuth, asyncHandler(async
     if (value === 0) await votes.deleteOne({ _id: voteId }, { session });
     else await votes.updateOne({ _id: voteId }, { $set: { value }, $setOnInsert: { comment_id: commentId, user_id: req.user.id } }, { upsert: true, session });
     const updated = await comments.findOneAndUpdate({ _id: commentId, post_id: postId, status: 'active' }, { $inc: { score: value - old } }, { session, returnDocument: 'after' });
-    return updated ? { score: updated.score, value } : null;
+    if (!updated) return null;
+    const upvotes = await votes.countDocuments({ comment_id: commentId, value: 1 }, { session });
+    const downvotes = await votes.countDocuments({ comment_id: commentId, value: -1 }, { session });
+    return { score: updated.score, value, upvotes, downvotes };
   });
   if (!result) return res.status(404).json({ message: 'Comment not found' });
   res.json(result);
@@ -283,8 +322,30 @@ postsRouter.delete('/:id/comments/:commentId', requireAuth, asyncHandler(async (
   res.status(204).end();
 }));
 postsRouter.delete('/:id/save', requireAuth, asyncHandler(async (req, res) => {
+  if (isScene(req)) return res.status(404).json({ message: 'Not found' });
   await (await mongoCollection('community_saved_posts')).deleteOne({ user_id: req.user.id, post_id: parsePositiveInt(req.params.id) });
   res.status(204).end();
+}));
+const reportLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: 'draft-7', legacyHeaders: false });
+postsRouter.post('/:id/reports', requireAuth, reportLimiter, asyncHandler(async (req, res) => {
+  if (!isScene(req)) return res.status(404).json({ message: 'Not found' });
+  const postId = parsePositiveInt(req.params.id);
+  const { reason, description = '' } = req.body || {};
+  if (!['spam', 'harassment', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000 || Object.keys(req.body || {}).some((key) => !['reason', 'description'].includes(key))) throw bad('Invalid report');
+  if (!await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', content_type: 'scene_question', ...await visibleTo(req.user) })) return res.status(404).json({ message: 'Post not found' });
+  try { await (await mongoCollection('community_reports')).insertOne({ _id: `scene-question:${postId}:${req.user.id}`, reporter_id: req.user.id, target_type: 'post', target_id: postId, reason, description: description.trim(), status: 'open', created_at: new Date() }); }
+  catch (error) { if (error.code === 11000) return res.status(409).json({ message: 'Already reported' }); throw error; }
+  res.status(201).json({ message: 'Report submitted' });
+}));
+postsRouter.post('/:id/comments/:commentId/reports', requireAuth, reportLimiter, asyncHandler(async (req, res) => {
+  if (!isScene(req)) return res.status(404).json({ message: 'Not found' });
+  const postId = parsePositiveInt(req.params.id), commentId = parsePositiveInt(req.params.commentId);
+  const { reason, description = '' } = req.body || {};
+  if (!['spam', 'harassment', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000 || Object.keys(req.body || {}).some((key) => !['reason', 'description'].includes(key))) throw bad('Invalid report');
+  if (!await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', content_type: 'scene_question', ...await visibleTo(req.user) }) || !await (await mongoCollection('community_post_comments')).findOne({ _id: commentId, post_id: postId, status: 'active' })) return res.status(404).json({ message: 'Comment not found' });
+  try { await (await mongoCollection('community_reports')).insertOne({ _id: `scene-comment:${commentId}:${req.user.id}`, reporter_id: req.user.id, target_type: 'comment', target_id: commentId, comment_source: 'scene', post_id: postId, reason, description: description.trim(), status: 'open', created_at: new Date() }); }
+  catch (error) { if (error.code === 11000) return res.status(409).json({ message: 'Already reported' }); throw error; }
+  res.status(201).json({ message: 'Report submitted' });
 }));
 postsRouter.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
   const id = parsePositiveInt(req.params.id);

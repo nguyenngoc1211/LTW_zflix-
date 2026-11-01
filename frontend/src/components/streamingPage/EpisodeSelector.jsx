@@ -7,7 +7,7 @@ import {
 
 const EpisodeSelector = ({ episodes, currentEpisodeId, onEpisodeClick }) => {
   return (
-    <div className="bg-[#18181b] h-full flex flex-col border-r border-gray-800">
+    <div className="bg-[#18181b] flex flex-col border-r border-gray-800">
       {/* Header Sidebar */}
       <div className="p-3 bg-[#202022] border-b border-gray-800">
         <div className="flex justify-between items-center mb-2">
@@ -23,7 +23,7 @@ const EpisodeSelector = ({ episodes, currentEpisodeId, onEpisodeClick }) => {
       </div>
 
       {/* List Episodes */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-0 bg-[#121212]">
+      <div className="p-0 bg-[#121212]">
         <div className="flex flex-col">
           {episodes.map((ep) => {
             const isActive = ep.id === currentEpisodeId;

@@ -1,0 +1,161 @@
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright-core';
+
+const base = process.env.FRONTEND_URL || 'http://localhost:5173';
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const post = { id: 78, type: 'screenshot', content_type: 'scene_question', author_id: 1, author: { username: 'Người xem' }, title: 'Khoảnh khắc thử', content: 'Một cảnh đáng nhớ', image_urls: ['/default-avatar.png'], production_id: 54, episode_id: 62, timestamp_seconds: 20, is_spoiler: false, score: 0, comment_count: 0, is_saved: false, created_at: '2026-01-01T00:00:00Z' };
+let replyCreated = false;
+let movieReplyPayload;
+let postCommentPayload;
+let sceneReplyCreated = false;
+let screenshotQuery;
+let captureSubmitted = false;
+let capturePayload;
+let postVoteRequests = 0;
+const extraComments = Array.from({ length: 12 }, (_, index) => ({ id: 100 + index, user_id: 8, username: 'Khách', content: `Bình luận ${index}`, created_at: '2025-01-01T00:00:00Z', reply_count: 0 }));
+try {
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/auth/refresh-token')) return route.fulfill({ json: { accessToken: 'test-token', user: { id: 1, username: 'tester', role: 'user' } } });
+    if (path === '/api/v1/productions/54') return route.fulfill({ json: { id: 54, slug: 'test-movie' } });
+    if (path === '/api/streaming/productions/detail/test-movie') return route.fulfill({ json: { id: 54, slug: 'test-movie', title: 'Phim thử', type: 'movie', genres: [], related: [], episodes: Array.from({ length: 35 }, (_, index) => ({ id: 62 + index, episode_number: index + 1, video_url: null })) } });
+    if (path === '/api/v1/productions/54/comments') {
+      if (route.request().method() === 'POST') { movieReplyPayload = JSON.parse(route.request().postData()); replyCreated = true; return route.fulfill({ status: 201, json: { id: 43 } }); }
+      const children = new URL(route.request().url()).searchParams.get('parentId') === '42';
+      const requestedPage = Number(new URL(route.request().url()).searchParams.get('page') || 1);
+      const roots = [{ id: 42, user_id: 8, username: 'Người bình luận', avatar_url: '/missing-avatar.png', content: 'Bình luận thử', created_at: '2026-01-02T00:00:00Z', reply_count: replyCreated ? 1 : 0 }, ...extraComments];
+      return route.fulfill({ json: { items: children ? (replyCreated ? [{ id: 43, user_id: 1, username: 'tester', content: 'Trả lời thử', created_at: '2026-01-03T00:00:00Z', reply_count: 0 }] : []) : roots.slice((requestedPage - 1) * 12, requestedPage * 12), hasMore: !children && requestedPage === 1 } });
+    }
+    if (path === '/api/v1/scene-questions') { screenshotQuery = new URL(route.request().url()).searchParams; return route.fulfill({ json: { items: [post], hasMore: false } }); }
+    if (path === '/api/v1/scene-questions/with-images') { captureSubmitted = true; capturePayload = route.request().postData(); return route.fulfill({ status: 201, json: post }); }
+    if (path === '/api/v1/scene-questions/78/vote' || path === '/api/v1/scene-questions/78/comments/91/vote') { const value = JSON.parse(route.request().postData()).value; if (path.endsWith('/78/vote')) { postVoteRequests++; await new Promise((resolve) => setTimeout(resolve, 150)); } return route.fulfill({ json: { score: value, value, upvotes: Number(value === 1), downvotes: Number(value === -1) } }); }
+    if (path === '/api/v1/scene-questions/78/comments') {
+      if (route.request().method() === 'POST') { postCommentPayload = JSON.parse(route.request().postData()); sceneReplyCreated = true; return route.fulfill({ status: 201, json: { id: 92 } }); }
+      return route.fulfill({ json: { items: new URL(route.request().url()).searchParams.has('parentId') ? (sceneReplyCreated ? [{ id: 92, author_id: 1, author: { username: 'tester' }, content: 'Trả lời khoảnh khắc', status: 'active', reply_count: 0, created_at: '2026-01-01T00:00:00Z' }] : []) : [{ id: 91, author_id: 1, author: { username: 'tester' }, content: 'Bình luận khoảnh khắc', status: 'active', is_spoiler: true, score: 0, viewer_vote: 0, reply_count: sceneReplyCreated ? 1 : 0, created_at: '2026-01-01T00:00:00Z' }], hasMore: false } });
+    }
+    return route.fulfill({ json: { items: [], production: null } });
+  });
+  await page.goto(`${base}/movies/54?ep=1`);
+  const comment = page.locator('.movie-comment').filter({ hasText: 'Bình luận thử' });
+  await comment.getByText('Bình luận thử').waitFor();
+  await page.evaluate(() => {
+    const video = document.querySelector('video');
+    Object.defineProperties(video, { readyState: { value: 2, configurable: true }, videoWidth: { value: 20, configurable: true }, videoHeight: { value: 20, configurable: true }, currentTime: { value: 20, configurable: true } });
+    HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} });
+    HTMLCanvasElement.prototype.toBlob = (callback) => callback(new Blob(['mock-image'], { type: 'image/png' }));
+  });
+  await page.getByRole('button', { name: 'Hỏi về cảnh này' }).click();
+  const captureDialog = page.getByRole('dialog', { name: 'Hỏi về cảnh này' });
+  await captureDialog.getByLabel('Câu hỏi').fill('Cảnh này là gì?');
+  assert.equal(await captureDialog.getByText('Mã cộng đồng').count(), 0);
+  assert.equal(await captureDialog.getByLabel('Nội dung', { exact: true }).count(), 0);
+  assert.equal(await captureDialog.locator('input[type="checkbox"]').count(), 0);
+  await captureDialog.getByRole('button', { name: 'Đăng câu hỏi' }).click();
+  await captureDialog.waitFor({ state: 'hidden' });
+  assert.equal(captureSubmitted, true);
+  assert.ok(capturePayload.includes('"isSpoiler":false'));
+  const measureColumns = () => page.evaluate(() => {
+    const left = document.querySelector('.watch-episodes');
+    const right = document.querySelector('.watch-info');
+    const discussion = document.querySelector('.watch-discussion');
+    const infoCard = right.querySelector(':scope > div');
+    const episodeList = left.firstElementChild.lastElementChild;
+    return { scroll: window.scrollY, left: left.getBoundingClientRect().top, right: right.getBoundingClientRect().top, discussion: discussion.getBoundingClientRect().top, leftPosition: getComputedStyle(left).position, rightPosition: getComputedStyle(right).position, infoOverflow: getComputedStyle(infoCard).overflowY, episodeOverflow: episodeList && getComputedStyle(episodeList).overflowY, leftWidth: left.getBoundingClientRect().width, rightWidth: right.getBoundingClientRect().width };
+  });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const top = await measureColumns();
+  const headerTop = await page.locator('.site-header').evaluate((element) => element.getBoundingClientRect().top);
+  assert.equal(top.leftPosition, 'static');
+  assert.equal(top.rightPosition, 'static');
+  assert.equal(top.infoOverflow, 'visible');
+  assert.equal(top.episodeOverflow, 'visible');
+  await page.evaluate(() => window.scrollTo(0, 300));
+  await page.waitForFunction(() => window.scrollY >= 300);
+  const middle = await measureColumns();
+  const headerMiddle = await page.locator('.site-header').evaluate((element) => element.getBoundingClientRect().top);
+  assert.ok(Math.abs((headerTop - headerMiddle) - (middle.scroll - top.scroll)) < 2);
+  assert.ok(Math.abs((top.left - middle.left) - (middle.scroll - top.scroll)) < 2);
+  assert.ok(Math.abs((top.right - middle.right) - (middle.scroll - top.scroll)) < 2);
+  assert.equal(top.leftWidth, middle.leftWidth);
+  assert.equal(top.rightWidth, middle.rightWidth);
+  await page.evaluate(() => window.scrollTo(0, document.querySelector('.watch-discussion').getBoundingClientRect().top + window.scrollY - 100));
+  const atDiscussion = await measureColumns();
+  assert.ok(Math.abs((top.left - atDiscussion.left) - (atDiscussion.scroll - top.scroll)) < 2);
+  assert.ok(Math.abs((top.right - atDiscussion.right) - (atDiscussion.scroll - top.scroll)) < 2);
+  assert.equal(await comment.getByText('Người bình luận').count(), 1);
+  await page.waitForFunction(() => document.querySelector('.movie-comment img')?.getAttribute('src') === '/default-avatar.png');
+  const avatar = await comment.locator('img').boundingBox();
+  assert.ok(avatar.width >= 36 && avatar.width <= 44);
+  await comment.getByRole('button', { name: 'Trả lời', exact: true }).click();
+  await comment.getByLabel('Trả lời Người bình luận').fill('Trả lời thử');
+  await comment.getByRole('button', { name: 'Gửi', exact: true }).click();
+  await comment.getByText('Trả lời thử').waitFor();
+  assert.equal(movieReplyPayload.isSpoiler, false);
+  await comment.getByRole('button', { name: 'Ẩn trả lời' }).click();
+  assert.equal(await comment.getByText('Trả lời thử').count(), 0);
+  await comment.getByRole('button', { name: 'Trả lời (1)', exact: true }).click();
+  await comment.getByText('Trả lời thử').waitFor();
+  const card = page.locator('.movie-post');
+  await card.getByText('Khoảnh khắc thử').waitFor();
+  await card.getByRole('button', { name: '••• Thêm' }).click();
+  await card.getByRole('button', { name: 'Sửa', exact: true }).click();
+  assert.equal(await card.getByLabel('Câu hỏi').count(), 1);
+  assert.equal(await card.getByLabel('Nội dung', { exact: true }).count(), 0);
+  assert.equal(await card.locator('input[type="checkbox"]').count(), 0);
+  await card.getByRole('button', { name: 'Hủy', exact: true }).click();
+  const vote = card.getByRole('button', { name: 'Ủng hộ', exact: true });
+  assert.equal(await vote.evaluate((element) => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)');
+  await vote.click();
+  assert.equal(await vote.isDisabled(), true);
+  await vote.evaluate((element) => element.click());
+  await card.locator('button[aria-label="Ủng hộ"][aria-pressed="true"]').waitFor();
+  assert.equal(postVoteRequests, 1);
+  assert.equal(await vote.getAttribute('aria-pressed'), 'true');
+  assert.match(await vote.innerText(), /1/);
+  const downvote = card.getByRole('button', { name: 'Không ủng hộ', exact: true });
+  await downvote.click();
+  await card.locator('button[aria-label="Không ủng hộ"][aria-pressed="true"]').waitFor();
+  assert.match(await vote.innerText(), /0/);
+  assert.match(await downvote.innerText(), /1/);
+  await card.getByRole('button', { name: /Trả lời \(/ }).click();
+  await card.getByRole('button', { name: 'Ẩn bình luận' }).waitFor();
+  assert.equal(screenshotQuery.has('episodeId'), false);
+  assert.equal(await page.getByLabel('Nội dung có spoiler').count(), 0);
+  assert.equal(await page.getByText('Xem khoảnh khắc của tất cả tập').count(), 0);
+  const postComment = card.locator('.movie-comment').filter({ hasText: 'tester' });
+  await postComment.getByRole('button', { name: 'Hiện nội dung spoiler' }).click();
+  await postComment.getByText('Bình luận khoảnh khắc').waitFor();
+  await postComment.getByRole('button', { name: 'Ẩn nội dung spoiler' }).click();
+  assert.equal(await postComment.getByText('Bình luận khoảnh khắc').count(), 0);
+  await postComment.getByRole('button', { name: 'Ủng hộ', exact: true }).click();
+  await postComment.locator('button[aria-label="Ủng hộ"][aria-pressed="true"]').waitFor();
+  assert.equal(await postComment.getByRole('button', { name: 'Ủng hộ', exact: true }).getAttribute('aria-pressed'), 'true');
+  await postComment.getByRole('button', { name: 'Ủng hộ', exact: true }).click();
+  await postComment.locator('button[aria-label="Ủng hộ"][aria-pressed="false"]').waitFor();
+  assert.equal(await postComment.getByRole('button', { name: 'Ủng hộ', exact: true }).getAttribute('aria-pressed'), 'false');
+  await postComment.getByRole('button', { name: 'Trả lời', exact: true }).click();
+  assert.equal(await postComment.getByLabel('Nội dung có spoiler').count(), 0);
+  await postComment.getByLabel('Viết trả lời...').fill('Trả lời khoảnh khắc');
+  await postComment.getByRole('button', { name: 'Gửi', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.movie-post .movie-replies textarea')?.value);
+  assert.equal(postCommentPayload.isSpoiler, false);
+  assert.equal(postCommentPayload.parentId, 91);
+  await postComment.getByText('Trả lời khoảnh khắc').waitFor();
+  await postComment.getByRole('button', { name: 'Ẩn trả lời', exact: true }).click();
+  await postComment.getByRole('button', { name: 'Trả lời (1)', exact: true }).waitFor();
+  const pagination = page.locator('.movie-discussion').getByRole('navigation', { name: 'Phân trang bình luận' }).first();
+  await pagination.getByRole('button', { name: 'Sau ›' }).click();
+  await pagination.getByText('2', { exact: true }).waitFor();
+  await pagination.getByRole('button', { name: '‹ Trước' }).click();
+  await pagination.getByText('1', { exact: true }).waitFor();
+  const layout = await page.locator('.watch-discussion').evaluate((element) => ({ margin: parseFloat(getComputedStyle(element).marginTop), previous: element.previousElementSibling.getBoundingClientRect().bottom, top: element.getBoundingClientRect().top }));
+  assert.ok(layout.margin >= 24 && layout.margin <= 40);
+  assert.ok(layout.top - layout.previous >= 24 && layout.top - layout.previous <= 40);
+  await page.setViewportSize({ width: 375, height: 812 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await page.goto(`${base}/community/create`);
+  await page.getByLabel('Tiêu đề', { exact: true }).waitFor();
+  assert.equal(await page.locator('form input[type="checkbox"]').count(), 0);
+  console.log('Movie comment avatar fallback and compact existing post actions verified with mocked APIs');
+} finally { await browser.close(); }

@@ -59,6 +59,7 @@ export const createApp = () => {
   app.use("/api/v1", discoveryRouter);
   app.use("/api/v1", communityRouter);
   app.use("/api/v1/community/posts", postsRouter);
+  app.use("/api/v1/scene-questions", postsRouter);
   app.use("/api/v1/profile", avatarRouter);
   app.use("/api/v1", streamingRouter);
   app.use("/api/v1/hls", r2ProxyRouter);

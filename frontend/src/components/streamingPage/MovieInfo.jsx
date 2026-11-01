@@ -22,7 +22,7 @@ const MovieInfo = ({ production }) => {
   return (
     <>
       {contextHolder}
-      <div className="bg-[#18181b] p-4 rounded-xl border border-gray-800 h-full overflow-y-auto custom-scrollbar">
+      <div className="bg-[#18181b] p-4 rounded-xl border border-gray-800">
         {/* 1. Poster & Title */}
         <div className="flex flex-col items-center text-center mb-4">
           <img

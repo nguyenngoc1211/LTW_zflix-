@@ -62,18 +62,16 @@ const WatchPage = () => {
         ></div>
 
         <div className="container mx-auto px-2 md:px-4 max-w-[1600px] pt-[20px]">
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
             {/* DANH SÁCH TẬP  */}
             <div
-              className={`xl:col-span-2 order-2 xl:order-1 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
+              className={`watch-episodes xl:col-span-2 order-2 xl:order-1 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
             >
-              <div className="sticky top-4 h-[500px] xl:h-[calc(100vh-100px)]">
-                <EpisodeSelector
+              <EpisodeSelector
                   episodes={episodeList}
                   currentEpisodeId={currentEpisode?.id}
                   onEpisodeClick={handleChangeEpisode}
-                />
-              </div>
+              />
             </div>
 
             {/* VIDEO PLAYER & SEASONS  */}
@@ -110,26 +108,17 @@ const WatchPage = () => {
                   onSeasonClick={handleChangeSeason}
                 />
               </div>
+              <div className={`watch-discussion transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}>
+                <MovieDiscussion key={currentEpisode?.id} productionId={productionData?.id ?? currentEpisode?.production_id} episodeId={currentEpisode?.id} version={momentsVersion} />
+              </div>
             </div>
 
             {/* THÔNG TIN PHIM */}
             <div
-              className={`xl:col-span-3 order-3 xl:order-3 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
+              className={`watch-info xl:col-span-3 order-3 xl:order-3 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
             >
               <MovieInfo production={productionData} />
-            </div>
-          </div>
-
-          {/* === BÌNH LUẬN & ĐỀ XUẤT === */}
-          <div
-            className={`mt-8 grid grid-cols-1 xl:grid-cols-12 gap-6 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
-          >
-            <div className="xl:col-span-9">
-              <MovieDiscussion key={currentEpisode?.id} productionId={productionData?.id ?? currentEpisode?.production_id} episodeId={currentEpisode?.id} version={momentsVersion} />
-            </div>
-
-            <div className="xl:col-span-3">
-              <RecommendedList list={related} />
+              <div className="mt-8"><RecommendedList list={related} /></div>
             </div>
           </div>
           {/* === GỢI Ý PHIM LIÊN QUAN === */}

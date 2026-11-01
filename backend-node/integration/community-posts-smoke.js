@@ -25,10 +25,13 @@ let groupInserted = false;
 let memberInserted = false;
 let mediaInserted = false;
 let screenshotId;
+let sceneAnswerId;
 let movieCommentsInserted = false;
+const createdMovieCommentIds = [];
 try {
   await client.connect();
   const db = client.db(name);
+  if (db.databaseName !== 'community_test_schema_20261101' || !db.databaseName.startsWith('community_test') || db.databaseName.toLowerCase() === 'zflix') throw new Error('Connected to an unsafe database');
   for (const [collection, id] of [['users', userId], ['users', otherId], ['auth_sessions', sessionIds[0]], ['auth_sessions', sessionIds[1]], ['productions', 2147482987], ['episodes', 2147482988], ['community_groups', 2147482989]]) {
     if (await db.collection(collection).findOne({ _id: id })) throw new Error(`Test fixture already exists in ${collection}`);
   }
@@ -37,8 +40,9 @@ try {
   const until = new Date(Date.now() + 3600000);
   await db.collection('users').insertMany([{ _id: userId, id: userId, username: 'community_test_owner', email: 'fixture@example.invalid', password: 'fixture-secret', avatar_url: '/fixture.png', status: 'active', role: 'user' }, { _id: otherId, id: otherId, username: 'community_test_other', status: 'active', role: 'user' }]);
   usersInserted = true;
-  await db.collection('auth_sessions').insertMany(sessionIds.map((id, index) => ({ _id: id, id, user_id: index ? otherId : userId, revoked_at: null, expires_at: until, absolute_expires_at: until })));
+  await db.collection('auth_sessions').insertOne({ _id: sessionIds[0], id: sessionIds[0], user_id: userId, refresh_token_hash: 'community-post-test-hash-a', revoked_at: null, expires_at: until, absolute_expires_at: until });
   sessionsInserted = true;
+  await db.collection('auth_sessions').insertOne({ _id: sessionIds[1], id: sessionIds[1], user_id: otherId, refresh_token_hash: 'community-post-test-hash-b', revoked_at: null, expires_at: until, absolute_expires_at: until });
   const token = (id, sid) => jwt.sign({ sid }, process.env.JWT_ACCESS_SECRET, { subject: String(id), algorithm: 'HS256' });
   const owner = `Bearer ${token(userId, sessionIds[0])}`;
   const other = `Bearer ${token(otherId, sessionIds[1])}`;
@@ -55,6 +59,35 @@ try {
   assert.equal(secondComments.body.hasMore, false);
   assert.equal((await request(app).get('/api/v1/productions/2147482987/comments?limit=51')).status, 400);
   assert.equal((await request(app).get('/api/v1/productions/2147482987/comments')).body.items.length, 3);
+  let parent = 2147482961;
+  for (let depth = 1; depth <= 3; depth++) {
+    const response = await request(app).post('/api/v1/productions/2147482987/comments').set('Authorization', owner).send({ content: `Reply ${depth}`, parentId: parent, isSpoiler: depth === 1 });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    createdMovieCommentIds.push(response.body.id);
+    const children = await request(app).get(`/api/v1/productions/2147482987/comments?parentId=${parent}&page=1&limit=10`);
+    assert.equal(children.body.items[0].id, response.body.id);
+    assert.equal(children.body.items[0].is_spoiler, depth === 1);
+    parent = response.body.id;
+  }
+  assert.equal((await request(app).post('/api/v1/productions/2147482987/comments').set('Authorization', owner).send({ content: 'Too deep', parentId: parent })).status, 400);
+  const roots = await request(app).get('/api/v1/productions/2147482987/comments?parentId=root&page=1&limit=10');
+  assert.equal(roots.body.items.length, 3);
+  assert.equal(roots.body.items.find((item) => item.id === 2147482961).reply_count, 1);
+  const rootId = 2147482961;
+  assert.equal((await request(app).put(`/api/v1/comments/${rootId}/vote`).send({ value: 1 })).status, 401);
+  assert.equal((await request(app).put(`/api/v1/comments/${rootId}/vote`).set('Authorization', owner).send({ value: 1 })).body.score, 1);
+  const movieVoteCounts = (await request(app).get('/api/v1/productions/2147482987/comments?parentId=root&page=1&limit=10')).body.items.find((item) => item.id === rootId);
+  assert.deepEqual([movieVoteCounts.upvotes, movieVoteCounts.downvotes], [1, 0]);
+  const switchedMovieVote = await request(app).put(`/api/v1/comments/${rootId}/vote`).set('Authorization', owner).send({ value: -1 });
+  assert.equal(switchedMovieVote.body.score, -1);
+  assert.deepEqual([switchedMovieVote.body.upvotes, switchedMovieVote.body.downvotes], [0, 1]);
+  assert.equal((await request(app).get('/api/v1/productions/2147482987/comments?parentId=root&page=1&limit=10').set('Authorization', owner)).body.items.find((item) => item.id === rootId).viewer_vote, -1);
+  const clearedMovieVote = await request(app).put(`/api/v1/comments/${rootId}/vote`).set('Authorization', owner).send({ value: 0 });
+  assert.equal(clearedMovieVote.body.score, 0);
+  assert.deepEqual([clearedMovieVote.body.upvotes, clearedMovieVote.body.downvotes], [0, 0]);
+  assert.equal((await request(app).post(`/api/v1/comments/${rootId}/reports`).set('Authorization', other).send({ reason: 'spam' })).status, 201);
+  assert.equal((await request(app).post(`/api/v1/comments/${rootId}/reports`).set('Authorization', other).send({ reason: 'spam' })).status, 409);
+  assert.equal((await request(app).patch(`/api/v1/comments/${rootId}`).set('Authorization', other).send({ content: 'Unauthorized' })).status, 404);
   const ratingUrl = '/api/v1/productions/2147482987/rating';
   assert.equal((await request(app).put(ratingUrl).send({ rating: 4 })).status, 401);
   assert.equal((await request(app).put(ratingUrl).set('Authorization', owner).send({ rating: 6 })).status, 400);
@@ -68,40 +101,52 @@ try {
   for (const key of ['R2_BUCKET_NAME', 'R2_PUBLIC_DOMAIN', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) process.env[key] = 'community-test-only';
   s3.send = async () => ({});
   const image = await sharp({ create: { width: 2, height: 2, channels: 3, background: 'red' } }).png().toBuffer();
-  const screenshot = await request(app).post('/api/v1/community/posts/with-images').set('Authorization', owner).field('post', JSON.stringify({ type: 'screenshot', title: 'Moment', content: '', isSpoiler: true, productionId: 2147482987, episodeId: 2147482988, timestampSeconds: 15 })).attach('images', image, { filename: 'moment.png', contentType: 'image/png' });
+  const screenshot = await request(app).post('/api/v1/scene-questions/with-images').set('Authorization', owner).field('post', JSON.stringify({ type: 'screenshot', title: 'Moment?', content: '', isSpoiler: true, productionId: 2147482987, episodeId: 2147482988, timestampSeconds: 15 })).attach('images', image, { filename: 'moment.png', contentType: 'image/png' });
   assert.equal(screenshot.status, 201, JSON.stringify(screenshot.body));
   screenshotId = screenshot.body.id;
-  assert.equal((await request(app).patch(`/api/v1/community/posts/${screenshotId}`).set('Authorization', owner).send({ episodeId: null })).status, 400);
-  const moments = await request(app).get('/api/v1/community/posts?type=screenshot&onMoviePage=true&movieId=2147482987&episodeId=2147482988');
-  assert.ok(moments.body.items.some((item) => item.id === screenshotId));
-  const forum = await request(app).get('/api/v1/community/posts?type=screenshot');
-  assert.equal(forum.body.items.find((item) => item.id === screenshotId)?.is_spoiler, true);
-  assert.equal((await request(app).put(`/api/v1/community/posts/${screenshotId}/vote`).set('Authorization', owner).send({ value: 1 })).body.score, 1);
-  assert.equal((await request(app).post(`/api/v1/community/posts/${screenshotId}/comments`).set('Authorization', other).send({ content: 'A shared comment' })).status, 201);
-  assert.equal((await request(app).patch(`/api/v1/community/posts/${screenshotId}`).set('Authorization', owner).send({ title: 'Updated moment' })).status, 200);
-  for (const url of ['/api/v1/community/posts?type=screenshot', '/api/v1/community/posts?type=screenshot&onMoviePage=true&movieId=2147482987&episodeId=2147482988']) {
-    const response = await request(app).get(url);
-    const post = response.body.items.find((item) => item.id === screenshotId);
-    assert.equal(post.title, 'Updated moment');
-    assert.equal(post.score, 1);
-    assert.equal(post.comment_count, 1);
-    assert.equal(post.is_spoiler, true);
-  }
-  assert.equal((await request(app).get(`/api/v1/community/posts/${screenshotId}/comments`)).body.items[0].content, 'A shared comment');
-  assert.equal((await request(app).get(`/api/v1/community/posts/${screenshotId}`)).body.timestamp_seconds, 15);
-  assert.equal((await request(app).get('/api/v1/community/posts?type=screenshot&movieId=2147482987&episodeId=2147482989')).body.items.some((item) => item.id === screenshotId), false);
-  assert.equal((await request(app).delete(`/api/v1/community/posts/${screenshotId}`).set('Authorization', owner)).status, 204);
-  for (const url of ['/api/v1/community/posts?type=screenshot', '/api/v1/community/posts?type=screenshot&onMoviePage=true&movieId=2147482987&episodeId=2147482988']) {
-    assert.equal((await request(app).get(url)).body.items.some((item) => item.id === screenshotId), false);
-  }
+  assert.equal(screenshot.body.content_type, 'scene_question');
+  assert.equal((await request(app).get('/api/v1/scene-questions?movieId=2147482987')).body.items.some((item) => item.id === screenshotId), true);
+  assert.equal((await request(app).get('/api/v1/community/posts?type=screenshot')).body.items.some((item) => item.id === screenshotId), false);
+  assert.equal((await request(app).get(`/api/v1/community/posts/${screenshotId}`)).status, 404);
+  assert.equal((await request(app).put(`/api/v1/community/posts/${screenshotId}/vote`).set('Authorization', owner).send({ value: 1 })).status, 404);
+  await db.collection('community_posts').updateOne({ _id: screenshotId, author_id: userId }, { $unset: { content_type: '' } });
+  assert.equal((await request(app).get(`/api/v1/community/posts/${screenshotId}`)).status, 200);
+  assert.equal((await request(app).get(`/api/v1/scene-questions/${screenshotId}`)).status, 404);
+  await db.collection('community_posts').updateOne({ _id: screenshotId, author_id: userId }, { $set: { content_type: 'scene_question' } });
+  assert.equal((await request(app).put(`/api/v1/scene-questions/${screenshotId}/vote`).set('Authorization', owner).send({ value: 1 })).body.score, 1);
+  const answer = await request(app).post(`/api/v1/scene-questions/${screenshotId}/comments`).set('Authorization', other).send({ content: 'An answer' });
+  assert.equal(answer.status, 201);
+  sceneAnswerId = answer.body.id;
+  const nestedAnswer = await request(app).post(`/api/v1/scene-questions/${screenshotId}/comments`).set('Authorization', other).send({ content: 'A reply to the answer', parentId: sceneAnswerId });
+  assert.equal(nestedAnswer.status, 201);
+  const nestedReply = await request(app).post(`/api/v1/scene-questions/${screenshotId}/comments`).set('Authorization', other).send({ content: 'A deeper reply', parentId: nestedAnswer.body.id });
+  assert.equal(nestedReply.status, 201);
+  assert.equal((await request(app).get(`/api/v1/scene-questions/${screenshotId}/comments`)).body.items.find((item) => item.id === sceneAnswerId).reply_count, 1);
+  assert.equal((await request(app).get(`/api/v1/scene-questions/${screenshotId}/comments?parentId=${sceneAnswerId}`)).body.items.find((item) => item.id === nestedAnswer.body.id).reply_count, 1);
+  assert.equal((await request(app).get(`/api/v1/scene-questions/${screenshotId}/comments?parentId=${nestedAnswer.body.id}`)).body.items.find((item) => item.id === nestedReply.body.id).reply_count, 0);
+  assert.equal((await request(app).put(`/api/v1/scene-questions/${screenshotId}/comments/${answer.body.id}/vote`).set('Authorization', owner).send({ value: 1 })).body.score, 1);
+  assert.equal((await request(app).post(`/api/v1/scene-questions/${screenshotId}/reports`).set('Authorization', other).send({ reason: 'spam' })).status, 201);
+  assert.equal((await request(app).post(`/api/v1/scene-questions/${screenshotId}/reports`).set('Authorization', other).send({ reason: 'spam' })).status, 409);
+  assert.equal((await request(app).post(`/api/v1/scene-questions/${screenshotId}/comments/${answer.body.id}/reports`).set('Authorization', owner).send({ reason: 'other' })).status, 201);
+  assert.equal((await request(app).get(`/api/v1/scene-questions/${screenshotId}`)).body.timestamp_seconds, 15);
+  assert.equal((await request(app).patch(`/api/v1/scene-questions/${screenshotId}`).set('Authorization', owner).send({ title: 'Updated question' })).status, 200);
+  assert.equal((await request(app).delete(`/api/v1/scene-questions/${screenshotId}`).set('Authorization', owner)).status, 204);
   assert.equal((await request(app).post('/api/v1/community/posts').send({ title: 'x', content: 'y' })).status, 401);
   assert.equal((await request(app).post('/api/v1/community/posts').set('Authorization', owner).send({ title: 'x', content: 'y', status: 'hidden' })).status, 400);
-  const created = await request(app).post('/api/v1/community/posts').set('Authorization', owner).send({ title: 'Test post', content: 'content', tags: ['film'], isSpoiler: true });
+  const created = await request(app).post('/api/v1/community/posts').set('Authorization', owner).send({ title: 'Test post', content: 'content', productionId: 2147482987, tags: ['film'], isSpoiler: true });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   postId = created.body.id;
+  assert.equal(created.body.content_type, 'community_post');
+  assert.equal((await request(app).get('/api/v1/scene-questions?movieId=2147482987')).body.items.some((item) => item.id === postId), false);
+  assert.equal((await request(app).get(`/api/v1/scene-questions/${postId}`)).status, 404);
+  await db.collection('community_posts').updateOne({ _id: postId, author_id: userId }, { $unset: { content_type: '' } });
+  assert.equal((await request(app).get(`/api/v1/community/posts/${postId}`)).status, 200);
+  assert.equal((await request(app).get(`/api/v1/scene-questions/${postId}`)).status, 404);
   assert.equal((await request(app).get(`/api/v1/community/posts/${postId}`)).status, 200);
   assert.equal((await request(app).put(`/api/v1/community/posts/${postId}/vote`).set('Authorization', owner).send({ value: 1 })).body.score, 1);
   assert.equal((await request(app).put(`/api/v1/community/posts/${postId}/vote`).set('Authorization', owner).send({ value: -1 })).body.score, -1);
+  assert.equal((await request(app).get(`/api/v1/community/posts/${postId}`).set('Authorization', owner)).body.viewer_vote, -1);
+  assert.equal((await request(app).get(`/api/v1/community/posts/${postId}`).set('Authorization', other)).body.viewer_vote, 0);
   assert.equal((await request(app).put(`/api/v1/community/posts/${postId}/vote`).set('Authorization', owner).send({ value: 0 })).body.score, 0);
   const comment = await request(app).post(`/api/v1/community/posts/${postId}/comments`).set('Authorization', owner).send({ content: 'Bình luận', isSpoiler: true });
   assert.equal(comment.status, 201, JSON.stringify(comment.body));
@@ -110,6 +155,8 @@ try {
   assert.equal((await request(app).put(`/api/v1/community/posts/${postId}/comments/${commentId}/vote`).set('Authorization', owner).send({ value: 1 })).body.score, 1);
   assert.equal((await request(app).put(`/api/v1/community/posts/${postId}/comments/${commentId}/vote`).set('Authorization', owner).send({ value: 1 })).body.score, 1);
   assert.equal((await request(app).put(`/api/v1/community/posts/${postId}/comments/${commentId}/vote`).set('Authorization', owner).send({ value: -1 })).body.score, -1);
+  assert.equal((await request(app).get(`/api/v1/community/posts/${postId}/comments`).set('Authorization', owner)).body.items.find((item) => item.id === commentId).viewer_vote, -1);
+  assert.equal((await request(app).get(`/api/v1/community/posts/${postId}/comments`).set('Authorization', other)).body.items.find((item) => item.id === commentId).viewer_vote, 0);
   assert.equal((await request(app).put(`/api/v1/community/posts/${postId}/comments/${commentId}/vote`).set('Authorization', owner).send({ value: 0 })).body.score, 0);
   assert.equal((await request(app).put(`/api/v1/community/posts/${postId}/comments/${commentId}/vote`).set('Authorization', owner).send({ value: 2 })).status, 400);
   const concurrentVotes = await Promise.all([
@@ -119,6 +166,8 @@ try {
   assert.ok(concurrentVotes.every((response) => response.status === 200));
   const votedComments = await request(app).get(`/api/v1/community/posts/${postId}/comments`);
   assert.equal(votedComments.body.items.find((item) => item.id === commentId).score, 0);
+  assert.equal(votedComments.body.items.find((item) => item.id === commentId).upvotes, 1);
+  assert.equal(votedComments.body.items.find((item) => item.id === commentId).downvotes, 1);
   await request(app).put(`/api/v1/community/posts/${postId}/comments/${commentId}/vote`).set('Authorization', owner).send({ value: 0 });
   await request(app).put(`/api/v1/community/posts/${postId}/comments/${commentId}/vote`).set('Authorization', other).send({ value: 0 });
   assert.equal((await request(app).post(`/api/v1/community/posts/${postId}/comments`).set('Authorization', other).send({ content: 'Trả lời', parentId: commentId })).status, 201);
@@ -178,6 +227,9 @@ try {
     }
     if (screenshotId) {
       await db.collection('community_post_votes').deleteMany({ post_id: screenshotId, user_id: userId });
+      if (sceneAnswerId) await db.collection('community_comment_votes').deleteOne({ comment_id: sceneAnswerId, user_id: userId });
+      await db.collection('community_reports').deleteOne({ _id: `scene-question:${screenshotId}:${otherId}` });
+      if (sceneAnswerId) await db.collection('community_reports').deleteOne({ _id: `scene-comment:${sceneAnswerId}:${userId}` });
       await db.collection('community_post_comments').deleteMany({ post_id: screenshotId, author_id: otherId });
       await db.collection('community_posts').deleteOne({ _id: screenshotId, author_id: userId });
     }
@@ -186,7 +238,9 @@ try {
       await db.collection('productions').deleteOne({ _id: 2147482987 });
       await db.collection('episodes').deleteOne({ _id: 2147482988 });
     }
-    if (movieCommentsInserted) await db.collection('comments').deleteMany({ _id: { $in: [2147482961, 2147482962, 2147482963] }, production_id: 2147482987, user_id: userId });
+    if (movieCommentsInserted) await db.collection('comments').deleteMany({ _id: { $in: [2147482961, 2147482962, 2147482963, ...createdMovieCommentIds] }, production_id: 2147482987, user_id: userId });
+    if (movieCommentsInserted) await db.collection('movie_comment_votes').deleteMany({ comment_id: { $in: [2147482961, 2147482962, 2147482963, ...createdMovieCommentIds] }, user_id: { $in: [userId, otherId] } });
+    if (movieCommentsInserted) await db.collection('community_reports').deleteOne({ _id: `movie-comment:2147482961:${otherId}`, reporter_id: otherId });
     if (memberInserted) await db.collection('community_members').deleteMany({ community_id: 2147482989, user_id: { $in: [userId, otherId] } });
     if (groupInserted) await db.collection('community_groups').deleteOne({ _id: 2147482989 });
     if (sessionsInserted) await db.collection('auth_sessions').deleteMany({ _id: { $in: sessionIds } });
