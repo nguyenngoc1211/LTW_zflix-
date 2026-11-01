@@ -5,7 +5,7 @@ import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 
 const name = process.env.COMMUNITY_TEST_DB_NAME || '';
-if (!process.env.COMMUNITY_TEST_MONGODB_URI || !/^community_test_[a-z0-9_]+$/i.test(name) || name === process.env.MONGODB_DB_NAME) throw new Error('A separate community test database is required');
+if (!process.env.COMMUNITY_TEST_MONGODB_URI?.trim() || name !== 'community_test_schema_20261101' || !name.startsWith('community_test') || name === 'zflix' || name === process.env.MONGODB_DB_NAME) throw new Error('The dedicated community test database is required');
 process.env.MONGODB_URI = process.env.COMMUNITY_TEST_MONGODB_URI;
 process.env.MONGODB_DB_NAME = name;
 for (const key of ['R2_BUCKET_NAME', 'R2_PUBLIC_DOMAIN', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) process.env[key] = 'community-test-only';

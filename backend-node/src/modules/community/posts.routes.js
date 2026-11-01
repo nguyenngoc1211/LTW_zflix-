@@ -9,6 +9,17 @@ import { toPublicMediaUrl } from '../../core/storage/public-url.js';
 export const postsRouter = Router();
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 const present = (post) => ({ ...post, image_urls: (post.images || []).map((key) => key.startsWith('local/community/posts/') ? `/uploads/${key.slice(6)}` : toPublicMediaUrl(key)).filter(Boolean) });
+const presentMany = async (posts, userId) => {
+  if (!posts.length) return [];
+  const authorIds = [...new Set(posts.map((post) => post.author_id))];
+  const [authors, saved] = await Promise.all([
+    (await mongoCollection('users')).find({ id: { $in: authorIds } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1 } }).toArray(),
+    userId ? (await mongoCollection('community_saved_posts')).find({ user_id: userId, post_id: { $in: posts.map((post) => post._id) } }, { projection: { post_id: 1 } }).toArray() : [],
+  ]);
+  const byId = new Map(authors.map((author) => [author.id, author]));
+  const savedIds = new Set(saved.map((entry) => entry.post_id));
+  return posts.map((post) => ({ ...present(post), author: byId.get(post.author_id) || null, is_saved: userId ? savedIds.has(post._id) : false }));
+};
 const allowed = new Set(['title', 'content', 'productionId', 'episodeId', 'communityId', 'tags', 'isSpoiler', 'visibility']);
 const validate = async (body, previous = {}) => {
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !allowed.has(key))) throw bad('Invalid post fields');
@@ -101,13 +112,13 @@ postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.ar
   // whether each key is referenced before deleting it.
   try { await (await mongoCollection('community_upload_cleanup')).deleteMany({ _id: { $in: keys } }); }
   catch (error) { console.error('Community upload reconciliation pending', error.message); }
-  res.status(201).json(present(post));
+  res.status(201).json((await presentMany([post], req.user.id))[0]);
 }));
 postsRouter.get('/saved', requireAuth, asyncHandler(async (req, res) => {
   const saved = await (await mongoCollection('community_saved_posts')).find({ user_id: req.user.id }).sort({ created_at: -1 }).limit(100).toArray();
   const posts = await (await mongoCollection('community_posts')).find({ _id: { $in: saved.map((item) => item.post_id) }, status: 'active', ...await visibleTo(req.user) }).toArray();
   const byId = new Map(posts.map((post) => [post._id, post]));
-  res.json({ items: saved.flatMap((item) => byId.has(item.post_id) ? [present(byId.get(item.post_id))] : []) });
+  res.json({ items: await presentMany(saved.flatMap((item) => byId.has(item.post_id) ? [byId.get(item.post_id)] : []), req.user.id) });
 }));
 postsRouter.get('/', optionalAuth, asyncHandler(async (req, res) => {
   const filter = { status: 'active', ...await visibleTo(req.user) };
@@ -126,13 +137,13 @@ postsRouter.get('/', optionalAuth, asyncHandler(async (req, res) => {
   if (sort === 'hot') filter.created_at = { $gte: new Date(Date.now() - 7 * 86400000) };
   const order = sort === 'newest' ? { created_at: -1, _id: -1 } : { score: -1, created_at: -1, _id: -1 };
   const items = await (await mongoCollection('community_posts')).find(filter).sort(order).skip((page - 1) * limit).limit(limit + 1).toArray();
-  res.json({ items: items.slice(0, limit).map(present), page, hasMore: items.length > limit });
+  res.json({ items: await presentMany(items.slice(0, limit), req.user?.id), page, hasMore: items.length > limit });
 }));
 postsRouter.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
   const id = parsePositiveInt(req.params.id);
   const post = await (await mongoCollection('community_posts')).findOne({ _id: id, status: 'active', ...await visibleTo(req.user) });
   if (!post) return res.status(404).json({ message: 'Post not found' });
-  res.json(present(post));
+  res.json((await presentMany([post], req.user?.id))[0]);
 }));
 postsRouter.post('/', requireAuth, asyncHandler(async (req, res) => {
   const fields = await validate(req.body);
@@ -141,7 +152,7 @@ postsRouter.post('/', requireAuth, asyncHandler(async (req, res) => {
   const now = new Date();
   const post = { _id: id, id, author_id: req.user.id, type: 'normal', visibility: 'public', ...fields, status: 'active', is_spoiler: fields.is_spoiler ?? false, show_on_movie_page: false, upvotes: 0, downvotes: 0, score: 0, comment_count: 0, created_at: now, updated_at: now };
   await (await mongoCollection('community_posts')).insertOne(post);
-  res.status(201).json(present(post));
+  res.status(201).json((await presentMany([post], req.user.id))[0]);
 }));
 postsRouter.patch('/:id', requireAuth, asyncHandler(async (req, res) => {
   const id = parsePositiveInt(req.params.id);
@@ -156,7 +167,7 @@ postsRouter.patch('/:id', requireAuth, asyncHandler(async (req, res) => {
   for (const field of ['production_id', 'episode_id', 'community_id']) if (!(field in fields)) unset[field] = '';
   const result = await collection.findOneAndUpdate({ _id: id, author_id: req.user.id, status: 'active', updated_at: existing.updated_at }, { $set: { ...fields, updated_at: new Date() }, ...(Object.keys(unset).length && { $unset: unset }) }, { returnDocument: 'after' });
   if (!result) return res.status(409).json({ message: 'Post changed; retry' });
-  res.json(present(result));
+  res.json((await presentMany([result], req.user.id))[0]);
 }));
 postsRouter.put('/:id/save', requireAuth, asyncHandler(async (req, res) => {
   const postId = parsePositiveInt(req.params.id);
@@ -192,7 +203,34 @@ postsRouter.get('/:id/comments', optionalAuth, asyncHandler(async (req, res) => 
   const page = req.query.page === undefined ? 1 : parsePositiveInt(req.query.page, 'page');
   if (page > 1000) throw bad('Pagination exceeds limit');
   const items = await (await mongoCollection('community_post_comments')).find({ post_id: postId, parent_id: parent, status: { $in: ['active', 'deleted'] } }).sort({ created_at: 1, _id: 1 }).skip((page - 1) * 20).limit(21).toArray();
-  res.json({ items: items.slice(0, 20), page, hasMore: items.length > 20 });
+  const visible = items.slice(0, 20);
+  const authors = await (await mongoCollection('users')).find({ id: { $in: [...new Set(visible.map((item) => item.author_id))] } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1 } }).toArray();
+  const byId = new Map(authors.map((author) => [author.id, author]));
+  res.json({ items: visible.map((item) => ({ ...item, author: byId.get(item.author_id) || null })), page, hasMore: items.length > 20 });
+}));
+postsRouter.put('/:id/comments/:commentId/vote', requireAuth, asyncHandler(async (req, res) => {
+  const postId = parsePositiveInt(req.params.id);
+  const commentId = parsePositiveInt(req.params.commentId);
+  const value = req.body?.value;
+  if (![0, 1, -1].includes(value) || Object.keys(req.body).some((key) => key !== 'value')) throw bad('Vote must be -1, 0 or 1');
+  const visibility = await visibleTo(req.user);
+  const result = await withMongoTransaction(async (session) => {
+    const posts = await mongoCollection('community_posts');
+    const comments = await mongoCollection('community_post_comments');
+    const votes = await mongoCollection('community_comment_votes');
+    if (!await posts.findOne({ _id: postId, status: 'active', ...visibility }, { session })) return null;
+    const comment = await comments.findOne({ _id: commentId, post_id: postId, status: 'active' }, { session });
+    if (!comment) return null;
+    const previous = await votes.findOne({ comment_id: commentId, user_id: req.user.id }, { session });
+    const voteId = previous?._id ?? `${commentId}:${req.user.id}`;
+    const old = previous?.value || 0;
+    if (value === 0) await votes.deleteOne({ _id: voteId }, { session });
+    else await votes.updateOne({ _id: voteId }, { $set: { value }, $setOnInsert: { comment_id: commentId, user_id: req.user.id } }, { upsert: true, session });
+    const updated = await comments.findOneAndUpdate({ _id: commentId, post_id: postId, status: 'active' }, { $inc: { score: value - old } }, { session, returnDocument: 'after' });
+    return updated ? { score: updated.score, value } : null;
+  });
+  if (!result) return res.status(404).json({ message: 'Comment not found' });
+  res.json(result);
 }));
 postsRouter.post('/:id/comments', requireAuth, asyncHandler(async (req, res) => {
   const postId = parsePositiveInt(req.params.id);

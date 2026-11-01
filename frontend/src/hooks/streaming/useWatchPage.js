@@ -120,7 +120,7 @@ export const useWatchPage = () => {
 
         if (newEpisodes.length === 0) {
            const res = await getEpisodesBySeason(seasonId);
-           newEpisodes = res.data || [];
+           newEpisodes = Array.isArray(res) ? res : res?.data || [];
         }
 
         setEpisodeList(newEpisodes);

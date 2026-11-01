@@ -60,7 +60,7 @@ const io = new Server(httpServer, {
 // Đăng ký Watch Party socket handler
 registerWatchPartySocket(io);
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, process.env.HOST || undefined, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Socket.IO ready for connections`);
   syncProductionIndex().then((count) => console.log(`Search index ready (${count} productions)`));

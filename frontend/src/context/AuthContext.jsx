@@ -37,6 +37,13 @@ export const AuthProvider = ({ children }) => {
     () => ({
       user,
       loading,
+      async updateAvatar(file) {
+        const form = new FormData();
+        form.append('avatar', file);
+        const result = await apiRequest('/api/v1/profile/avatar', { method: 'PUT', body: form });
+        setUser((current) => current ? { ...current, avatarUrl: result.avatarUrl } : current);
+        return result;
+      },
       async login(email, password) {
         const data = await apiRequest(
           "/api/v1/auth/login",

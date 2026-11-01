@@ -23,7 +23,7 @@ export const toPlayableUrl = (url) => {
 // hỗ trợ native (Chrome, Firefox), native cho Safari và mọi file .mp4.
 //
 // Trả về cleanup để component gọi khi đổi tập / unmount.
-export const useVideoSource = ({ videoRef, videoUrl }) => {
+export const useVideoSource = ({ videoRef, videoUrl, episodeId }) => {
   useEffect(() => {
     const video = videoRef.current;
     const url = toPlayableUrl(videoUrl);
@@ -50,5 +50,5 @@ export const useVideoSource = ({ videoRef, videoUrl }) => {
       else hls.destroy();
     });
     return () => hls.destroy();
-  }, [videoRef, videoUrl]);
+  }, [videoRef, videoUrl, episodeId]);
 };

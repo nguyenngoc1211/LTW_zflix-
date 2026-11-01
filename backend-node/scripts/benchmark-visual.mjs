@@ -6,7 +6,7 @@
 // Chạy: npm run benchmark:visual
 import "dotenv/config";
 import fs from "node:fs";
-import { pool } from "../src/core/database/pool.js";
+import { mongoCollection, closeMongo } from "../src/core/database/mongo.js";
 import { clipReady, embedImage } from "../src/modules/visual-shopping/clip.service.js";
 import { searchByVector } from "../src/modules/visual-shopping/vector.index.js";
 import { rankProducts } from "../src/modules/visual-shopping/ranking.js";
@@ -14,9 +14,10 @@ import { rankProducts } from "../src/modules/visual-shopping/ranking.js";
 const results = [];
 await clipReady();
 
-const [rows] = await pool.query(
-  "SELECT id, name, image_url, embedding FROM visual_products WHERE availability = 1 AND embedding IS NOT NULL",
-);
+const rows = await (await mongoCollection('visual_products')).find(
+  { availability: 1, embedding: { $ne: null } },
+  { projection: { id: 1, name: 1, image_url: 1, embedding: 1 } },
+).toArray();
 console.log(`Benchmark trên ${rows.length} sản phẩm catalog...\n`);
 
 let embedSum = 0;
@@ -103,5 +104,5 @@ fs.mkdirSync("docs", { recursive: true });
 fs.writeFileSync("../docs/benchmark-visual-search.md", report, "utf8");
 console.log(`\n=== TỔNG KẾT: embed ${avg(embedSum)}ms | search ${avg(searchSum)}ms | top-1 ${top1Rate}% | top-3 ${top3Rate}% ===`);
 console.log("=> Đã ghi docs/benchmark-visual-search.md");
-await pool.end();
+await closeMongo();
 process.exit(0);

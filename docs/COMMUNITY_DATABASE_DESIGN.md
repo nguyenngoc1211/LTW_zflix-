@@ -1,5 +1,7 @@
 # Movie Community: thiết kế dữ liệu giai đoạn 2
 
+Validator định nghĩa cho `community_posts` yêu cầu bài screenshot có production, episode, timestamp, screenshot key và đúng một ảnh. Index riêng theo production và thời gian hỗ trợ xem khoảnh khắc của toàn bộ tập. Những thay đổi trong định nghĩa chỉ có hiệu lực khi được áp dụng vào database; script hiện tại chỉ tạo trên database test mới, không cập nhật collection đã tồn tại. Service vẫn phải kiểm tra screenshot key trùng ảnh đã upload và các quan hệ liên collection.
+
 Các định nghĩa MongoDB nằm tại `backend-node/src/modules/community/community.schema.js` và dùng driver MongoDB hiện có. Không dùng Mongoose. Các collection mới có tiền tố `community_`; ID tham chiếu user, production và episode là ID số hiện có. `_id` của bản ghi community do service giai đoạn sau cấp; service phải dùng ID số tương thích các trường tham chiếu. Không tự động tạo collection khi khởi động ứng dụng.
 
 ## Phạm vi và dữ liệu cũ

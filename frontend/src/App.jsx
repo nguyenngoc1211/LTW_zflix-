@@ -1,14 +1,9 @@
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth.js";
+import AccountMenu from "./components/AccountMenu.jsx";
 
 const App = () => {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  const handleLogout = async () => {
-    await logout();
-    navigate("/login", { replace: true });
-  };
+  const { user } = useAuth();
 
   return (
     <div className="app">
@@ -21,17 +16,11 @@ const App = () => {
           <NavLink to="/notifications">Thông báo</NavLink>
           <NavLink to="/watch-party">Watch Party</NavLink>
           <NavLink to="/community">Cộng đồng</NavLink>
+          {user?.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         </nav>
         <div className="auth-nav">
           {user ? (
-            <>
-              <span className="auth-user" title={user.username}>{user.username}<span className="auth-role"> ({user.role})</span></span>
-              <Link to="/account/security">Bảo mật</Link>
-              {user.role === "admin" && <Link to="/admin">Admin</Link>}
-              <button type="button" onClick={handleLogout} className="logout-button">
-                Đăng xuất
-              </button>
-            </>
+            <AccountMenu />
           ) : (
             <Link to="/login" className="signin-button">Đăng nhập</Link>
           )}

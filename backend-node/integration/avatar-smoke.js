@@ -1,0 +1,51 @@
+import 'dotenv/config';
+import assert from 'node:assert/strict';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
+import sharp from 'sharp';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+
+const name = process.env.COMMUNITY_TEST_DB_NAME || '';
+if (!process.env.COMMUNITY_TEST_MONGODB_URI?.trim() || name !== 'community_test_schema_20261101' || name === process.env.MONGODB_DB_NAME) throw new Error('Dedicated test database required');
+process.env.MONGODB_URI = process.env.COMMUNITY_TEST_MONGODB_URI;
+process.env.MONGODB_DB_NAME = name;
+process.env.DATA_STORE = 'mongodb';
+process.env.FRONTEND_ORIGIN = 'http://localhost:5173';
+process.env.JWT_ACCESS_SECRET ||= 'test-only-secret-with-at-least-thirty-two-characters';
+for (const key of ['R2_BUCKET_NAME', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) process.env[key] = 'avatar-test-only';
+process.env.R2_PUBLIC_DOMAIN = 'https://avatar-test.invalid';
+const { default: app } = await import('../src/app.js');
+const { default: s3 } = await import('../src/core/storage/r2.js');
+const { mongoCollection, closeMongo } = await import('../src/core/database/mongo.js');
+const originalSend = s3.send;
+const userId = 2147482951, otherId = 2147482952, sessionId = 'avatar-smoke-session';
+let usersInserted = false, sessionInserted = false, uploaded = 0;
+try {
+  const users = await mongoCollection('users');
+  const sessions = await mongoCollection('auth_sessions');
+  if (await users.findOne({ id: { $in: [userId, otherId] } }) || await sessions.findOne({ id: sessionId })) throw new Error('Fixture collision');
+  await users.insertOne({ _id: userId, id: userId, username: 'avatar-fixture', email: 'avatar-fixture@example.invalid', status: 'active', role: 'user' });
+  usersInserted = true;
+  await users.insertOne({ _id: otherId, id: otherId, username: 'avatar-fixture-other', email: 'avatar-fixture-other@example.invalid', status: 'active', role: 'user', avatar_url: '/default-avatar.png' });
+  const expiry = new Date(Date.now() + 3600000);
+  await sessions.insertOne({ _id: sessionId, id: sessionId, user_id: userId, revoked_at: null, expires_at: expiry, absolute_expires_at: expiry });
+  sessionInserted = true;
+  s3.send = async (command) => { if (command instanceof PutObjectCommand) { uploaded++; assert.equal(command.input.ContentType, 'image/webp'); } return {}; };
+  const token = `Bearer ${jwt.sign({ sid: sessionId }, process.env.JWT_ACCESS_SECRET, { subject: String(userId), algorithm: 'HS256' })}`;
+  const png = await sharp({ create: { width: 20, height: 30, channels: 3, background: 'red' } }).png().toBuffer();
+  assert.equal((await request(app).put('/api/v1/profile/avatar').set('Origin', 'http://localhost:5173').attach('avatar', png, { filename: 'a.png', contentType: 'image/png' })).status, 401);
+  assert.equal((await request(app).put('/api/v1/profile/avatar').set('Authorization', token).set('Origin', 'http://evil.invalid').attach('avatar', png, { filename: 'a.png', contentType: 'image/png' })).status, 403);
+  assert.equal((await request(app).put('/api/v1/profile/avatar').set('Authorization', token).set('Origin', 'http://localhost:5173').attach('avatar', Buffer.from('bad'), { filename: 'a.png', contentType: 'image/png' })).status, 400);
+  const success = await request(app).put('/api/v1/profile/avatar').set('Authorization', token).set('Origin', 'http://localhost:5173').attach('avatar', png, { filename: 'a.png', contentType: 'image/png' });
+  assert.equal(success.status, 200, JSON.stringify(success.body));
+  assert.match(success.body.avatarUrl, /^https:\/\/avatar-test\.invalid\/avatars\/2147482951\//);
+  assert.equal((await users.findOne({ id: userId })).avatar_url, success.body.avatarUrl);
+  assert.equal((await users.findOne({ id: otherId })).avatar_url, '/default-avatar.png');
+  assert.equal(uploaded, 1);
+  console.log('Avatar authentication, origin, image validation and R2 upload verified with mocked storage');
+} finally {
+  s3.send = originalSend;
+  if (sessionInserted) await (await mongoCollection('auth_sessions')).deleteOne({ _id: sessionId, user_id: userId });
+  if (usersInserted) await (await mongoCollection('users')).deleteMany({ $or: [{ _id: userId, username: 'avatar-fixture' }, { _id: otherId, username: 'avatar-fixture-other' }] });
+  await closeMongo();
+}

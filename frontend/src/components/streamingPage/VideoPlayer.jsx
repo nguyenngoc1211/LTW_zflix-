@@ -56,6 +56,7 @@ const VideoPlayer = ({
   settings,
   setSettings,
   productionId,
+  productionTitle,
   onTimeUpdate,
   onScreenshotPublished,
   resumePosition,
@@ -84,7 +85,7 @@ const VideoPlayer = ({
 
   // Phát video: proxy R2 qua backend + hls.js cho .m3u8 (Chrome/Firefox).
   // R2 không có CORS nên không thể dùng src trực tiếp.
-  useVideoSource({ videoRef, videoUrl: currentEpisode?.video_url });
+  useVideoSource({ videoRef, videoUrl: currentEpisode?.video_url, episodeId: currentEpisode?.id });
 
   useEffect(() => {
     if (!videoRef.current || !settings.autoPlay) return;
@@ -223,7 +224,7 @@ const VideoPlayer = ({
         </div>
         <div className="flex items-center gap-2">
           <Button onClick={() => setTheater((value) => !value)}>{theater ? 'Thoát chế độ rạp' : 'Chế độ rạp'}</Button>
-          {!isLocked && <ScreenshotComposer videoRef={videoRef} productionId={productionId} episode={currentEpisode} onPublished={onScreenshotPublished} />}
+          {!isLocked && <ScreenshotComposer videoRef={videoRef} productionId={productionId} productionTitle={productionTitle} episode={currentEpisode} onPublished={onScreenshotPublished} />}
           {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && !isLocked && (
             <LensyMascot
               inline

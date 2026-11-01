@@ -212,7 +212,22 @@ communityRouter.delete("/productions/:productionId/rating", requireAuth, asyncHa
 
 communityRouter.get("/productions/:productionId/comments", asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
+  const paged = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = paged ? parsePositiveInt(req.query.page ?? '1', 'page') : 1;
+  const limit = paged ? parsePositiveInt(req.query.limit ?? '20', 'limit') : null;
+  if (paged && (page > 1000 || limit > 50)) return res.status(400).json({ message: 'Pagination exceeds limit' });
   if (useMongo()) {
+    if (paged) {
+      const rows = await (await mongoCollection('comments')).aggregate([
+        { $match: { production_id: productionId, status: 'active' } },
+        { $lookup: { from: 'users', localField: 'user_id', foreignField: 'id', as: 'author' } },
+        { $unwind: '$author' },
+        { $sort: { created_at: -1, id: -1 } },
+        { $skip: (page - 1) * limit }, { $limit: limit + 1 },
+        { $project: { _id: 0, id: 1, content: 1, parent_id: 1, likes_count: 1, is_toxic: 1, created_at: 1, updated_at: 1, user_id: 1, username: '$author.username', avatar_url: '$author.avatar_url' } },
+      ]).toArray();
+      return res.json({ items: rows.slice(0, limit), page, hasMore: rows.length > limit });
+    }
     const comments = await (await mongoCollection("comments"))
       .find({ production_id: productionId, status: "active" }).sort({ created_at: -1 }).toArray();
     const users = await (await mongoCollection("users"))
@@ -228,8 +243,11 @@ communityRouter.get("/productions/:productionId/comments", asyncHandler(async (r
     });
     return res.json({ items });
   }
-  const [items] = await pool.execute(`SELECT c.id, c.content, c.parent_id, c.likes_count, c.is_toxic, c.created_at, c.updated_at, u.id AS user_id, u.username, u.avatar_url FROM comments c JOIN users u ON u.id=c.user_id WHERE c.production_id=? AND c.status='active' ORDER BY c.created_at DESC`, [productionId]);
-  res.json({ items });
+  const sql = `SELECT c.id, c.content, c.parent_id, c.likes_count, c.is_toxic, c.created_at, c.updated_at, u.id AS user_id, u.username, u.avatar_url FROM comments c JOIN users u ON u.id=c.user_id WHERE c.production_id=? AND c.status='active' ORDER BY c.created_at DESC, c.id DESC`;
+  const [items] = paged
+    ? await pool.execute(`${sql} LIMIT ? OFFSET ?`, [productionId, limit + 1, (page - 1) * limit])
+    : await pool.execute(sql, [productionId]);
+  res.json(paged ? { items: items.slice(0, limit), page, hasMore: items.length > limit } : { items });
 }));
 
 communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHandler(async (req, res) => {

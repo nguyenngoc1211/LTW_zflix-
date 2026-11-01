@@ -5,8 +5,8 @@ import { communitySchemas } from '../src/modules/community/community.schema.js';
 // Explicit test-only opt-in: never run this against the configured application DB.
 const name = process.env.COMMUNITY_TEST_DB_NAME || '';
 const uri = process.env.COMMUNITY_TEST_MONGODB_URI || '';
-if (!uri || !/^community_test_[a-z0-9_]+$/i.test(name) || name === process.env.MONGODB_DB_NAME) {
-  throw new Error('Set COMMUNITY_TEST_MONGODB_URI and a separate COMMUNITY_TEST_DB_NAME matching community_test_<suffix>');
+if (!uri.trim() || name !== 'community_test_schema_20261101' || !name.startsWith('community_test') || name === 'zflix' || name === process.env.MONGODB_DB_NAME) {
+  throw new Error('Set COMMUNITY_TEST_MONGODB_URI and the dedicated COMMUNITY_TEST_DB_NAME');
 }
 const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10000 });
 try {

@@ -328,12 +328,12 @@ const AccountSecurityPage = () => {
   };
 
   if (!status && !error) {
-    return <main className="grid min-h-[60vh] place-items-center text-slate-400">Đang tải cài đặt bảo mật...</main>;
+    return <section className="grid min-h-[30vh] place-items-center text-slate-400">Đang tải cài đặt bảo mật...</section>;
   }
 
   if (recovery) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10">
+      <section>
         <h1 className="text-3xl font-bold text-white">Bảo mật tài khoản</h1>
         <RecoveryCodes
           codes={recovery.codes}
@@ -348,12 +348,12 @@ const AccountSecurityPage = () => {
             await loadStatus();
           }}
         />
-      </main>
+      </section>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10">
+    <section>
       <h1 className="text-3xl font-bold text-white">Bảo mật tài khoản</h1>
       <ChangePasswordSection changePassword={changePassword} />
       <section className="mt-6 rounded-2xl border border-white/10 bg-[#12151d] p-6">
@@ -495,7 +495,7 @@ const AccountSecurityPage = () => {
           </button>
         </div>
       </section>
-    </main>
+    </section>
   );
 };
 

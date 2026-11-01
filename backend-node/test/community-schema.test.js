@@ -14,3 +14,14 @@ test('schemas require their core identity and retain a separate post collection'
   assert.equal(communitySchemas.comments, undefined);
   assert.equal(communitySchemas.ratings, undefined);
 });
+
+test('screenshot schema requires its movie, episode, timestamp and one image', () => {
+  const postSchema = communitySchemas.community_posts.validator.$jsonSchema;
+  const screenshot = postSchema.oneOf.find((branch) => branch.properties.type.enum.includes('screenshot'));
+  for (const field of ['production_id', 'episode_id', 'timestamp_seconds', 'screenshot_key', 'images']) {
+    assert.ok(screenshot.required.includes(field));
+  }
+  assert.equal(screenshot.properties.images.minItems, 1);
+  assert.equal(screenshot.properties.images.maxItems, 1);
+  assert.ok(communitySchemas.community_posts.indexes.some(({ key }) => key.production_id === 1 && key.status === 1 && !('episode_id' in key)));
+});

@@ -1,5 +1,13 @@
 # Tiến độ chuyển Zflix sang MongoDB
 
+## Cập nhật cấu hình phát triển ngày 2026-11-01
+
+- Theo yêu cầu dùng MongoDB, `docker-compose.yml` không còn khai báo service MySQL, không chạy Prisma generate hoặc migration MySQL khi khởi động; backend nhận `DATA_STORE=mongodb`, `MONGODB_URI`, `MONGODB_DB_NAME` từ cấu hình. Chưa xóa Docker volume MySQL hay dữ liệu MongoDB.
+- Hai file `.env` local đã đặt `DATA_STORE=mongodb`; các file `.env.example` hướng dẫn biến MongoDB. Không ghi URI hoặc thông tin đăng nhập vào Git.
+- Đã kiểm tra `docker compose config --quiet`, 69/69 backend unit tests và smoke test schema/posts trên `community_test_schema_20261101`; chưa thử chạy Docker stack hoặc toàn bộ luồng auth trên MongoDB. Docker CLI cảnh báo không đọc được cấu hình người dùng, dù lệnh kiểm tra cấu hình trả mã thành công.
+- Việc chuyển hoàn toàn **chưa xong**: source, scripts, tests và dependency MySQL/Prisma vẫn còn; chưa gỡ hoặc coi các nhánh này đã được thay thế. Cần kiểm tra các script vận hành và kiểm thử từng module trên database test trước khi loại bỏ.
+- Đã chuyển script `catalog:index` và `benchmark:visual` khỏi truy vấn MySQL sang collection `visual_products` của MongoDB. Integration test trên database test riêng xác nhận tạo sản phẩm, kiểu dữ liệu và bỏ qua tên trùng; fixture đã xóa, bộ đếm ID test có thể tăng. Chưa thử toàn bộ pipeline tải ảnh/CLIP hoặc benchmark với catalog thật; việc kiểm tra trùng tên chưa được bảo đảm nguyên tử giữa nhiều tiến trình.
+
 Cập nhật: 2026-11-01. Tài liệu này ghi lại **mã đang có trong working tree**, chưa phải bản đã commit hoặc triển khai. Khi tài liệu và source khác nhau, đọc source trước.
 
 ## Mục tiêu và dữ liệu

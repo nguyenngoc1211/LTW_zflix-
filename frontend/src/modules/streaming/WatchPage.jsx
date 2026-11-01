@@ -88,6 +88,7 @@ const WatchPage = () => {
                   settings={playerSettings}
                   setSettings={setPlayerSettings}
                   productionId={productionData?.id ?? currentEpisode.production_id}
+                  productionTitle={productionData?.title}
                   onTimeUpdate={handlers.handleTimeUpdate}
                   resumePosition={requestedPosition}
                   onScreenshotPublished={() => setMomentsVersion((value) => value + 1)}

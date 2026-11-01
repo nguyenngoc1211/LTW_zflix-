@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright-core';
+
+const base = process.env.FRONTEND_URL || 'http://localhost:5173';
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+let loggedIn = true;
+let avatar = '/default-avatar.png';
+let avatarRequests = 0;
+try {
+  await page.route('**/api/v1/**', async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path.endsWith('/refresh-token')) return route.fulfill(loggedIn ? { json: { accessToken: 'mock-token', user: { id: 7, username: 'tester', email: 'tester@example.invalid', role: 'user', avatarUrl: avatar } } } : { status: 401, json: { message: 'No session' } });
+    if (path.endsWith('/logout')) { loggedIn = false; return route.fulfill({ status: 204 }); }
+    if (path.endsWith('/profile/avatar')) { avatarRequests++; avatar = '/default-avatar.png?updated=1'; return route.fulfill({ json: { avatarUrl: avatar } }); }
+    if (path.endsWith('/mfa/status')) return route.fulfill({ json: { enabled: false, recoveryCodesRemaining: 0 } });
+    if (path.endsWith('/sessions')) return route.fulfill({ json: { sessions: [] } });
+    return route.fulfill({ json: path.endsWith('/filters') ? { genres: [], countries: [], years: [] } : path.endsWith('/productions') ? { items: [], total: 0 } : { items: [], production: null } });
+  });
+  await page.goto(`${base}/settings`);
+  await page.getByRole('heading', { name: 'Hồ sơ cá nhân' }).waitFor();
+  await page.getByRole('heading', { name: 'Bảo mật tài khoản' }).waitFor();
+  const settingsNav = page.getByRole('navigation', { name: 'Cài đặt tài khoản' });
+  await settingsNav.getByRole('button', { name: 'Bảo mật' }).click();
+  await page.waitForFunction(() => document.querySelector('.settings-nav button:nth-child(2)')?.getAttribute('aria-current') === 'location');
+  assert.equal(await page.evaluate(() => document.querySelector('#settings-security').getBoundingClientRect().top >= document.querySelector('.site-header').getBoundingClientRect().bottom - 2), true);
+  assert.equal(await page.getByRole('heading', { name: 'Hồ sơ cá nhân' }).count(), 1);
+  await settingsNav.getByRole('button', { name: 'Hồ sơ cá nhân' }).click();
+  await page.waitForFunction(() => document.querySelector('.settings-nav button:nth-child(1)')?.getAttribute('aria-current') === 'location');
+  await page.evaluate(() => window.scrollTo({ top: document.querySelector('#settings-security').offsetTop + 150, behavior: 'instant' }));
+  await page.waitForFunction(() => document.querySelector('.settings-nav button:nth-child(2)')?.getAttribute('aria-current') === 'location');
+  assert.equal(await page.locator('.settings-nav').evaluate((element) => getComputedStyle(element).position), 'sticky');
+  const trigger = page.getByRole('button', { name: 'Tài khoản tester' });
+  assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+  await trigger.click();
+  assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
+  await page.keyboard.press('Escape');
+  assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+  await trigger.click();
+  await page.getByRole('heading', { name: 'Cài đặt tài khoản' }).click();
+  assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+  await trigger.click();
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Cài đặt tài khoản');
+  await page.keyboard.press('Enter');
+  assert.equal(new URL(page.url()).searchParams.get('tab'), 'profile');
+  await page.getByLabel('Chọn ảnh đại diện').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: Buffer.from('mock image') });
+  await page.getByAltText('Ảnh đại diện xem trước').waitFor();
+  await page.getByRole('button', { name: 'Cập nhật ảnh' }).click();
+  await page.getByText('Đã cập nhật ảnh đại diện.').waitFor();
+  assert.equal(avatarRequests, 1);
+  assert.match(await trigger.locator('img').getAttribute('src'), /updated=1/);
+  await page.goto(`${base}/account/security`);
+  await page.waitForURL('**/settings?tab=security');
+  await page.getByRole('heading', { name: 'Đổi mật khẩu' }).waitFor();
+  await page.waitForFunction(() => document.querySelector('.settings-nav button:nth-child(2)')?.getAttribute('aria-current') === 'location');
+  await page.getByRole('heading', { name: 'Xác thực hai bước (2FA)' }).waitFor();
+  await page.getByRole('heading', { name: 'Phiên đăng nhập' }).waitFor();
+  await page.goto(`${base}/account/profile`);
+  await page.waitForURL('**/settings?tab=profile');
+  await page.setViewportSize({ width: 375, height: 812 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await settingsNav.getByRole('button', { name: 'Bảo mật' }).click();
+  await page.waitForFunction(() => document.querySelector('.settings-nav button:nth-child(2)')?.getAttribute('aria-current') === 'location');
+  await trigger.click();
+  const bounds = await page.locator('#account-dropdown').boundingBox();
+  assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 375);
+  await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click();
+  await page.waitForURL('**/login');
+  await page.goto(`${base}/settings`);
+  await page.waitForURL('**/login');
+  console.log('Settings menu, keyboard, preview, mocked avatar update, redirects and logout verified');
+} finally { await browser.close(); }

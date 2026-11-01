@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "../App";
 import HomePage from "../modules/discovery/HomePage";
 import AdminPage from "../admin/AdminPage";
@@ -15,7 +15,7 @@ import SettingsAdminPage from "../admin/settings/SettingsAdminPage.jsx";
 import ShoppingAdminPage from "../admin/shopping/ShoppingAdminPage.jsx";
 import AdminLoginPage from "../modules/auth/AdminLoginPage.jsx";
 import LoginPage from "../modules/auth/LoginPage";
-import AccountSecurityPage from "../modules/auth/AccountSecurityPage";
+import SettingsPage from "../modules/auth/SettingsPage.jsx";
 import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
 import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
 import RegisterPage from "../modules/auth/RegisterPage";
@@ -56,11 +56,13 @@ export const router = createBrowserRouter([
           { path: "community/saved", element: <CommunityPage view="saved" /> },
           { path: "history", element: <HistoryPage /> },
           { path: "notifications", element: <NotificationsPage /> },
+          { path: "settings", element: <SettingsPage /> },
+          { path: "account/profile", element: <Navigate to="/settings?tab=profile" replace /> },
           { path: "watch-party/create", element: <CreateParty /> },
           { path: "watch-party/room/:partyId", element: <PartyRoom /> },
           {
             path: "account/security",
-            element: <AccountSecurityPage />,
+            element: <Navigate to="/settings?tab=security" replace />,
           },
         ],
       },

@@ -90,13 +90,15 @@ try {
   const firstOther = page.getByRole("listitem").filter({ hasText: "Other browser one" });
   await firstOther.getByRole("button", { name: "Đăng xuất" }).click();
   await page.getByText("Other browser one", { exact: true }).waitFor({ state: "detached" });
-  assert.equal(new URL(page.url()).pathname, "/account/security");
+  assert.equal(new URL(page.url()).pathname, "/settings");
+  assert.equal(new URL(page.url()).searchParams.get("tab"), "security");
   await page.getByText("Phiên hiện tại", { exact: true }).waitFor();
 
   await page.getByRole("button", { name: "Đăng xuất các phiên khác" }).click();
   await page.getByText("Other browser two", { exact: true }).waitFor({ state: "detached" });
   assert.deepEqual(sessions.map((session) => session.id), ["current-session"]);
-  assert.equal(new URL(page.url()).pathname, "/account/security");
+  assert.equal(new URL(page.url()).pathname, "/settings");
+  assert.equal(new URL(page.url()).searchParams.get("tab"), "security");
 
   await page.getByRole("button", { name: "Đăng xuất tất cả phiên" }).click();
   await page.waitForURL("**/login");

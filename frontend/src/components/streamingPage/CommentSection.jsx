@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import ToxicComment from "../community/ToxicComment.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { apiRequest } from "../../services/api.js";
+import UserAvatar from "../UserAvatar.jsx";
 
 const MAX_LENGTH = 3000;
 
@@ -11,26 +12,9 @@ const formatTime = (value) => {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("vi-VN");
 };
 
-const CommentAvatar = ({ comment }) => {
-  const [failed, setFailed] = useState(false);
-  if (comment.avatar_url && !failed) {
-    return (
-      <img
-        src={comment.avatar_url}
-        alt=""
-        onError={() => setFailed(true)}
-        className="w-8 h-8 rounded-full object-cover border border-gray-700"
-      />
-    );
-  }
-  return (
-    <div className="w-8 h-8 rounded-full bg-gray-700 border border-gray-600 text-gray-200 text-xs font-bold flex items-center justify-center">
-      {(comment.username || "U").charAt(0).toUpperCase()}
-    </div>
-  );
-};
+const CommentAvatar = ({ comment }) => <UserAvatar src={comment.avatar_url} className="w-8 h-8 rounded-full object-cover border border-gray-700" />;
 
-const CommentSection = ({ productionId }) => {
+const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => {
   const { user } = useAuth();
   const [comments, setComments] = useState([]);
   const [draft, setDraft] = useState("");
@@ -57,8 +41,8 @@ const CommentSection = ({ productionId }) => {
   );
 
   useEffect(() => {
-    loadComments();
-  }, [loadComments]);
+    if (!composerOnly) loadComments();
+  }, [loadComments, composerOnly]);
 
   if (!productionId) return null;
 
@@ -76,7 +60,8 @@ const CommentSection = ({ productionId }) => {
       });
       if (result.warning) setWarning(result.warning);
       setDraft("");
-      await loadComments({ silent: true });
+      if (composerOnly) onSubmitted?.();
+      else await loadComments({ silent: true });
     } catch (err) {
       setError(err.status === 401 ? "Bạn cần đăng nhập để bình luận." : err.message);
     } finally {
@@ -88,7 +73,7 @@ const CommentSection = ({ productionId }) => {
     <div className="mt-8">
       <h3 className="text-pink-500 font-bold text-lg mb-4">
         Bình luận
-        {comments.length > 0 && (
+        {!composerOnly && comments.length > 0 && (
           <span className="text-gray-500 text-sm font-normal ml-2">({comments.length})</span>
         )}
       </h3>
@@ -130,7 +115,7 @@ const CommentSection = ({ productionId }) => {
         </div>
       )}
 
-      {loading ? (
+      {!composerOnly && (loading ? (
         <p className="text-sm text-gray-500">Đang tải bình luận...</p>
       ) : comments.length === 0 ? (
         <p className="text-sm text-gray-500">Chưa có bình luận nào. Hãy là người đầu tiên!</p>
@@ -157,7 +142,7 @@ const CommentSection = ({ productionId }) => {
             </div>
           ))}
         </div>
-      )}
+      ))}
 
       {!user && error && <p className="text-xs text-red-400 mt-3">{error}</p>}
     </div>

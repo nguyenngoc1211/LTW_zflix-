@@ -45,6 +45,9 @@ const RatingSection = ({ productionId, onSaved }) => {
   }, [loadRatings]);
 
   if (!productionId) return null;
+  const ownRating = user && ratings.some((item) => item.user_id === user.id);
+  const counts = [1, 2, 3, 4, 5].map((value) => ratings.filter((item) => Number(item.rating) === value).length);
+  const average = ratings.length ? ratings.reduce((total, item) => total + Number(item.rating), 0) / ratings.length : 0;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -68,6 +71,21 @@ const RatingSection = ({ productionId, onSaved }) => {
     }
   };
 
+  const handleDelete = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await apiRequest(`/api/v1/productions/${productionId}/rating`, { method: "DELETE" });
+      setReview("");
+      setScore(5);
+      await loadRatings();
+      onSaved?.();
+      message.success("Đã xóa đánh giá của bạn.");
+    } catch (err) { setError(err.message); }
+    finally { setSubmitting(false); }
+  };
+
   return (
     <div className="mt-8">
       <h3 className="text-pink-500 font-bold text-lg mb-4">
@@ -76,6 +94,11 @@ const RatingSection = ({ productionId, onSaved }) => {
           <span className="text-gray-500 text-sm font-normal ml-2">({ratings.length})</span>
         )}
       </h3>
+
+      {!loading && ratings.length > 0 && <div className="mb-4 rounded-xl border border-gray-800 bg-[#18181b] p-4 text-sm text-gray-300">
+        <p className="mb-2">Điểm cộng đồng: <strong>{average.toFixed(1)}/5</strong> · {ratings.length} đánh giá</p>
+        {[5, 4, 3, 2, 1].map((value) => <div key={value} className="flex items-center gap-2"><span className="w-12">{value} sao</span><div className="h-2 flex-1 rounded bg-zinc-700"><div className="h-2 rounded bg-amber-400" style={{ width: `${counts[value - 1] / ratings.length * 100}%` }} /></div><span className="w-8 text-right">{counts[value - 1]}</span></div>)}
+      </div>}
 
       {user ? (
         <form
@@ -116,6 +139,7 @@ const RatingSection = ({ productionId, onSaved }) => {
             >
               {submitting ? "Đang gửi..." : "Gửi đánh giá"}
             </button>
+            {ownRating && <button type="button" disabled={submitting} onClick={handleDelete} className="text-xs text-red-400 disabled:opacity-40">Xóa đánh giá</button>}
           </div>
           {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
           {warning && <p className="toxic-comment-notice">{warning}</p>}

@@ -100,6 +100,29 @@ button, input, select, textarea { font: inherit; }
 .auth-nav { display: flex; align-items: center; gap: 1rem; font-size: .9rem; margin-left: 1.5rem; }
 .auth-nav a { color: #aeb3c2; }.auth-nav a:hover { color: white; }
 .auth-user { color: #e5e8ef; font-weight: 600; }
+.account-menu { position: relative; }
+.site-header:has(.account-dropdown) { z-index: 110; }
+.app .account-trigger { display: flex; align-items: center; gap: .55rem; max-width: min(15rem, 45vw); padding: .35rem .5rem; background: transparent; color: #e5e8ef; }
+.app .account-trigger:hover, .app .account-trigger[aria-expanded="true"] { background: #252935; filter: none; }
+.account-trigger:focus-visible, .account-dropdown a:focus-visible, .account-dropdown button:focus-visible, .settings-nav button:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
+.account-avatar { width: 2rem; height: 2rem; flex: none; border-radius: 50%; object-fit: cover; }
+.account-username, .account-summary-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-chevron { flex: none; font-size: 1.1rem; line-height: 1; }
+.account-dropdown { position: absolute; top: calc(100% + .5rem); right: 0; width: min(17rem, calc(100vw - 2rem)); padding: .4rem; border: 1px solid #353946; border-radius: .8rem; background: #151821; box-shadow: 0 12px 32px #0009; }
+.account-summary { display: flex; align-items: center; gap: .65rem; padding: .65rem; border-bottom: 1px solid #353946; margin-bottom: .3rem; font-weight: 600; }
+.app .account-dropdown a, .app .account-dropdown button { display: block; width: 100%; text-align: left; padding: .75rem; border-radius: .5rem; background: transparent; color: #e5e8ef; font-weight: 500; }
+.app .account-dropdown a:hover, .app .account-dropdown button:hover { background: #292d38; filter: none; }
+.app .account-dropdown a:active, .app .account-dropdown button:active { background: #383e4c; }
+.settings-page { max-width: 1100px; min-height: 70vh; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+.settings-page > h1 { font-size: 1.8rem; font-weight: 700; margin: 0 0 1.5rem; }
+.settings-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 1.5rem; }
+.settings-nav { display: flex; flex-direction: column; gap: .4rem; position: sticky; top: 5.25rem; align-self: start; }
+.app .settings-nav button { text-align: left; background: #171a22; color: #c5cad5; font-weight: 500; }
+.app .settings-nav button[aria-current="location"] { background: #3b1b23; color: white; }
+.settings-content { min-width: 0; border: 1px solid #292d38; border-radius: 1rem; padding: 1.5rem; background: #11141b; }
+.settings-section { scroll-margin-top: 6rem; }
+.settings-security { margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #292d38; }
+@media (max-width: 760px) { .settings-layout { grid-template-columns: 1fr; } .settings-nav { position: static; flex-direction: row; } .app .settings-nav button { flex: 1; text-align: center; } .settings-content { padding: 1rem; } .settings-section { scroll-margin-top: 8rem; } }
 .logout-button, .signin-button { padding: .45rem .95rem; border-radius: .55rem; background: #e50914; color: white; font-weight: 700; font-size: .88rem; cursor: pointer; }
 .logout-button:hover, .signin-button:hover { filter: brightness(1.13); color: white; }
 .hero { min-height: 25rem; padding: 7rem max(1.25rem, calc((100% - 1200px)/2)) 4rem; background: linear-gradient(90deg, rgba(8,10,15,.98), rgba(8,10,15,.45)), linear-gradient(135deg, #38101c, #10182e); }

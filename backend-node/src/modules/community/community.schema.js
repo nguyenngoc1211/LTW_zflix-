@@ -20,10 +20,10 @@ export const communitySchemas = {
       upvotes: { bsonType: ['int', 'long'], minimum: 0 }, downvotes: { bsonType: ['int', 'long'], minimum: 0 },
       score: { bsonType: ['int', 'long'] }, comment_count: { bsonType: ['int', 'long'], minimum: 0 }, created_at: date, updated_at: date,
     }),
-    indexes: indexes([{ status: 1, visibility: 1, created_at: -1, _id: -1 }], [{ production_id: 1, episode_id: 1, status: 1, created_at: -1, _id: -1 }], [{ community_id: 1, status: 1, created_at: -1, _id: -1 }], [{ author_id: 1, created_at: -1 }]),
+    indexes: indexes([{ status: 1, visibility: 1, created_at: -1, _id: -1 }], [{ production_id: 1, episode_id: 1, status: 1, created_at: -1, _id: -1 }], [{ production_id: 1, status: 1, created_at: -1, _id: -1 }], [{ community_id: 1, status: 1, created_at: -1, _id: -1 }], [{ author_id: 1, created_at: -1 }]),
   },
   community_post_comments: {
-    validator: schema(['post_id', 'author_id', 'content', 'status', 'created_at', 'updated_at'], { post_id: id, author_id: id, parent_id: id, content: text(3000), status: enumeration('active', 'hidden', 'deleted'), is_spoiler: { bsonType: 'bool' }, created_at: date, updated_at: date }),
+    validator: schema(['post_id', 'author_id', 'content', 'status', 'created_at', 'updated_at'], { post_id: id, author_id: id, parent_id: id, content: text(3000), status: enumeration('active', 'hidden', 'deleted'), is_spoiler: { bsonType: 'bool' }, score: { bsonType: ['int', 'long'] }, created_at: date, updated_at: date }),
     indexes: indexes([{ post_id: 1, parent_id: 1, created_at: 1, _id: 1 }]),
   },
   community_post_votes: { validator: schema(['post_id', 'user_id', 'value'], { post_id: id, user_id: id, value: enumeration(-1, 1) }), indexes: indexes([{ post_id: 1, user_id: 1 }, { unique: true }]) },
@@ -36,5 +36,12 @@ export const communitySchemas = {
   community_watch_diary: { validator: schema(['user_id', 'production_id', 'watched_at', 'visibility', 'status'], { user_id: id, production_id: id, episode_id: id, watched_at: date, visibility: enumeration('private', 'public'), status: enumeration('active', 'deleted') }), indexes: indexes([{ user_id: 1, status: 1, watched_at: -1 }]) },
 };
 
-// Cross-document ownership, episode/production consistency, screenshot-specific
-// requirements and counters must be enforced by the future write services.
+// Screenshot posts must describe the same single image and episode in every view.
+communitySchemas.community_posts.validator.$jsonSchema.oneOf = [
+  { properties: { type: { enum: ['normal'] } } },
+  { properties: { type: { enum: ['screenshot'] }, images: { bsonType: 'array', minItems: 1, maxItems: 1 } },
+    required: ['production_id', 'episode_id', 'timestamp_seconds', 'screenshot_key', 'images'] },
+];
+
+// Cross-document ownership, episode/production consistency, image-key equality,
+// and counters must also be enforced by the write services.

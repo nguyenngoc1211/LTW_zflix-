@@ -406,3 +406,24 @@ Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạ
 
 - Khi `R2_PUBLIC_DOMAIN` thiếu trong `.env` local, API tập vẫn cấp URL proxy có token nhưng proxy trả 503 `R2 public domain is not configured`. Đã cấu hình domain public đúng theo host của 62 URL tập phim trong Atlas; chỉ sửa file `.env` không theo Git.
 - Sau khi khởi động lại backend, thử một tập miễn phí: API tập trả 200 và `locked:false`, playlist HLS qua proxy trả 200, segment đầu trả 200. Quy tắc token và quyền premium không thay đổi; chưa kiểm thử trực quan player trên trình duyệt hoặc mọi tập phim.
+
+### Cấu hình phát triển MongoDB (2026-11-01)
+
+- Theo yêu cầu chuyển sang MongoDB, đặt `DATA_STORE=mongodb` trong hai file `.env` local và chuyển Docker Compose sang truyền cấu hình MongoDB. Compose không còn khởi chạy migration auth MySQL. Không sửa mã kiểm tra quyền, session hoặc token trong bước cấu hình này.
+- Nhánh auth MySQL và dependency cũ vẫn còn trong source; chưa coi việc loại bỏ MySQL hoàn tất. Cần kiểm thử auth MongoDB trên database test riêng trước khi gỡ nhánh cũ hoặc thay đổi cấu hình triển khai khác.
+
+### Ảnh đại diện tài khoản (2026-11-01)
+
+- Bổ sung `PUT /api/v1/profile/avatar`: yêu cầu access token/session hợp lệ, origin hợp lệ và rate limit; chỉ cập nhật `users.avatar_url` của tài khoản hiện tại. Nhận tối đa 5 MB, kiểm tra chữ ký PNG/JPEG/WebP, giải mã bằng sharp, giới hạn pixel và xuất WebP lên R2.
+- Ảnh mặc định được phục vụ tại `/default-avatar.png`; tài khoản có avatar riêng được giữ nguyên. Không cập nhật hàng loạt database. Sau khi upload, AuthContext cập nhật avatar hiện tại; ảnh cũ trên R2 không bị tự động xóa.
+- Kiểm thử MongoDB test riêng với R2 giả lập đã xác nhận 401 khi thiếu token, 403 khi sai origin, 400 với ảnh sai định dạng, upload thành công và không sửa tài khoản khác. Backend unit 69/69, ESLint các file liên quan và frontend build đạt. Chưa thử upload R2 thật hoặc kiểm thử trực quan trên trình duyệt.
+
+### Menu tài khoản và trang cài đặt (2026-11-01)
+
+- Header dùng dropdown tài khoản và hàm logout hiện có; `/settings` nằm trong `ProtectedRoute`, liên kết cũ `/account/profile` và `/account/security` chuyển đến tab tương ứng. Các component và API đổi mật khẩu, MFA, session và avatar được tái sử dụng; không thay đổi backend hoặc dữ liệu người dùng.
+- Test trình duyệt với API giả lập xác nhận mở/đóng menu, Escape, click ngoài, điều hướng bàn phím, preview/cập nhật avatar giả lập, hai redirect, các phần bảo mật hiển thị, logout và chặn khách; kiểm tra kích thước menu ở viewport 375 px. Chưa test đầy đủ đổi mật khẩu, MFA, thu hồi session hay upload R2 thật trong lượt này.
+
+### Trang cài đặt cuộn liên tục (2026-11-01)
+
+- Hồ sơ và bảo mật cùng hiển thị trên `/settings`; sidebar cuộn đến section, đánh dấu vị trí cuộn và giữ các URL `?tab=profile` / `?tab=security`. Giữ nguyên component, API và luồng bảo mật hiện có.
+- Test trình duyệt dùng API giả lập xác nhận hai section, nút cuộn, trạng thái theo cuộn, sticky desktop, liên kết cũ và mobile; build và ESLint file thay đổi đạt. Lint toàn frontend vẫn có hai lỗi và ba cảnh báo tồn tại ở module khác. Không thay đổi backend/database; chưa thực hiện lại thao tác bảo mật thật.
