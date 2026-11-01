@@ -33,13 +33,14 @@ export const useWatchPage = () => {
 
   // --- EFFECT 1: FETCH INITIAL DATA ---
   useEffect(() => {
+    let active = true;
     window.scrollTo(0, 0);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
 
     getMovieById(id)
       .then((base) => getMovieBySlug(base.slug))
       .then(async (production) => {
+        if (!active) return;
         setProductionData(production);
 
         const mappedData = {
@@ -52,6 +53,7 @@ export const useWatchPage = () => {
             mappedData,
             currentSeasonParam,
           );
+        if (!active) return;
         targetEpisodes = targetEpisodes || [];
 
         setCurrentSeasonId(targetSeasonId);
@@ -68,27 +70,15 @@ export const useWatchPage = () => {
         }
       })
       .catch((err) => {
+        if (!active) return;
         console.error(err);
         messageApi.error("Không thể tải phim!");
       })
       .finally(() => {
-        setLoading(false);
+        if (active) setLoading(false);
       });
-  }, [id]);
-
-  // --- EFFECT 2: SYNC EPISODE FROM URL ---
-  useEffect(() => {
-    if (episodeList.length > 0 && currentEpNumber) {
-      const foundEp = episodeList.find(
-        (e) => e.episode_number.toString() === currentEpNumber.toString(),
-      );
-      if (foundEp && foundEp.id !== currentEpisode?.id) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCurrentEpisode(foundEp);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }
-    }
-  }, [currentEpNumber, episodeList]);
+    return () => { active = false; };
+  }, [id, currentSeasonParam, currentEpNumber, messageApi]);
 
   // --- HANDLERS ---
 
@@ -171,13 +161,14 @@ export const useWatchPage = () => {
   };
 
   // Lưu vị trí xem vào lịch sử (giống PlayerPage): mỗi 10 giây một lần.
-  const lastSavedRef = useRef(0);
+  const lastSavedRef = useRef({ episodeId: null, position: 0 });
   const handleTimeUpdate = useCallback(
     (seconds) => {
       const episodeId = currentEpisode?.id;
       if (!episodeId) return;
-      if (Math.abs(seconds - lastSavedRef.current) < 10) return;
-      lastSavedRef.current = seconds;
+      if (lastSavedRef.current.episodeId !== episodeId) lastSavedRef.current = { episodeId, position: 0 };
+      if (seconds <= 0 || Math.abs(seconds - lastSavedRef.current.position) < 10) return;
+      lastSavedRef.current.position = seconds;
       apiRequest(`/api/v1/history/${episodeId}`, {
         method: "PUT",
         body: JSON.stringify({ position: seconds }),

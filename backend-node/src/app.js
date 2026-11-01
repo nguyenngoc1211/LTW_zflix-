@@ -9,6 +9,7 @@ import { securityConfig } from "./config/security.config.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { discoveryRouter } from "./modules/discovery/discovery.routes.js";
 import { communityRouter } from "./modules/community/community.routes.js";
+import { postsRouter } from "./modules/community/posts.routes.js";
 import { streamingRouter } from "./modules/streaming/streaming.routes.js";
 import streamingContentRouter from "./modules/streaming/route/index.js";
 import { r2ProxyRouter } from "./modules/streaming/r2-proxy.routes.js";
@@ -56,6 +57,7 @@ export const createApp = () => {
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1", discoveryRouter);
   app.use("/api/v1", communityRouter);
+  app.use("/api/v1/community/posts", postsRouter);
   app.use("/api/v1", streamingRouter);
   app.use("/api/v1/hls", r2ProxyRouter);
   app.use("/api/v1", watchPartyRouter);

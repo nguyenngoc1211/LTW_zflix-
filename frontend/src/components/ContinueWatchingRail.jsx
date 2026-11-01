@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { createEpisodeWatchUrl } from "../utils/streaming/watchUrl.js";
 
 const formatProgress = (item) => Math.min(100, Math.max(0, Number(item.watched_percent) || 0));
 
@@ -19,7 +20,7 @@ const ContinueWatchingRail = ({ items }) => {
             <Link
               key={item.production_id}
               className="continue-card"
-              to={`/watch-episode/${item.episode_id}?pos=${resumeAt}`}
+              to={createEpisodeWatchUrl(item, resumeAt) || `/watch-episode/${item.episode_id}?pos=${resumeAt}`}
             >
               <div className="continue-card-poster">
                 {item.poster_url ? (

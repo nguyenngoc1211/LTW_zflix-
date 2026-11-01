@@ -154,7 +154,7 @@ const PlayerPage = () => {
             <video
               ref={videoRef}
               controls
-              autoPlay
+              autoPlay={!searchParams.has("pos")}
               {...(videoNoCors ? {} : { crossOrigin: "anonymous" })}
               onError={() => { if (!videoNoCors) setVideoNoCors(true); }}
               onLoadedMetadata={handleLoadedMetadata}

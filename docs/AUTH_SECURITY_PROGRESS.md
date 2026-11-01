@@ -1,5 +1,18 @@
 # Tiến độ bảo mật Authentication & Authorization
 
+## Community Posts — 2026-11-01
+
+- Bình luận Post mới kiểm tra quyền đọc Post; tạo, sửa và xóa yêu cầu session, sửa/xóa lọc theo tác giả. Tạo/xóa và bộ đếm dùng transaction; replies giới hạn sâu tối đa 3. Hệ thống comment phim cũ không thay đổi.
+
+- Bổ sung endpoint vote yêu cầu session; bài phải active và người dùng phải có quyền đọc. Vote và bộ đếm cập nhật trong transaction MongoDB; cần unique index từ schema và MongoDB hỗ trợ transaction. Chưa coi việc kiểm tra quyền trong giao dịch là chống được mọi thay đổi membership đồng thời.
+
+- Cập nhật: bài `members` chỉ hiển thị cho thành viên active của nhóm active; API feed, chi tiết và lưu bài cùng áp dụng kiểm tra. Không cho tạo hoặc chuyển bài có ảnh sang `members` vì R2 đang dùng public domain, chưa bảo vệ được ảnh riêng tư. Chưa kiểm thử mọi tình huống cạnh tranh thay đổi quyền.
+
+- Các endpoint ghi `/api/v1/community/posts` sử dụng `requireAuth` hiện có; PATCH dành cho tác giả, DELETE kiểm tra tác giả hoặc vai trò kiểm duyệt. GET chỉ trả bài active mà người xem được phép truy cập. Không thay đổi middleware xác thực.
+- Smoke test MongoDB riêng đã kiểm tra guest bị từ chối, người khác không sửa/xóa được, tác giả sửa và xóa mềm được. Chưa coi giai đoạn Posts là hoàn tất.
+- Bổ sung gắn nhóm: kiểm tra nhóm hoạt động và tư cách thành viên khi gắn/chuyển nhóm. Các endpoint lưu bài yêu cầu session hợp lệ và kiểm tra quyền xem.
+- DELETE bài hiện cho phép tác giả, admin/moderator hệ thống hoặc owner/moderator đang hoạt động của nhóm chứa bài. Các vai trò nhóm được đọc từ database. Upload ảnh yêu cầu đăng nhập, giới hạn số lượng/kích thước và giải mã ảnh; chưa kiểm thử R2 thật.
+
 Ngày rà soát source và Git gần nhất: 2026-10-28
 Current branch: `integration`  
 Current latest security phase commit: `8988504`

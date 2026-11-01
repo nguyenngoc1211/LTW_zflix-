@@ -1,15 +1,20 @@
 import { Spin } from "antd";
+import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { parseWatchPosition } from "../../utils/streaming/watchUrl.js";
 
 import VideoPlayer from "../../components/streamingPage/VideoPlayer";
 import EpisodeSelector from "../../components/streamingPage/EpisodeSelector";
 import MovieInfo from "../../components/streamingPage/MovieInfo";
 import SeasonSelector from "../../components/streamingPage/SeasonSelector";
-import CommentSection from "../../components/streamingPage/CommentSection";
+import MovieDiscussion from "../../components/streamingPage/MovieDiscussion";
 import RecommendedList from "../../components/streamingPage/RecommendedList";
 import RelatedMovies from "../../components/streamingPage/RelatedMovies";
 import { useWatchPage } from "../../hooks/streaming/useWatchPage";
 
 const WatchPage = () => {
+  const [momentsVersion, setMomentsVersion] = useState(0);
+  const [searchParams] = useSearchParams();
   const {
     loading,
     productionData,
@@ -35,6 +40,9 @@ const WatchPage = () => {
   }
 
   const { related } = productionData;
+  const requestedSeason = searchParams.get("ss");
+  const seasonMatches = !requestedSeason || productionData.type !== 'series' || String(productionData.seasons?.find((season) => season.id === currentSeasonId)?.season_number) === requestedSeason;
+  const requestedPosition = seasonMatches && String(currentEpisode?.episode_number) === searchParams.get("ep") ? parseWatchPosition(searchParams.get("pos")) : null;
   const relatedMoviesData = [
     ...related,
     ...related,
@@ -81,6 +89,8 @@ const WatchPage = () => {
                   setSettings={setPlayerSettings}
                   productionId={productionData?.id ?? currentEpisode.production_id}
                   onTimeUpdate={handlers.handleTimeUpdate}
+                  resumePosition={requestedPosition}
+                  onScreenshotPublished={() => setMomentsVersion((value) => value + 1)}
                 />
               ) : (
                 <div className="aspect-video bg-black flex items-center justify-center text-gray-500">
@@ -114,9 +124,7 @@ const WatchPage = () => {
             className={`mt-8 grid grid-cols-1 xl:grid-cols-12 gap-6 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
           >
             <div className="xl:col-span-9">
-              <CommentSection
-                productionId={productionData?.id ?? currentEpisode.production_id}
-              />
+              <MovieDiscussion key={currentEpisode?.id} productionId={productionData?.id ?? currentEpisode?.production_id} episodeId={currentEpisode?.id} version={momentsVersion} />
             </div>
 
             <div className="xl:col-span-3">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "../../services/api.js";
+import { createEpisodeWatchUrl } from "../../utils/streaming/watchUrl.js";
 
 // Chỉ gợi ý xem tiếp khi tập chưa xong và vị trí lưu còn hợp lệ với thời lượng hiện tại.
 const resumePosition = (item) => {
@@ -72,7 +73,7 @@ const HistoryPage = () => {
               <div className="history-actions">
                 <Link
                   className="button-link"
-                  to={`/watch-episode/${item.episode_id}${resumeAt === null ? "" : `?pos=${resumeAt}`}`}
+                  to={createEpisodeWatchUrl(item, resumeAt) || `/watch-episode/${item.episode_id}${resumeAt === null ? "" : `?pos=${resumeAt}`}`}
                 >
                   Xem tiếp
                 </Link>

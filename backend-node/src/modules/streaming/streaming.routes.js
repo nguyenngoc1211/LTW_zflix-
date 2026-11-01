@@ -15,14 +15,18 @@ streamingRouter.get("/episodes/:episodeId", optionalAuth, asyncHandler(async (re
     if (!episode) return res.status(404).json({ message: "Episode not found" });
     const production = await (await mongoCollection("productions")).findOne({ id: episode.production_id });
     if (!production) return res.status(404).json({ message: "Episode not found" });
+    const season = await (await mongoCollection("seasons")).findOne({ id: episode.production_id });
     const premium = await resolveProductionPremium(production.id);
     return res.json(applyEpisodeAccess({ ...fromMongo(episode),
       production_title: production.title, production_id: production.id,
+      watch_production_id: season?.series_id ?? production.id,
+      season_number: season?.season_number ?? null,
       slug: production.slug, poster_url: production.poster_url,
       is_premium: production.is_premium }, { premium, user: req.user }));
   }
   const [items] = await pool.execute(
     `SELECT e.*, p.title AS production_title, p.id AS production_id, p.slug, p.poster_url,
+            COALESCE(s.series_id, p.id) AS watch_production_id, s.season_number,
             p.is_premium, sp.is_premium AS series_premium
        FROM episodes e
        JOIN productions p ON p.id = e.production_id
@@ -48,6 +52,8 @@ streamingRouter.get("/history", requireAuth, asyncHandler(async (req, res) => {
       .find({ id: { $in: episodes.map((item) => item.production_id) } }).toArray();
     const episodeMap = new Map(episodes.map((item) => [item.id, item]));
     const productionMap = new Map(productions.map((item) => [item.id, item]));
+    const seasons = await (await mongoCollection("seasons")).find({ id: { $in: episodes.map((item) => item.production_id) } }).toArray();
+    const seasonMap = new Map(seasons.map((item) => [item.id, item]));
     const items = history.flatMap((row) => {
       const episode = episodeMap.get(row.episode_id);
       const production = episode && productionMap.get(episode.production_id);
@@ -57,11 +63,13 @@ streamingRouter.get("/history", requireAuth, asyncHandler(async (req, res) => {
         last_watched_at: row.last_watched_at, episode_number: episode.episode_number,
         episode_title: episode.title, duration: episode.duration,
         thumbnail_url: episode.thumbnail_url, production_id: production.id,
+        watch_production_id: seasonMap.get(production.id)?.series_id ?? production.id,
+        season_number: seasonMap.get(production.id)?.season_number ?? null,
         title: production.title, slug: production.slug, poster_url: production.poster_url }] : [];
     });
     return res.json({ items, continueWatching: selectContinueWatching(items) });
   }
-  const [items] = await pool.execute(`SELECT wh.episode_id, wh.last_position, wh.watched_percent, wh.watched_duration, wh.is_completed, wh.last_watched_at, e.episode_number, e.title AS episode_title, e.duration, e.thumbnail_url, p.id AS production_id, p.title, p.slug, p.poster_url FROM watch_history wh JOIN episodes e ON e.id=wh.episode_id JOIN productions p ON p.id=e.production_id WHERE wh.user_id=? ORDER BY wh.last_watched_at DESC`, [req.user.id]);
+  const [items] = await pool.execute(`SELECT wh.episode_id, wh.last_position, wh.watched_percent, wh.watched_duration, wh.is_completed, wh.last_watched_at, e.episode_number, e.title AS episode_title, e.duration, e.thumbnail_url, p.id AS production_id, COALESCE(s.series_id,p.id) AS watch_production_id, s.season_number, p.title, p.slug, p.poster_url FROM watch_history wh JOIN episodes e ON e.id=wh.episode_id JOIN productions p ON p.id=e.production_id LEFT JOIN seasons s ON s.id=p.id WHERE wh.user_id=? ORDER BY wh.last_watched_at DESC`, [req.user.id]);
 
   // "Xem tiếp" chỉ lấy tập gần nhất của mỗi phim đang xem dở.
   // Một phim bộ có thể có nhiều tập trong lịch sử nên phải khử trùng theo production_id.

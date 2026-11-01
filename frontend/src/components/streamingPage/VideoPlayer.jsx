@@ -4,13 +4,14 @@ import {
   StepForwardOutlined,
 } from "@ant-design/icons";
 import { Button, Tooltip, message } from "antd";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import LensyMascot from "../LensyMascot";
 import SelectionOverlay from "../SelectionOverlay";
 import ProductPanel from "../ProductPanel";
 import { useLensy } from "../../hooks/useLensy";
 import { useVideoSource } from "../../hooks/useVideoSource";
+import ScreenshotComposer from "./ScreenshotComposer";
 
 const Toggle = ({ checked, onChange, label }) => (
   <button
@@ -56,10 +57,21 @@ const VideoPlayer = ({
   setSettings,
   productionId,
   onTimeUpdate,
+  onScreenshotPublished,
+  resumePosition,
 }) => {
   const videoRef = useRef(null);
+  const [theater, setTheater] = useState(false);
+  useEffect(() => {
+    if (!theater) return undefined;
+    const onKey = (event) => { if (event.key === 'Escape') setTheater(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [theater]);
   const stageRef = useRef(null);
   const positionRef = useRef(0);
+  const seekRef = useRef({ key: null, applied: false });
+  const resumeKey = resumePosition === null ? null : `${currentEpisode.id}:${resumePosition}`;
   const isLocked = Boolean(currentEpisode?.locked);
 
   // CineLens: quét đồ vật trong khung hình (Lensy)
@@ -81,19 +93,33 @@ const VideoPlayer = ({
   }, [currentEpisode, settings.autoPlay]);
 
   const handleLoadedMetadata = () => {
-    const position = Number(new URLSearchParams(window.location.search).get("pos"));
     const video = videoRef.current;
-    if (!video || !Number.isFinite(position) || position <= 0) return;
+    if (!video || resumePosition === null || (seekRef.current.key === resumeKey && seekRef.current.applied) || video.readyState < 1) return;
     const maxPosition = Number.isFinite(video.duration)
       ? Math.max(0, video.duration - 1)
-      : position;
-    video.currentTime = Math.min(position, maxPosition);
+      : resumePosition;
+    try {
+      video.currentTime = Math.min(resumePosition, maxPosition);
+      seekRef.current = { key: resumeKey, applied: true };
+    } catch {
+      // Retry when the media reports it can play.
+    }
   };
+
+  useEffect(() => {
+    if (resumePosition === null) { seekRef.current = { key: null, applied: false }; return; }
+    if (!videoRef.current || videoRef.current.readyState < 1 || (seekRef.current.key === resumeKey && seekRef.current.applied)) return;
+    const video = videoRef.current;
+    try {
+      video.currentTime = Number.isFinite(video.duration) ? Math.min(resumePosition, Math.max(0, video.duration - 1)) : resumePosition;
+      seekRef.current = { key: resumeKey, applied: true };
+    } catch { /* loadedmetadata/canplay will retry */ }
+  }, [currentEpisode.id, resumePosition, resumeKey]);
 
   const handleTimeUpdate = () => {
     const t = videoRef.current?.currentTime || 0;
     positionRef.current = t;
-    if (onTimeUpdate) onTimeUpdate(Math.floor(t));
+    if (onTimeUpdate && (resumeKey === null || (seekRef.current.key === resumeKey && seekRef.current.applied))) onTimeUpdate(Math.floor(t));
   };
 
   const handleVideoEnded = () => {
@@ -109,7 +135,7 @@ const VideoPlayer = ({
   return (
     <div
       ref={stageRef}
-      className={`relative w-full overflow-hidden rounded-xl bg-black shadow-2xl ${
+      className={`${theater ? 'fixed inset-0 z-[100] h-screen overflow-auto' : 'relative'} w-full overflow-hidden rounded-xl bg-black shadow-2xl ${
         isLightOff ? "z-50" : ""
       }`}
     >
@@ -135,6 +161,7 @@ const VideoPlayer = ({
               className="h-full w-full object-contain"
               poster={currentEpisode.thumbnail_url}
               onLoadedMetadata={handleLoadedMetadata}
+              onCanPlay={handleLoadedMetadata}
               onTimeUpdate={handleTimeUpdate}
               onEnded={handleVideoEnded}
             />
@@ -195,6 +222,8 @@ const VideoPlayer = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button onClick={() => setTheater((value) => !value)}>{theater ? 'Thoát chế độ rạp' : 'Chế độ rạp'}</Button>
+          {!isLocked && <ScreenshotComposer videoRef={videoRef} productionId={productionId} episode={currentEpisode} onPublished={onScreenshotPublished} />}
           {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && !isLocked && (
             <LensyMascot
               inline

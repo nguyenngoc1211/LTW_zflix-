@@ -20,6 +20,7 @@ const App = () => {
           <NavLink to="/history">Lịch sử</NavLink>
           <NavLink to="/notifications">Thông báo</NavLink>
           <NavLink to="/watch-party">Watch Party</NavLink>
+          <NavLink to="/community">Cộng đồng</NavLink>
         </nav>
         <div className="auth-nav">
           {user ? (
