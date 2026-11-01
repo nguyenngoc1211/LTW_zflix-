@@ -143,6 +143,18 @@ button, input, select, textarea { font: inherit; }
 .toxic-comment-cover strong { color: #fca5a5; font-size: .78rem; }
 .toxic-comment-cover span { color: #cbd5e1; font-size: .7rem; }
 .toxic-comment-notice { margin-top: .5rem; padding: .55rem .7rem; border: 1px solid #92400e; border-radius: .5rem; background: #431d091f; color: #fbbf24; font-size: .78rem; }
+.app button.content-action-trigger,
+.app button.content-action-trigger:hover,
+.app button.content-action-trigger:focus { padding: 0; border: 0; background: transparent; filter: none; }
+.app button.content-action-item,
+.app button.content-action-item:hover,
+.app button.content-action-item:focus { width: 100%; padding: .5rem .75rem; border: 0; border-radius: 0; background: transparent; filter: none; text-align: left; }
+.app button.content-action-item { color: #e5e7eb; }
+.app button.content-action-item:hover,
+.app button.content-action-item:focus { color: #fff; }
+.app button.content-action-danger { color: #f87171; }
+.app button.content-action-danger:hover,
+.app button.content-action-danger:focus { color: #fca5a5; }
 .rating-review-copy { margin-top: .55rem; padding: .65rem .75rem; border-radius: .55rem; background: #181b24; border: 1px solid #292d38; }
 .rating-review-copy strong { display: block; color: #f1f5f9; font-size: .86rem; }
 .rating-review-copy p { margin: .25rem 0 0; color: #c3c7d0; }

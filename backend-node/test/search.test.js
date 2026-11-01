@@ -6,7 +6,7 @@ process.env.NODE_ENV = "test";
 
 process.env.DATABASE_URL ||= "mysql://root:rootpassword@localhost:3306/movie_streaming_db";
 
-const { buildElasticQuery } = await import("../src/modules/discovery/search.service.js");
+const { buildElasticQuery, rankTitleSuggestions } = await import("../src/modules/discovery/search.service.js");
 const { clampPagination, parsePositiveInt } = await import("../src/core/utils/http.js");
 
 test("search uses Elasticsearch full-text matching (case-insensitive analyzer)", () => {
@@ -40,4 +40,15 @@ test("resource ids reject invalid values", () => {
   assert.equal(parsePositiveInt("7"), 7);
   assert.throws(() => parsePositiveInt("0"), /positive integer/);
   assert.throws(() => parsePositiveInt("other-user"), /positive integer/);
+});
+
+test("title suggestions match substrings and prioritize the start of a word", () => {
+  const rows = [
+    { id: 1, title: "Finding Nemo", rating_avg: 4.5 },
+    { id: 2, title: "Back to the Future", rating_avg: 4.2 },
+    { id: 3, title: "Life of Pi", rating_avg: 4.9 },
+  ];
+  assert.deepEqual(rankTitleSuggestions(rows, "future").map((item) => item.id), [2]);
+  assert.equal(rankTitleSuggestions(rows, "f")[0].id, 1);
+  assert.ok(rankTitleSuggestions(rows, "f").some((item) => item.id === 2));
 });

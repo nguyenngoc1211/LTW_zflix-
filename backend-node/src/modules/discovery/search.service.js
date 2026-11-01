@@ -15,6 +15,34 @@ const requestElastic = async (path, options = {}) => {
   return response.status === 204 ? null : response.json();
 };
 
+const normalizeSuggestionText = (value) => String(value || "")
+  .normalize("NFKD")
+  .replace(/\p{M}+/gu, "")
+  .toLowerCase();
+
+// Ưu tiên khớp toàn bộ -> đầu tiêu đề -> đầu một từ -> nằm ở vị trí bất kỳ.
+// Hàm dùng chung cho MySQL và MongoDB để autocomplete có hành vi nhất quán.
+export const rankTitleSuggestions = (rows, query, limit = 8) => {
+  const needle = normalizeSuggestionText(query).trim();
+  if (!needle) return [];
+  const rank = (item) => {
+    const title = normalizeSuggestionText(item.title);
+    if (title === needle) return 0;
+    if (title.startsWith(needle)) return 1;
+    if (title.split(/[^\p{L}\p{N}]+/u).some((word) => word.startsWith(needle))) return 2;
+    return 3;
+  };
+  return rows.filter((item) => normalizeSuggestionText(item.title).includes(needle)).sort((left, right) => {
+    const rankDifference = rank(left) - rank(right);
+    if (rankDifference) return rankDifference;
+    const leftTitle = normalizeSuggestionText(left.title);
+    const rightTitle = normalizeSuggestionText(right.title);
+    const positionDifference = leftTitle.indexOf(needle) - rightTitle.indexOf(needle);
+    if (positionDifference) return positionDifference;
+    return Number(right.rating_avg || 0) - Number(left.rating_avg || 0);
+  }).slice(0, limit);
+};
+
 export const buildElasticQuery = ({ search, genre, country, year, minRating, sortYear }, from, size) => {
   const must = search
     ? [{ multi_match: { query: search, fields: ["title^3", "description", "genres"], fuzziness: "AUTO", operator: "and" } }]
