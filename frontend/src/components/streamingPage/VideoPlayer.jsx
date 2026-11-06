@@ -1,10 +1,10 @@
 import {
-  BulbOutlined,
+  CompressOutlined,
+  ExpandOutlined,
   LockOutlined,
-  StepForwardOutlined,
 } from "@ant-design/icons";
-import { Button, Tooltip, message } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { Button, message } from "antd";
+import { useEffect, useRef } from "react";
 
 import LensyMascot from "../LensyMascot";
 import SelectionOverlay from "../SelectionOverlay";
@@ -50,9 +50,9 @@ const Toggle = ({ checked, onChange, label }) => (
 
 const VideoPlayer = ({
   currentEpisode,
-  isLightOff,
-  setLightOff,
   onNextEpisode,
+  theater,
+  onToggleTheater,
   settings,
   setSettings,
   productionId,
@@ -62,13 +62,12 @@ const VideoPlayer = ({
   resumePosition,
 }) => {
   const videoRef = useRef(null);
-  const [theater, setTheater] = useState(false);
   useEffect(() => {
     if (!theater) return undefined;
-    const onKey = (event) => { if (event.key === 'Escape') setTheater(false); };
+    const onKey = (event) => { if (event.key === 'Escape') onToggleTheater(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [theater]);
+  }, [theater, onToggleTheater]);
   const stageRef = useRef(null);
   const positionRef = useRef(0);
   const seekRef = useRef({ key: null, applied: false });
@@ -136,11 +135,9 @@ const VideoPlayer = ({
   return (
     <div
       ref={stageRef}
-      className={`${theater ? 'fixed inset-0 z-[100] h-screen overflow-auto' : 'relative'} w-full overflow-hidden rounded-xl bg-black shadow-2xl ${
-        isLightOff ? "z-50" : ""
-      }`}
+      className={`${theater ? 'w-full' : 'relative'} overflow-hidden rounded-xl bg-black shadow-2xl`}
     >
-      <div className="relative aspect-video w-full bg-black">
+      <div className={`relative w-full bg-black ${theater ? 'max-h-[calc(100vh-150px)] aspect-video' : 'aspect-video'}`}>
         {/* src do useVideoSource() gắn (proxy R2 + hls.js), không set inline. */}
         {isLocked ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
@@ -199,31 +196,31 @@ const VideoPlayer = ({
           ẩn khi đang chọn vùng để không vướng thao tác kéo chuột. */}
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-[#18181b] p-3">
-        <div className="flex items-center gap-4 text-sm text-gray-300">
-          <span className="whitespace-nowrap">
-            Đang xem: <strong className="text-white">Tập {currentEpisode.episode_number}</strong>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-300">
+          <span className="flex items-center gap-2">
+            Auto Play
+            <Toggle
+              checked={settings.autoPlay}
+              onChange={() => toggleSetting("autoPlay")}
+              label="Auto Play"
+            />
           </span>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <span className="flex items-center gap-2">
-              Auto Play
-              <Toggle
-                checked={settings.autoPlay}
-                onChange={() => toggleSetting("autoPlay")}
-                label="Auto Play"
-              />
-            </span>
-            <span className="flex items-center gap-2">
-              Auto Next
-              <Toggle
-                checked={settings.autoNext}
-                onChange={() => toggleSetting("autoNext")}
-                label="Auto Next"
-              />
-            </span>
-          </div>
+          <span className="flex items-center gap-2">
+            Auto Next
+            <Toggle
+              checked={settings.autoNext}
+              onChange={() => toggleSetting("autoNext")}
+              label="Auto Next"
+            />
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={() => setTheater((value) => !value)}>{theater ? 'Thoát chế độ rạp' : 'Chế độ rạp'}</Button>
+          <Button
+            icon={theater ? <CompressOutlined /> : <ExpandOutlined />}
+            onClick={() => onToggleTheater(!theater)}
+          >
+            {theater ? 'Thoát chế độ rạp' : 'Chế độ rạp'}
+          </Button>
           {!isLocked && <ScreenshotComposer videoRef={videoRef} productionId={productionId} productionTitle={productionTitle} episode={currentEpisode} onPublished={onScreenshotPublished} />}
           {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && !isLocked && (
             <LensyMascot
@@ -232,12 +229,6 @@ const VideoPlayer = ({
               onClick={() => (lensy.state === "SLEEPING" ? lensy.wake() : lensy.sleep())}
             />
           )}
-          <Tooltip title={isLightOff ? "Bật đèn" : "Tắt đèn"}>
-            <Button type="text" icon={<BulbOutlined />} onClick={() => setLightOff(!isLightOff)} />
-          </Tooltip>
-          <Button type="primary" shape="round" icon={<StepForwardOutlined />} onClick={onNextEpisode}>
-            Tập tiếp theo
-          </Button>
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { DownOutlined } from '@ant-design/icons';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
@@ -38,7 +39,7 @@ export default function AccountMenu() {
     <button ref={trigger} type="button" className="account-trigger" aria-expanded={open} aria-controls="account-dropdown" aria-label={`Tài khoản ${user.username}`} onClick={() => setOpen((value) => !value)}>
       <UserAvatar src={user.avatarUrl} className="account-avatar" />
       <span className="account-username">{user.username}</span>
-      <span aria-hidden="true" className="account-chevron">⌄</span>
+      <DownOutlined className="account-chevron" aria-hidden="true" />
     </button>
     {open && <div id="account-dropdown" className="account-dropdown">
       <div className="account-summary"><UserAvatar src={user.avatarUrl} className="account-avatar" /><span className="account-summary-name">{user.username}</span></div>

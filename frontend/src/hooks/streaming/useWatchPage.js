@@ -29,7 +29,6 @@ export const useWatchPage = () => {
     autoNext: true,
     autoSkipIntro: false,
   });
-  const [isLightOff, setLightOff] = useState(false);
 
   // --- EFFECT 1: FETCH INITIAL DATA ---
   useEffect(() => {
@@ -186,8 +185,6 @@ export const useWatchPage = () => {
     episodeList,
     playerSettings,
     setPlayerSettings,
-    isLightOff,
-    setLightOff,
     contextHolder,
     handlers: {
       handleChangeEpisode,

@@ -14,6 +14,7 @@ import { useWatchPage } from "../../hooks/streaming/useWatchPage";
 
 const WatchPage = () => {
   const [momentsVersion, setMomentsVersion] = useState(0);
+  const [theater, setTheater] = useState(false);
   const [searchParams] = useSearchParams();
   const {
     loading,
@@ -23,8 +24,6 @@ const WatchPage = () => {
     episodeList,
     playerSettings,
     setPlayerSettings,
-    isLightOff,
-    setLightOff,
     handlers,
     contextHolder,
   } = useWatchPage();
@@ -56,16 +55,11 @@ const WatchPage = () => {
     <>
       {contextHolder}
       <div className="min-h-screen bg-[#121212] text-gray-300 font-sans pb-10 relative pt-12">
-        {/* Light Off Overlay */}
-        <div
-          className={`fixed inset-0 bg-black/95 z-40 transition-opacity duration-500 pointer-events-none ${isLightOff ? "opacity-100" : "opacity-0"}`}
-        ></div>
-
         <div className="container mx-auto px-2 md:px-4 max-w-[1600px] pt-[20px]">
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
             {/* DANH SÁCH TẬP  */}
             <div
-              className={`watch-episodes xl:col-span-2 order-2 xl:order-1 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
+              className={`watch-episodes xl:col-span-2 order-2 xl:order-1 ${theater ? 'hidden' : ''}`}
             >
               <EpisodeSelector
                   episodes={episodeList}
@@ -75,13 +69,13 @@ const WatchPage = () => {
             </div>
 
             {/* VIDEO PLAYER & SEASONS  */}
-            <div className="xl:col-span-7 order-1 xl:order-2 relative z-50">
+            <div className={`${theater ? 'xl:col-span-12 order-1' : 'xl:col-span-7 order-1 xl:order-2'} relative z-50`}>
               {/* 1. Video Player */}
               {currentEpisode ? (
                 <VideoPlayer
                   currentEpisode={currentEpisode}
-                  isLightOff={isLightOff}
-                  setLightOff={setLightOff}
+                  theater={theater}
+                  onToggleTheater={setTheater}
                   onNextEpisode={handleNextEpisode}
                   settings={playerSettings}
                   setSettings={setPlayerSettings}
@@ -98,9 +92,7 @@ const WatchPage = () => {
               )}
 
               {/* 2. Season Selector (tự ẩn nếu là Movie) */}
-              <div
-                className={`transition-opacity duration-300 ${isLightOff ? "opacity-20 hover:opacity-100" : "opacity-100"}`}
-              >
+              <div>
                 <SeasonSelector
                   currentSeasonId={currentSeasonId}
                   seasons={productionData.seasons}
@@ -108,14 +100,14 @@ const WatchPage = () => {
                   onSeasonClick={handleChangeSeason}
                 />
               </div>
-              <div className={`watch-discussion transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}>
+              <div className="watch-discussion">
                 <MovieDiscussion key={currentEpisode?.id} productionId={productionData?.id ?? currentEpisode?.production_id} episodeId={currentEpisode?.id} version={momentsVersion} />
               </div>
             </div>
 
             {/* THÔNG TIN PHIM */}
             <div
-              className={`watch-info xl:col-span-3 order-3 xl:order-3 transition-opacity duration-300 ${isLightOff ? "opacity-10" : "opacity-100"}`}
+              className={`watch-info xl:col-span-3 order-3 xl:order-3 ${theater ? 'hidden' : ''}`}
             >
               <MovieInfo production={productionData} />
               <div className="mt-8"><RecommendedList list={related} /></div>
