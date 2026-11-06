@@ -27,6 +27,15 @@ export default function MovieCommentItem({ comment, productionId, depth = 0 }) {
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('spam');
   const [description, setDescription] = useState('');
+  const isOwner = Boolean(user && Number(comment.user_id) === Number(user.id));
+  const canEdit = isOwner && user?.role !== 'admin';
+  const canDelete = isOwner || user?.role === 'admin';
+  const menuItems = canEdit || canDelete
+    ? [
+        ...(canEdit ? [{ label: 'Sửa', action: () => setEditing(true) }] : []),
+        ...(canDelete ? [{ label: 'Xóa', action: () => remove() }] : []),
+      ]
+    : [{ label: 'Báo xấu', action: () => setReporting(true) }];
   const endpoint = `/api/v1/productions/${productionId}/comments`;
   const load = useCallback(async (targetPage) => {
     const data = await apiRequest(`${endpoint}?parentId=${comment.id}&page=${targetPage}&limit=10`);
@@ -73,7 +82,7 @@ export default function MovieCommentItem({ comment, productionId, depth = 0 }) {
   };
   return <CommentFrame avatar={comment.avatar_url} username={comment.username || `Thành viên #${comment.user_id}`} date={comment.created_at}>
       {removed ? <p className="movie-comment-content">[Đã xóa]</p> : editing ? <form onSubmit={saveEdit} className="movie-reply-form"><textarea value={content} onChange={(event) => setContent(event.target.value)} required maxLength={3000} /><div className="movie-comment-actions"><button type="submit">Lưu</button><button type="button" onClick={() => { setEditing(false); setContent(comment.content); }}>Hủy</button></div></form> : <SpoilerContent spoiler={spoiler}><ToxicComment content={content} isToxic={Boolean(Number(comment.is_toxic))} className="movie-comment-content" /></SpoilerContent>}
-      {!removed && <CommentActions user={user} upvotes={upvotes} downvotes={downvotes} vote={vote} voteBusy={voteBusy} onVote={saveVote} canReply={depth < 3} onReply={() => setReplying((value) => !value)} menuItems={user?.id === comment.user_id ? [{ label: 'Sửa', action: () => setEditing(true) }, { label: 'Xóa', action: remove }] : [{ label: 'Báo xấu', action: () => setReporting(true) }]}>
+      {!removed && <CommentActions user={user} upvotes={upvotes} downvotes={downvotes} vote={vote} voteBusy={voteBusy} onVote={saveVote} canReply={depth < 3} onReply={() => setReplying((value) => !value)} menuItems={menuItems}>
         {(count > 0 || expanded) && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Ẩn trả lời' : `Trả lời (${count})`}</button>}
       </CommentActions>}
       {reporting && <form onSubmit={report} className="movie-reply-form"><label>Lý do<select value={reason} onChange={(event) => setReason(event.target.value)}><option value="spam">Spam</option><option value="harassment">Quấy rối</option><option value="spoiler">Spoiler</option><option value="other">Khác</option></select></label><label>Mô tả<textarea maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} /></label><div className="movie-comment-actions"><button type="submit">Gửi báo cáo</button><button type="button" onClick={() => setReporting(false)}>Hủy</button></div></form>}
