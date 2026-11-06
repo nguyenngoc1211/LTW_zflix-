@@ -54,7 +54,10 @@ const WatchPage = () => {
   return (
     <>
       {contextHolder}
-      <div className="min-h-screen bg-[#121212] text-gray-300 font-sans pb-10 relative pt-12">
+      {theater && (
+        <div className="fixed inset-0 z-40 bg-black" aria-hidden="true" />
+      )}
+      <div className={`min-h-screen ${theater ? "bg-black" : "bg-[#121212]"} text-gray-300 font-sans pb-10 relative pt-12`}>
         <div className="container mx-auto px-2 md:px-4 max-w-[1600px] pt-[20px]">
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
             {/* DANH SÁCH TẬP  */}
@@ -114,7 +117,7 @@ const WatchPage = () => {
             </div>
           </div>
           {/* === GỢI Ý PHIM LIÊN QUAN === */}
-          <div className="border-t border-gray-800 mt-10 pt-6">
+          <div className={`border-t border-gray-800 mt-10 pt-6 ${theater ? "hidden" : ""}`}>
             <RelatedMovies movies={relatedMoviesData} />
           </div>
         </div>
