@@ -24,14 +24,14 @@ const LEETSPEAK_MAP = new Map([
   ["9", "g"],
 ]);
 
-// NFKD tách dấu khỏi ký tự gốc; bỏ combining marks và chuẩn hóa đ/Đ.
+// Giữ nguyên dấu tiếng Việt để tránh đồng nhất các từ hợp lệ với từ cấm:
+// "lớn" khác "lồn", "các" khác "cặc". Wordlist đã liệt kê riêng biến thể
+// có dấu/không dấu, nên không cần xóa dấu trên toàn bộ nội dung.
 // Emoji, dấu câu và mọi ký tự không phải chữ/số được đổi thành khoảng trắng
 // để chúng trở thành word boundary thay vì che mất từ đứng cạnh.
 export const normalizeForToxicFilter = (value) =>
   String(value ?? "")
-    .normalize("NFKD")
-    .replace(/\p{M}+/gu, "")
-    .replace(/[đĐ]/g, "d")
+    .normalize("NFC")
     .toLowerCase()
     .replace(/[’‘`´]/g, "")
     .replace(/[@$01345789]/g, (character) => LEETSPEAK_MAP.get(character))

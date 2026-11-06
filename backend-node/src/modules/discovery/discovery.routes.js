@@ -3,7 +3,7 @@ import { pool } from "../../core/database/pool.js";
 import { fromMongo, mongoCollection, nextNumericId, withMongoTransaction } from "../../core/database/mongo.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 import { requireAuth, requireRole, optionalAuth } from "../../core/middleware/business-auth.bridge.js";
-import { searchProductions, syncProductionIndex } from "./search.service.js";
+import { rankTitleSuggestions, searchProductions, syncProductionIndex } from "./search.service.js";
 import {
   applyEpisodeAccess,
   isPremiumLocked,
@@ -91,24 +91,25 @@ discoveryRouter.get("/productions", asyncHandler(async (req, res) => {
   res.json({ ...result, page, limit, pages: Math.ceil(result.total / limit) });
 }));
 
-// Autocomplete gợi ý phim khi gõ (kiểu Edge NGram của Elasticsearch — dùng MySQL prefix match)
+// Autocomplete gợi ý khi chuỗi xuất hiện ở bất kỳ vị trí nào trong tên phim.
 discoveryRouter.get("/productions/suggest", asyncHandler(async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
   if (q.length < 1) return res.json({ items: [] });
   if (process.env.DATA_STORE === "mongodb") {
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const rows = await (await mongoCollection("productions")).find({
-      title: { $regex: `^${escaped}`, $options: "i" }, type: { $in: ["movie", "series"] },
+      title: { $regex: escaped, $options: "i" }, type: { $in: ["movie", "series"] },
     }, { projection: { _id: 0, id: 1, title: 1, poster_url: 1, release_year: 1, rating_avg: 1 } })
-      .sort({ rating_avg: -1, rating_count: -1 }).limit(8).toArray();
-    return res.json({ items: rows.map(fromMongo) });
+      .sort({ rating_avg: -1, rating_count: -1 }).limit(100).toArray();
+    return res.json({ items: rankTitleSuggestions(rows.map(fromMongo), q) });
   }
   const [rows] = await pool.execute(
     `SELECT id, title, poster_url, release_year, rating_avg FROM productions
-     WHERE title LIKE ? AND type IN ('movie', 'series') ORDER BY rating_avg DESC, rating_count DESC LIMIT 8`,
-    [`${q}%`],
+     WHERE title LIKE ? AND type IN ('movie', 'series')
+     ORDER BY rating_avg DESC, rating_count DESC LIMIT 100`,
+    [`%${q}%`],
   );
-  res.json({ items: rows });
+  res.json({ items: rankTitleSuggestions(rows, q) });
 }));
 
 discoveryRouter.get("/productions/:id", optionalAuth, asyncHandler(async (req, res) => {

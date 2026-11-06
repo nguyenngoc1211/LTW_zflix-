@@ -1,5 +1,11 @@
 # Tiến độ bảo mật Authentication & Authorization
 
+## Bình luận phim và rating — 2026-11-01
+
+- `PATCH /api/v1/comments/:commentId` tiếp tục chỉ cho phép chính tác giả sửa bình luận đang hoạt động. `DELETE /api/v1/comments/:commentId` cho phép tác giả xóa bình luận của mình hoặc user có role `admin` xóa mọi bình luận đang hoạt động; role được lấy từ `req.user` do `requireAuth` đọc lại từ database. User khác nhận 404 và không thể sửa/xóa.
+- Nút sửa/xóa trên frontend chỉ là UX; backend vẫn là security boundary. User có thể cập nhật rating qua `PUT /api/v1/productions/:productionId/rating` và xóa rating của mình qua `DELETE` cùng đường dẫn.
+- Đã smoke test trên MySQL/API thật: user khác bị chặn sửa và xóa, tác giả sửa/xóa được, admin xóa được bình luận của user khác, bình luận đã xóa không còn trong danh sách; cập nhật và xóa rating đều thành công. Toàn bộ 68 backend tests đạt khi chạy với một `FRONTEND_ORIGIN` hợp lệ.
+
 ## Community Posts — 2026-11-01
 
 - Bình luận Post mới kiểm tra quyền đọc Post; tạo, sửa và xóa yêu cầu session, sửa/xóa lọc theo tác giả. Tạo/xóa và bộ đếm dùng transaction; replies giới hạn sâu tối đa 3. Hệ thống comment phim cũ không thay đổi.

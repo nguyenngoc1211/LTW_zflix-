@@ -373,14 +373,17 @@ communityRouter.patch("/comments/:commentId", requireAuth, asyncHandler(async (r
 
 communityRouter.delete("/comments/:commentId", requireAuth, asyncHandler(async (req, res) => {
   const commentId = parsePositiveInt(req.params.commentId, "comment id");
+  const canModerate = req.user.role === "admin";
   if (useMongo()) {
     const result = await (await mongoCollection("comments")).updateOne({ id: commentId,
-      user_id: req.user.id, status: "active" }, { $set: { status: "deleted",
+      ...(!canModerate && { user_id: req.user.id }), status: "active" }, { $set: { status: "deleted",
       content: "[Đã xóa]", updated_at: new Date() } });
     if (!result.matchedCount) return res.status(404).json({ message: "Comment not found" });
     return res.status(204).end();
   }
-  const [result] = await pool.execute("UPDATE comments SET status='deleted', content='[Đã xóa]' WHERE id=? AND user_id=? AND status='active'", [commentId, req.user.id]);
+  const [result] = canModerate
+    ? await pool.execute("UPDATE comments SET status='deleted', content='[Đã xóa]' WHERE id=? AND status='active'", [commentId])
+    : await pool.execute("UPDATE comments SET status='deleted', content='[Đã xóa]' WHERE id=? AND user_id=? AND status='active'", [commentId, req.user.id]);
   if (!result.affectedRows) return res.status(404).json({ message: "Comment not found" });
   res.status(204).end();
 }));

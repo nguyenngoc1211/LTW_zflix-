@@ -1,17 +1,23 @@
 import { useState } from "react";
 
-const ToxicComment = ({ content, isToxic, className = "", children }) => {
+const ToxicComment = ({ content, isToxic, className = "", children, onReveal }) => {
   const [revealed, setRevealed] = useState(false);
   const hidden = Boolean(isToxic) && !revealed;
+
+  const reveal = () => {
+    if (!hidden) return;
+    setRevealed(true);
+    onReveal?.();
+  };
 
   return (
     <div
       className={`toxic-comment ${hidden ? "is-hidden" : ""} ${className}`.trim()}
-      onClick={() => hidden && setRevealed(true)}
+      onClick={reveal}
       onKeyDown={(event) => {
         if (hidden && (event.key === "Enter" || event.key === " ")) {
           event.preventDefault();
-          setRevealed(true);
+          reveal();
         }
       }}
       role={hidden ? "button" : undefined}

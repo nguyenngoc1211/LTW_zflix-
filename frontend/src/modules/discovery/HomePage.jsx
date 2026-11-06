@@ -53,7 +53,7 @@ const HomePage = () => {
 
   const update = (key) => (event) => setDraft((current) => ({ ...current, [key]: event.target.value }));
 
-  // Autocomplete gợi ý phim khi gõ (Edge NGram-style prefix search)
+  // Autocomplete gợi ý khi chuỗi nằm ở bất kỳ vị trí nào trong tên phim.
   const onSearchInput = (event) => {
     const value = event.target.value;
     setDraft((current) => ({ ...current, search: value }));

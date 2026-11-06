@@ -14,9 +14,9 @@ test("toxic filter loads both Vietnamese and English wordlists", () => {
   assert.ok(automaton.size > 100);
 });
 
-test("toxic filter normalizes Vietnamese diacritics, case and leetspeak", () => {
-  assert.equal(normalizeForToxicFilter("ĐỊT"), "dit");
-  assert.equal(normalizeForToxicFilter("ngu vãi"), "ngu vai");
+test("toxic filter preserves Vietnamese diacritics while normalizing case and leetspeak", () => {
+  assert.equal(normalizeForToxicFilter("ĐỊT"), "địt");
+  assert.equal(normalizeForToxicFilter("ngu vãi"), "ngu vãi");
   assert.equal(normalizeForToxicFilter("@$$"), "ass");
 });
 
@@ -40,4 +40,9 @@ test("word boundary matching ignores a toxic term inside a normal word", () => {
 
 test("safe Vietnamese comments with emoji are not flagged", () => {
   assert.equal(detectToxicContent("Phim hay quá 😍 mình rất thích").isToxic, false);
+  assert.equal(detectToxicContent("Bộ phim có quy mô lớn và dành cho các bạn nhỏ").isToxic, false);
+  assert.equal(detectToxicContent("Các cảnh quay lớn tạo cảm giác choáng ngợp").isToxic, false);
+  assert.equal(detectToxicContent("cac lon").isToxic, false);
+  assert.equal(detectToxicContent("Nội dung như lồn").isToxic, true);
+  assert.equal(detectToxicContent("Cặc, phim gì kỳ vậy").isToxic, true);
 });
