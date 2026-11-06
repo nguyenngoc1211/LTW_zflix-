@@ -83,25 +83,25 @@ cp .env.example .env
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 
 # 3. Khởi động toàn bộ stack (lần đầu sẽ build image khá lâu)
-docker compose up --build
+docker compose up
 
 # 4. Truy cập
 #    Frontend:  http://localhost:5173
 #    Backend:   http://localhost:3000  ({"message":"Zflix API","status":"ok"})
 ```
 
-MySQL container tự nạp `database/init.sql` khi tạo volume lần đầu (32 bảng + dữ liệu mẫu) và
-`database/migrate-visual-shopping.sql` (3 bảng visual shopping). Tổng cộng **35 bảng**.
-Nếu volume cũ chưa có bảng `production_interests`, chạy thêm:
-```bash
-docker compose exec -T db mysql -uroot -prootpassword movie_streaming_db < database/migrate-hai.sql
-```
+Sau lần build đầu, chỉ cần chạy `docker compose up` từ thư mục gốc. Compose dùng
+dependency đã cài trong image; khi sửa source hoặc package, chạy lại
+`docker compose up --build`. Mở `http://localhost:5173` trên chính máy chạy Docker.
+Frontend tự gọi API ở `localhost:3000`, nên đổi Wi-Fi không cần sửa địa chỉ API.
 
-Nếu volume cũ chưa có cột lọc nội dung toxic cho bình luận/đánh giá, chạy migration một lần:
-
-```bash
-docker compose exec -T db mysql -uroot -prootpassword movie_streaming_db < database/migrate-toxic-comments.sql
-```
+Backend vẫn dùng MongoDB Atlas theo `MONGODB_URI` trong `.env` gốc. Nếu đổi mạng mà
+API không đọc được dữ liệu, kiểm tra **Atlas > Network Access**: IP công cộng của
+mạng mới phải được cho phép. Muốn không phải cập nhật IP khi đổi mạng, có thể cho
+phép `0.0.0.0/0` trong Atlas Network Access; cách này cho phép kết nối từ mọi IP,
+nên cần giữ mật khẩu MongoDB mạnh và không chia sẻ chuỗi kết nối. Docker Compose
+không thể tự bỏ giới hạn IP do Atlas quản lý. Lần build đầu và kết nối Atlas vẫn
+cần có Internet.
 
 ## 💻 Chạy thủ công không dùng Docker (Dev local)
 
