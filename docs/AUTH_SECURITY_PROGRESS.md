@@ -443,3 +443,13 @@ Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạ
 
 - Tách namespace API câu hỏi cảnh phim và bài cộng đồng theo `content_type`; các thao tác theo ID kiểm tra loại trước khi dùng quyền hiện có. Báo cáo câu hỏi và câu trả lời yêu cầu đăng nhập, kiểm tra bài đang hiển thị, giới hạn tần suất và chống trùng.
 - Integration test trên database test riêng kiểm tra phân tách feed, vote, trả lời, báo cáo và nội dung cũ chưa phân loại. Chưa có kiểm thử tải ảnh R2 thật hoặc rà soát kiểm duyệt thực tế.
+## Notification P0 — security events (2026-11-08)
+
+- MongoDB password change and password reset now write a security notification in the same transaction as the password update and session revocation. Failed validation or incorrect credentials create no notification. The notification is emitted to the authenticated user room only after commit.
+- The existing JWT plus database session validation from Watch Party is reused for the notification Socket.IO namespace. The client cannot choose a user room. Notification read, read-all, and delete routes scope writes to `req.user.id`; list and unread count use the verified session identity.
+- Static checks and backend unit tests passed. A dedicated MongoDB test URI was unavailable, so no write integration test was run against the main database. The current source is authoritative if older entries in this file describe SQL-only behavior.
+
+## Notification P1 — preference and mention authorization (2026-11-08)
+
+- The new preference GET/PATCH and username autocomplete routes require the existing verified session. PATCH accepts only the six interaction preference keys and writes only `req.user.id`; security, transaction and administration notifications bypass preferences. Autocomplete returns only public username, ID and avatar fields, with bounded input, result count and request rate.
+- Integration tests on a disposable localhost MongoDB replica set verified preference isolation, validation, mention recipient resolution and socket room routing. The root `COMMUNITY_TEST_MONGODB_URI` still equals the primary URI and was not used. Production topology and deployment behavior remain unverified.

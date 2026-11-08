@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import UserAvatar from '../UserAvatar.jsx';
+import MentionTextarea from './MentionTextarea.jsx';
 
 export function CommentFrame({ avatar, username, date, children }) {
   const time = new Date(date);
@@ -13,7 +14,7 @@ export function SpoilerContent({ spoiler, children }) {
 }
 
 export function CommentForm({ onSubmit, text, onText, spoiler, onSpoiler, busy, onCancel, label = 'Viết bình luận...' }) {
-  return <form className="movie-reply-form" onSubmit={onSubmit}><label>{label}<textarea value={text} onChange={(event) => onText(event.target.value)} required maxLength={3000} rows={2} /></label>{onSpoiler && <label className="movie-spoiler-option"><input type="checkbox" checked={spoiler} onChange={(event) => onSpoiler(event.target.checked)} /> Nội dung có spoiler</label>}<div className="movie-comment-actions"><button type="submit" disabled={busy || !text.trim()}>{busy ? 'Đang gửi...' : 'Gửi'}</button>{onCancel && <button type="button" onClick={onCancel}>Hủy</button>}</div></form>;
+  return <form className="movie-reply-form" onSubmit={onSubmit}><label>{label}<MentionTextarea value={text} onChange={onText} required maxLength={3000} rows={2} /></label>{onSpoiler && <label className="movie-spoiler-option"><input type="checkbox" checked={spoiler} onChange={(event) => onSpoiler(event.target.checked)} /> Nội dung có spoiler</label>}<div className="movie-comment-actions"><button type="submit" disabled={busy || !text.trim()}>{busy ? 'Đang gửi...' : 'Gửi'}</button>{onCancel && <button type="button" onClick={onCancel}>Hủy</button>}</div></form>;
 }
 
 export function CommentPagination({ page, more, loading = false, onPage }) {

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { queueEpisodeNotification } from '../community/episode-notification.job.js';
 import { pool } from "../../core/database/pool.js";
 import { fromMongo, mongoCollection, nextNumericId, withMongoTransaction } from "../../core/database/mongo.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
@@ -197,11 +198,15 @@ discoveryRouter.post("/productions/:id/episodes", requireAuth, requireRole("admi
   if (!title || title.length > 255) return res.status(400).json({ message: "title is required and must not exceed 255 characters" });
   const videoUrl = typeof req.body.videoUrl === "string" ? req.body.videoUrl.trim().slice(0, 500) || null : null;
   const thumbnailUrl = typeof req.body.thumbnailUrl === "string" ? req.body.thumbnailUrl.trim().slice(0, 255) || null : null;
+  const batchId = req.body?.publicationBatchId;
+  const batchComplete = req.body?.publicationBatchComplete === true;
+  if ((batchId !== undefined && (typeof batchId !== 'string' || !/^[A-Za-z0-9_-]{8,80}$/.test(batchId))) ||
+    (req.body?.publicationBatchComplete !== undefined && typeof req.body.publicationBatchComplete !== 'boolean') ||
+    (batchComplete && !batchId) || (batchId && !videoUrl)) return res.status(400).json({ message: 'Invalid publication batch' });
   if (process.env.DATA_STORE === "mongodb") {
     const result = await withMongoTransaction(async (session) => {
-      const [productions, episodes, interests, notifications] = await Promise.all([
+      const [productions, episodes] = await Promise.all([
         mongoCollection("productions"), mongoCollection("episodes"),
-        mongoCollection("production_interests"), mongoCollection("notifications"),
       ]);
       const production = await productions.findOne({ id: productionId }, { session });
       if (!production) { const error = new Error("Production not found"); error.status = 404; throw error; }
@@ -213,14 +218,7 @@ discoveryRouter.post("/productions/:id/episodes", requireAuth, requireRole("admi
         episode_number: episodeNumber, title, video_url: videoUrl, duration,
         thumbnail_url: thumbnailUrl, intro_start: null, intro_end: null,
         preview_enabled: 0, views_count: 0, created_at: new Date(), updated_at: new Date() }, { session });
-      const subscribers = await interests.find({ production_id: productionId }, { session }).toArray();
-      for (const subscriber of subscribers) {
-        const noticeId = await nextNumericId("notifications");
-        await notifications.insertOne({ _id: noticeId, id: noticeId, user_id: subscriber.user_id,
-          title: "Có tập mới!", message: `${production.title} đã có tập ${episodeNumber}`,
-          type: "new_episode", entity_type: "episode", entity_id: id,
-          redirect_url: `/watch/${id}`, is_read: 0, created_at: new Date() }, { session });
-      }
+      if (videoUrl) await queueEpisodeNotification({ episodeId: id, productionId, batchId, batchComplete, session });
       return { id, productionId, episodeNumber, title };
     });
     return res.status(201).json(result);

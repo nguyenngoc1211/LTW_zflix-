@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth.js";
 import AccountMenu from "./components/AccountMenu.jsx";
+import NotificationBell from './components/NotificationBell.jsx';
 
 const App = () => {
   const { user } = useAuth();
@@ -13,12 +14,12 @@ const App = () => {
           <NavLink to="/">Khám phá</NavLink>
           <NavLink to="/library">Thư viện</NavLink>
           <NavLink to="/history">Lịch sử</NavLink>
-          <NavLink to="/notifications">Thông báo</NavLink>
           <NavLink to="/watch-party">Watch Party</NavLink>
           <NavLink to="/community">Cộng đồng</NavLink>
           {user?.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         </nav>
         <div className="auth-nav">
+          <NotificationBell />
           {user ? (
             <AccountMenu />
           ) : (

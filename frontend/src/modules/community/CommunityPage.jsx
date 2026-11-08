@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.js';
 import { apiRequest, API_URL } from '../../services/api.js';
 import PostComments from './PostComments.jsx';
 import UserAvatar from '../../components/UserAvatar.jsx';
 import { CommentActions } from '../../components/community/UnifiedComment.jsx';
+import MentionTextarea, { MentionText } from '../../components/community/MentionTextarea.jsx';
+import { commentRequestHeaders, clearCommentRequest } from '../../utils/commentRequest.js';
 
 const endpoint = '/api/v1/community/posts';
 
@@ -20,6 +22,7 @@ function PostMetadata({ productionId, setProductionId, episodeId, setEpisodeId, 
 }
 
 export function PostCard({ post, user, onDelete, onUpdated, onUnsave, compact = false }) {
+  const [searchParams] = useSearchParams();
   const scene = post.content_type === 'scene_question';
   const postEndpoint = scene ? '/api/v1/scene-questions' : endpoint;
   const [revealed, setRevealed] = useState(!post.is_spoiler);
@@ -36,7 +39,7 @@ export function PostCard({ post, user, onDelete, onUpdated, onUnsave, compact = 
   const [editContent, setEditContent] = useState(post.content);
   const [editSpoiler, setEditSpoiler] = useState(post.is_spoiler);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(Boolean(searchParams.get('commentId')));
   const [reporting, setReporting] = useState(false);
   const [reportReason, setReportReason] = useState('spam');
   const [reportDescription, setReportDescription] = useState('');
@@ -83,7 +86,7 @@ export function PostCard({ post, user, onDelete, onUpdated, onUnsave, compact = 
     <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400"><UserAvatar src={post.author?.avatar_url} className={compact ? 'movie-comment-avatar' : 'h-7 w-7 rounded-full object-cover'} /><span>{post.author?.username || `Thành viên #${post.author_id}`}</span><span>·</span><time>{new Date(post.created_at).toLocaleString('vi-VN')}</time>{post.community_id && <span>· Nhóm #{post.community_id}</span>}</div>
     {scene ? <h3 className="text-lg font-semibold text-white">{post.title}</h3> : <Link to={`/community/posts/${post.id}`} className="block text-lg font-semibold text-white hover:text-pink-400">{post.title}</Link>}
     {editing && <form onSubmit={edit} className="space-y-2"><label className="block">{scene ? 'Câu hỏi' : 'Tiêu đề'}<input required maxLength={200} value={editTitle} onChange={(event) => setEditTitle(event.target.value)} className="block w-full rounded bg-zinc-800 p-2" /></label>{!scene && <><label className="block">Nội dung<textarea maxLength={10000} value={editContent} onChange={(event) => setEditContent(event.target.value)} className="block w-full rounded bg-zinc-800 p-2" /></label></>}<button disabled={savingEdit} className="rounded bg-pink-700 px-3 py-1">Lưu thay đổi</button><button type="button" disabled={savingEdit} className="ml-3" onClick={() => { setEditing(false); setEditTitle(post.title); setEditContent(post.content); setEditSpoiler(post.is_spoiler); }}>Hủy</button></form>}
-    {!revealed ? <button type="button" className="post-spoiler-toggle text-amber-300 text-sm" onClick={() => setRevealed(true)}>Nội dung tiết lộ phim — nhấn để xem</button> : <><p className="whitespace-pre-wrap break-words text-zinc-300">{post.content}</p>{post.image_urls?.map((url) => <img key={url} src={url.startsWith('/') ? `${API_URL}${url}` : url} alt="Ảnh trong bài viết" className="max-h-96 rounded-lg object-contain" />)}{post.is_spoiler && <button type="button" className="post-spoiler-toggle text-amber-300 text-sm" onClick={() => setRevealed(false)}>Ẩn nội dung spoiler</button>}</>}
+    {!revealed ? <button type="button" className="post-spoiler-toggle text-amber-300 text-sm" onClick={() => setRevealed(true)}>Nội dung tiết lộ phim — nhấn để xem</button> : <><p className="whitespace-pre-wrap break-words text-zinc-300"><MentionText text={post.content} /></p>{post.image_urls?.map((url) => <img key={url} src={url.startsWith('/') ? `${API_URL}${url}` : url} alt="Ảnh trong bài viết" className="max-h-96 rounded-lg object-contain" />)}{post.is_spoiler && <button type="button" className="post-spoiler-toggle text-amber-300 text-sm" onClick={() => setRevealed(false)}>Ẩn nội dung spoiler</button>}</>}
     {post.production_id && <Link className="text-sm text-pink-400" to={`/movies/${post.production_id}`}>Phim #{post.production_id}</Link>}
     {post.type === 'screenshot' && post.episode_id && <Link className="block text-sm text-pink-400" to={`/watch-episode/${post.episode_id}?pos=${Math.floor(post.timestamp_seconds || 0)}`}>Tập #{post.episode_id} · {Math.floor((post.timestamp_seconds || 0) / 60)}:{String(Math.floor((post.timestamp_seconds || 0) % 60)).padStart(2, '0')}</Link>}
     <CommentActions user={user} upvotes={upvotes} downvotes={downvotes} vote={postVote} voteBusy={voteBusy} onVote={vote} menuItems={user?.id === post.author_id ? [{ label: 'Sửa', action: () => setEditing(true) }, { label: 'Xóa', action: () => onDelete(post.id) }] : scene ? [{ label: 'Báo xấu', action: () => setReporting(true) }] : []}><button type="button" onClick={() => setCommentsOpen((open) => !open)} aria-expanded={commentsOpen}>{commentsOpen ? 'Ẩn bình luận' : `${scene ? 'Trả lời' : 'Xem bình luận'} (${post.comment_count ?? 0})`}</button>{!scene && <button type="button" onClick={share}>Chia sẻ</button>}{user && !scene && <button type="button" onClick={save} disabled={savingPost}>{saved ? 'Bỏ lưu' : 'Lưu'}</button>}</CommentActions>
@@ -93,7 +96,8 @@ export function PostCard({ post, user, onDelete, onUpdated, onUnsave, compact = 
   </article>;
 }
 
-export default function CommunityPage({ view = 'feed' }) {
+export default function CommunityPage({ view = 'feed', scene = false }) {
+  const endpoint = scene ? '/api/v1/scene-questions' : '/api/v1/community/posts';
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -111,6 +115,7 @@ export default function CommunityPage({ view = 'feed' }) {
   const [tags, setTags] = useState('');
   const [files, setFiles] = useState([]);
   const [sending, setSending] = useState(false);
+  const pendingPost = useRef(null);
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -119,7 +124,7 @@ export default function CommunityPage({ view = 'feed' }) {
       setPosts(view === 'detail' ? [result] : result.items || []); setHasMore(Boolean(result.hasMore));
     } catch (err) { setError(err.message); setPosts([]); }
     finally { setLoading(false); }
-  }, [view, id, page, sort]);
+  }, [view, id, page, sort, endpoint]);
   useEffect(() => { if (view !== 'create') load(); }, [load, view, user?.id]);
   const submit = async (event) => {
     event.preventDefault(); setSending(true); setError('');
@@ -130,11 +135,13 @@ export default function CommunityPage({ view = 'feed' }) {
         ...(communityId && { communityId: Number(communityId) }),
         ...(tags.trim() && { tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean) }),
       };
+      const headers = commentRequestHeaders(pendingPost, JSON.stringify({ post, files: files.map((file) => [file.name, file.size, file.lastModified]) }));
       let result;
       if (files.length) {
         const form = new FormData(); form.append('post', JSON.stringify(post)); files.forEach((file) => form.append('images', file));
-        result = await apiRequest(`${endpoint}/with-images`, { method: 'POST', body: form });
-      } else result = await apiRequest(endpoint, { method: 'POST', body: JSON.stringify(post) });
+        result = await apiRequest(`${endpoint}/with-images`, { method: 'POST', headers, body: form });
+      } else result = await apiRequest(endpoint, { method: 'POST', headers, body: JSON.stringify(post) });
+      clearCommentRequest(pendingPost);
       navigate(`/community/posts/${result.id}`);
     } catch (err) { setError(err.message); } finally { setSending(false); }
   };
@@ -147,7 +154,7 @@ export default function CommunityPage({ view = 'feed' }) {
     <aside className="space-y-3 text-sm"><h2 className="font-bold text-lg">Movie Community</h2><nav className="flex flex-wrap lg:flex-col gap-3"><Link to="/community">Bảng tin</Link><Link to="/community/create">Viết bài</Link><Link to="/community/saved">Bài đã lưu</Link></nav></aside>
     <section className="min-w-0 space-y-4"><div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">{view === 'create' ? 'Tạo bài viết' : view === 'saved' ? 'Bài viết đã lưu' : view === 'detail' ? 'Bài viết' : 'Bảng tin phim'}</h1>{view === 'feed' && <Link className="rounded-lg bg-pink-700 px-4 py-2 text-sm" to="/community/create">Viết bài</Link>}</div>
       {error && <p role="alert" className="rounded-lg bg-red-950 p-3 text-red-200">{error}</p>}
-      {view === 'create' ? !user ? <p>Vui lòng <Link className="text-pink-400" to="/login">đăng nhập</Link> để viết bài.</p> : <form onSubmit={submit} className="space-y-4 rounded-xl bg-zinc-900 p-5"><label className="block">Tiêu đề<input required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-3" /></label><label className="block">Nội dung<textarea maxLength={10000} value={content} onChange={(e) => setContent(e.target.value)} rows={6} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-3" /></label><PostMetadata productionId={productionId} setProductionId={setProductionId} episodeId={episodeId} setEpisodeId={setEpisodeId} communityId={communityId} setCommunityId={setCommunityId} tags={tags} setTags={setTags} /><label className="block">Ảnh (tối đa 5 ảnh, 5 MB mỗi ảnh)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => setFiles(Array.from(e.target.files).slice(0, 5))} className="block mt-2 text-sm" /></label><button disabled={sending} className="rounded bg-pink-700 px-5 py-2 disabled:opacity-50">{sending ? 'Đang đăng...' : 'Đăng bài'}</button></form> : <>{view === 'feed' && <select aria-label="Sắp xếp bài viết" className="rounded bg-zinc-800 p-2" value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }}><option value="newest">Mới nhất</option><option value="popular">Phổ biến</option><option value="hot">Đang nổi bật</option></select>}{loading ? <p>Đang tải...</p> : posts.length ? posts.map((post) => <PostCard key={`${post.id}:${user?.id ?? 'guest'}`} post={post} user={user} onDelete={remove} onUpdated={updatePost} onUnsave={view === 'saved' ? (id) => setPosts((items) => items.filter((item) => item.id !== id)) : undefined} />) : !error && <p className="text-zinc-400">Chưa có bài viết.</p>}{view === 'feed' && <div className="flex gap-4"><button disabled={page === 1} onClick={() => setPage(page - 1)} className="disabled:opacity-40">Trang trước</button><span>Trang {page}</span><button disabled={!hasMore} onClick={() => setPage(page + 1)} className="disabled:opacity-40">Trang sau</button></div>}</>}
+      {view === 'create' ? !user ? <p>Vui lòng <Link className="text-pink-400" to="/login">đăng nhập</Link> để viết bài.</p> : <form onSubmit={submit} className="space-y-4 rounded-xl bg-zinc-900 p-5"><label className="block">Tiêu đề<input required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-3" /></label><label className="block">Nội dung<MentionTextarea maxLength={10000} value={content} onChange={setContent} rows={6} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 p-3" /></label><PostMetadata productionId={productionId} setProductionId={setProductionId} episodeId={episodeId} setEpisodeId={setEpisodeId} communityId={communityId} setCommunityId={setCommunityId} tags={tags} setTags={setTags} /><label className="block">Ảnh (tối đa 5 ảnh, 5 MB mỗi ảnh)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => setFiles(Array.from(e.target.files).slice(0, 5))} className="block mt-2 text-sm" /></label><button disabled={sending} className="rounded bg-pink-700 px-5 py-2 disabled:opacity-50">{sending ? 'Đang đăng...' : 'Đăng bài'}</button></form> : <>{view === 'feed' && <select aria-label="Sắp xếp bài viết" className="rounded bg-zinc-800 p-2" value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }}><option value="newest">Mới nhất</option><option value="popular">Phổ biến</option><option value="hot">Đang nổi bật</option></select>}{loading ? <p>Đang tải...</p> : posts.length ? posts.map((post) => <PostCard key={`${post.id}:${user?.id ?? 'guest'}`} post={post} user={user} onDelete={remove} onUpdated={updatePost} onUnsave={view === 'saved' ? (id) => setPosts((items) => items.filter((item) => item.id !== id)) : undefined} />) : !error && <p className="text-zinc-400">Chưa có bài viết.</p>}{view === 'feed' && <div className="flex gap-4"><button disabled={page === 1} onClick={() => setPage(page - 1)} className="disabled:opacity-40">Trang trước</button><span>Trang {page}</span><button disabled={!hasMore} onClick={() => setPage(page + 1)} className="disabled:opacity-40">Trang sau</button></div>}</>}
     </section><aside className="hidden lg:block rounded-xl border border-zinc-800 bg-zinc-900 p-5 h-fit"><h2 className="font-semibold">Cộng đồng phim</h2><p className="mt-2 text-sm text-zinc-400">Chia sẻ cảm nhận và những khoảnh khắc yêu thích của bạn.</p></aside>
   </div></main>;
 }

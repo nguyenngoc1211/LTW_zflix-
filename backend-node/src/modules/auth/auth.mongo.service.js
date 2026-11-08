@@ -5,6 +5,7 @@ import { securityConfig } from "../../config/security.config.js";
 import { mongoCollection, nextNumericId, withMongoTransaction } from "../../core/database/mongo.js";
 import { securityLog } from "../../core/security/security-logger.js";
 import { isVipActive } from "../../core/security/entitlements.js";
+import { createNotification, emitStoredNotification, ensureNotificationIndexes } from '../community/notification.service.js';
 import { deliverPasswordReset, passwordResetDeliveryAvailable } from "./password-reset-delivery.js";
 import {
   createMfaChallengeToken, createRecoveryCodes, createTotpEnrollment,
@@ -336,8 +337,9 @@ export const regenerateMfaRecoveryCodes = async (userId, currentPassword, code) 
     return { recoveryCodes };
   });
 
-export const changePassword = async (userId, currentPassword, newPassword) =>
-  withMongoTransaction(async (session) => {
+export const changePassword = async (userId, currentPassword, newPassword) => {
+  await ensureNotificationIndexes();
+  const result = await withMongoTransaction(async (session) => {
     const { users, sessions } = await collections();
     const user = await users.findOne({ id: userId, status: "active" }, { session });
     if (!user || user.provider !== "local" || !user.password
@@ -348,8 +350,15 @@ export const changePassword = async (userId, currentPassword, newPassword) =>
       password: await bcrypt.hash(newPassword, bcryptCost), password_changed_at: now,
     } }, { session });
     await sessions.updateMany({ user_id: userId, revoked_at: null }, { $set: { revoked_at: now } }, { session });
-    return { success: true };
+    const notification = await createNotification({ recipientId: userId, type: 'security',
+      title: 'Mật khẩu đã thay đổi', message: 'Mật khẩu tài khoản của bạn đã được thay đổi thành công.',
+      entityType: 'user', entityId: userId, redirectUrl: '/settings?tab=security',
+      deduplicationKey: `password-changed:${userId}:${now.getTime()}`, session });
+    return { success: true, changedAt: now, notification };
   });
+  emitStoredNotification(result.notification);
+  return result;
+};
 export const requestPasswordReset = async (email) => {
   const { users, resets } = await collections();
   const user = await users.findOne({ email, provider: "local", status: "active", password: { $ne: null } });
@@ -371,8 +380,9 @@ export const requestPasswordReset = async (email) => {
   catch { await resets.updateOne({ token_hash: tokenHash, used_at: null }, { $set: { used_at: new Date() } }); }
   return { userId: user.id };
 };
-export const resetPassword = async (rawToken, newPassword) =>
-  withMongoTransaction(async (session) => {
+export const resetPassword = async (rawToken, newPassword) => {
+  await ensureNotificationIndexes();
+  const result = await withMongoTransaction(async (session) => {
     const { users, sessions, resets } = await collections();
     const now = new Date();
     const token = await resets.findOne({ token_hash: hashToken(rawToken), used_at: null,
@@ -388,8 +398,15 @@ export const resetPassword = async (rawToken, newPassword) =>
     } }, { session });
     await resets.updateMany({ user_id: user.id, used_at: null }, { $set: { used_at: now } }, { session });
     await sessions.updateMany({ user_id: user.id, revoked_at: null }, { $set: { revoked_at: now } }, { session });
-    return { success: true, userId: user.id };
+    const notification = await createNotification({ recipientId: user.id, type: 'security',
+      title: 'Mật khẩu đã đặt lại', message: 'Mật khẩu tài khoản của bạn đã được đặt lại thành công.',
+      entityType: 'user', entityId: user.id, redirectUrl: '/settings?tab=security',
+      deduplicationKey: `password-reset:${user.id}:${now.getTime()}`, session });
+    return { success: true, userId: user.id, changedAt: now, notification };
   });
+  if (result) emitStoredNotification(result.notification);
+  return result;
+};
 export const revokeSession = async ({ refreshToken, accessToken }) => {
   const sessions = await mongoCollection("auth_sessions");
   if (refreshToken) await sessions.updateOne({ refresh_token_hash: hashToken(refreshToken), revoked_at: null },

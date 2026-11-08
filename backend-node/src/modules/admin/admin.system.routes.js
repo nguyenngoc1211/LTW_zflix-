@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
 import { fromMongo, mongoCollection, nextNumericId, withMongoTransaction } from "../../core/database/mongo.js";
+import { createNotification, emitStoredNotification, ensureNotificationIndexes } from '../community/notification.service.js';
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 
@@ -195,6 +196,7 @@ adminSystemRouter.post(
     const planId = Number(req.body?.planId) || null;
 
     if (useMongo()) {
+      await ensureNotificationIndexes();
       const users = await mongoCollection("users");
       const result = await withMongoTransaction(async (session) => {
         const user = await users.findOne({ id: userId }, { session });
@@ -219,16 +221,17 @@ adminSystemRouter.post(
           id: subscriptionId, user_id: userId, plan_id: planId,
           transaction_id: transactionId, start_date: base, end_date: endDate,
           status: "active", auto_renew: 0, created_at: now }, { session });
-        const notificationId = await nextNumericId("notifications");
-        await (await mongoCollection("notifications")).insertOne({ _id: notificationId,
-          id: notificationId, user_id: userId, title: "Quyền VIP đã được kích hoạt",
-          message: `Tài khoản của bạn được kích hoạt ${planName}, hiệu lực đến ${endDate.toLocaleDateString("vi-VN")}.`,
-          type: "vip", entity_type: "user", entity_id: userId, redirect_url: null,
-          is_read: 0, created_at: now, read_at: null }, { session });
-        return { userId, username: user.username, vipExpiresAt: endDate, days };
+        const notification = await createNotification({ recipientId: userId, type: 'vip',
+          title: 'Quyền VIP đã được kích hoạt',
+          message: `Tài khoản của bạn được kích hoạt ${planName}, hiệu lực đến ${endDate.toLocaleDateString('vi-VN')}.`,
+          entityType: 'user', entityId: userId, redirectUrl: '/settings?tab=profile',
+          deduplicationKey: `vip-grant:${transactionId}`, session });
+        return { userId, username: user.username, vipExpiresAt: endDate, days, notification };
       });
       if (!result) return res.status(404).json({ message: "User not found" });
-      return res.json(result);
+      emitStoredNotification(result.notification);
+      const { notification, ...response } = result;
+      return res.json(response);
     }
 
     const [users] = await pool.execute("SELECT id, username, vip_expires_at FROM users WHERE id = ? LIMIT 1", [userId]);

@@ -46,6 +46,7 @@ export const router = createBrowserRouter([
       { path: "community", element: <CommunityPage /> },
       { path: "community/create", element: <CommunityPage view="create" /> },
       { path: "community/posts/:id", element: <CommunityPage view="detail" /> },
+      { path: "community/scene-questions/:id", element: <CommunityPage view="detail" scene /> },
       // Route xem theo episode id, dùng cho lịch sử xem (không có slug).
       { path: "watch-episode/:episodeId", element: <EpisodeRedirect /> },
       { path: "watch-party", element: <PartyList /> },

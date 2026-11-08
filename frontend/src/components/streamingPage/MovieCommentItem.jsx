@@ -3,6 +3,8 @@ import { CommentActions, CommentForm, CommentFrame, CommentPagination, SpoilerCo
 import ToxicComment from '../community/ToxicComment.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { apiRequest } from '../../services/api.js';
+import { commentRequestHeaders, clearCommentRequest } from '../../utils/commentRequest.js';
+import { MentionText } from '../community/MentionTextarea.jsx';
 
 export default function MovieCommentItem({ comment, productionId, depth = 0 }) {
   const { user } = useAuth();
@@ -20,6 +22,7 @@ export default function MovieCommentItem({ comment, productionId, depth = 0 }) {
   const [vote, setVote] = useState(comment.viewer_vote || 0);
   const [voteBusy, setVoteBusy] = useState(false);
   const votePending = useRef(false);
+  const pendingComment = useRef(null);
   const [spoiler] = useState(Boolean(comment.is_spoiler));
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(comment.content);
@@ -75,13 +78,15 @@ export default function MovieCommentItem({ comment, productionId, depth = 0 }) {
     if (!text.trim() || busy) return;
     setBusy(true); setError('');
     try {
-      await apiRequest(endpoint, { method: 'POST', body: JSON.stringify({ content: text.trim(), parentId: comment.id, isSpoiler: false }) });
+      const body = JSON.stringify({ content: text.trim(), parentId: comment.id, isSpoiler: false });
+      await apiRequest(endpoint, { method: 'POST', body, headers: commentRequestHeaders(pendingComment, body) });
+      clearCommentRequest(pendingComment);
       setText(''); setReplying(false); setCount((value) => value + 1);
       if (expanded && page === 1) await load(1); else { setPage(1); setExpanded(true); }
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
   return <CommentFrame avatar={comment.avatar_url} username={comment.username || `Thành viên #${comment.user_id}`} date={comment.created_at}>
-      {removed ? <p className="movie-comment-content">[Đã xóa]</p> : editing ? <form onSubmit={saveEdit} className="movie-reply-form"><textarea value={content} onChange={(event) => setContent(event.target.value)} required maxLength={3000} /><div className="movie-comment-actions"><button type="submit">Lưu</button><button type="button" onClick={() => { setEditing(false); setContent(comment.content); }}>Hủy</button></div></form> : <SpoilerContent spoiler={spoiler}><ToxicComment content={content} isToxic={Boolean(Number(comment.is_toxic))} className="movie-comment-content" /></SpoilerContent>}
+      {removed ? <p className="movie-comment-content">[Đã xóa]</p> : editing ? <form onSubmit={saveEdit} className="movie-reply-form"><textarea value={content} onChange={(event) => setContent(event.target.value)} required maxLength={3000} /><div className="movie-comment-actions"><button type="submit">Lưu</button><button type="button" onClick={() => { setEditing(false); setContent(comment.content); }}>Hủy</button></div></form> : <SpoilerContent spoiler={spoiler}><ToxicComment content={content} isToxic={Boolean(Number(comment.is_toxic))} className="movie-comment-content"><p><MentionText text={content} /></p></ToxicComment></SpoilerContent>}
       {!removed && <CommentActions user={user} upvotes={upvotes} downvotes={downvotes} vote={vote} voteBusy={voteBusy} onVote={saveVote} canReply={depth < 3} onReply={() => setReplying((value) => !value)} menuItems={menuItems}>
         {(count > 0 || expanded) && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Ẩn trả lời' : `Trả lời (${count})`}</button>}
       </CommentActions>}

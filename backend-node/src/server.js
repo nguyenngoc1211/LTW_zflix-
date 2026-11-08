@@ -7,7 +7,10 @@ import { pool } from "./core/database/pool.js";
 import { mongoCollection, nextNumericId } from "./core/database/mongo.js";
 import { setSecurityLogSink } from "./core/security/security-logger.js";
 import { syncProductionIndex } from "./modules/discovery/search.service.js";
-import { registerWatchPartySocket } from "./modules/watch-party/watch-party.socket.js";
+import { registerWatchPartySocket, authenticateSocket } from "./modules/watch-party/watch-party.socket.js";
+import { ensureNotificationIndexes, setNotificationNamespace } from "./modules/community/notification.service.js";
+import { ensureEpisodeNotificationJobIndex, processEpisodeNotificationJobs } from './modules/community/episode-notification.job.js';
+import { processExpiredVipNotifications } from './modules/community/vip-expiration.job.js';
 
 // Lưu log bảo mật vào bảng security_events (song song với console)
 setSecurityLogSink((line) => {
@@ -59,6 +62,19 @@ const io = new Server(httpServer, {
 
 // Đăng ký Watch Party socket handler
 registerWatchPartySocket(io);
+const notificationNamespace = io.of('/notifications');
+notificationNamespace.use(authenticateSocket);
+notificationNamespace.on('connection', (socket) => socket.join(`user:${socket.data.userId}`));
+setNotificationNamespace(notificationNamespace);
+if (process.env.DATA_STORE === 'mongodb') ensureNotificationIndexes().catch((error) => console.error('Notification indexes:', error));
+if (process.env.DATA_STORE === 'mongodb') ensureEpisodeNotificationJobIndex().catch((error) => console.error('Notification job index:', error));
+if (process.env.DATA_STORE === 'mongodb') {
+  const worker = setInterval(() => processEpisodeNotificationJobs().catch((error) => console.error('Notification job:', error)), 5000);
+  worker.unref();
+  const vipWorker = setInterval(() => processExpiredVipNotifications().catch((error) => console.error('VIP notification job:', error)), 3600000);
+  vipWorker.unref();
+  processExpiredVipNotifications().catch((error) => console.error('VIP notification job:', error));
+}
 
 httpServer.listen(PORT, process.env.HOST || undefined, () => {
   console.log(`Server running on port ${PORT}`);
