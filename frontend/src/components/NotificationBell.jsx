@@ -5,6 +5,7 @@ import { API_URL, apiRequest, getAccessToken, refreshSession } from '../services
 import { useAuth } from '../hooks/useAuth.js';
 import { notificationTime } from '../utils/notificationTime.js';
 import { notificationIcon } from '../utils/notificationIcon.js';
+import UserAvatar from './UserAvatar.jsx';
 
 export default function NotificationBell() {
   const { user } = useAuth();
@@ -56,10 +57,11 @@ export default function NotificationBell() {
       {error && <p role="alert">{error}</p>}
       {!items.length && <p>Chưa có thông báo.</p>}
       {items.map((item) => <button type="button" key={item.id} className={item.is_read ? 'notification-preview' : 'notification-preview unread'} onClick={() => openItem(item)}>
-        {item.metadata?.actorAvatar && <img src={item.metadata.actorAvatar} alt="" />}
-        {!item.metadata?.actorAvatar && item.metadata?.posterUrl && <img src={item.metadata.posterUrl} alt="" />}
+        {item.metadata?.actorAvatar && <UserAvatar src={item.metadata.actorAvatar} className="notification-image" />}
+        {!item.metadata?.actorAvatar && item.metadata?.posterUrl && <UserAvatar src={item.metadata.posterUrl} className="notification-image" />}
         {!item.metadata?.actorAvatar && !item.metadata?.posterUrl && <span className="notification-type-icon" aria-hidden="true">{notificationIcon(item.type)}</span>}
-        <span><strong>{item.title}</strong><small>{item.message}</small><small>{notificationTime(item.created_at)}</small></span>
+        <span className="notification-copy"><strong>{item.title}</strong><small>{item.message}</small><small>{notificationTime(item.created_at)}</small></span>
+        {!item.is_read && <span className="notification-unread-dot" aria-hidden="true" />}
       </button>)}
       <Link to="/notifications" onClick={() => setOpen(false)}>Xem tất cả thông báo</Link>
     </div>}

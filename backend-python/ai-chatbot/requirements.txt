@@ -1,2 +1,29 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# ── Core Framework ───────────────────────────────────────────
 fastapi
-uvicorn
+uvicorn[standard]
+python-dotenv
+pydantic
+
+# ── LangChain Ecosystem ─────────────────────────────────────
+langchain
+langchain-openai
+langchain-community
+langchain-chroma
+langchain-huggingface
+langchain-google-genai
+
+# ── Vector Store ─────────────────────────────────────────────
+chromadb
+
+# ── Database Drivers ─────────────────────────────────────────
+pymongo
+mysql-connector-python
+motor
+
+# ── Embedding & Reranking ────────────────────────────────────
+sentence-transformers
+
+# ── BM25 (Keyword Search) ───────────────────────────────────
+rank-bm25

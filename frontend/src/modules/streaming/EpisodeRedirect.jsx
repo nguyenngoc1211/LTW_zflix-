@@ -14,7 +14,10 @@ export default function EpisodeRedirect() {
       return () => { active = false; };
     }
     apiRequest(`/api/v1/episodes/${episodeId}`).then((episode) => {
-      const url = createEpisodeWatchUrl(episode, parseWatchPosition(params.get('pos')));
+      const watchUrl = createEpisodeWatchUrl(episode, parseWatchPosition(params.get('pos')));
+      const commentId = params.get('commentId');
+      const url = watchUrl && /^[1-9]\d*$/.test(commentId || '')
+        ? `${watchUrl}&commentId=${commentId}` : watchUrl;
       if (active) setResult(url ? { key: requestKey, url, error: '' } : { key: requestKey, url: null, error: 'Không thể xác định phim và tập tương ứng.' });
     }).catch(() => { if (active) setResult({ key: requestKey, url: null, error: 'Không tìm thấy tập phim hoặc không thể tải dữ liệu.' }); });
     return () => { active = false; };

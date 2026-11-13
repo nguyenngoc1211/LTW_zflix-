@@ -29,6 +29,7 @@ import PartyList from "../pages/PartyList.jsx";
 import CreateParty from "../pages/CreateParty.jsx";
 import PartyRoom from "../pages/PartyRoom.jsx";
 import CommunityPage from "../modules/community/CommunityPage.jsx";
+import CommunityProfilePage from "../modules/community/CommunityProfilePage.jsx";
 
 export const router = createBrowserRouter([
   {
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
       { path: "community", element: <CommunityPage /> },
       { path: "community/create", element: <CommunityPage view="create" /> },
       { path: "community/posts/:id", element: <CommunityPage view="detail" /> },
+      { path: "community/users/:id", element: <CommunityProfilePage /> },
       { path: "community/scene-questions/:id", element: <CommunityPage view="detail" scene /> },
       // Route xem theo episode id, dùng cho lịch sử xem (không có slug).
       { path: "watch-episode/:episodeId", element: <EpisodeRedirect /> },

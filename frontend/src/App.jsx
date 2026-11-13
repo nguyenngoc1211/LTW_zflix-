@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth.js";
 import AccountMenu from "./components/AccountMenu.jsx";
 import NotificationBell from './components/NotificationBell.jsx';
+import ChatbotWidget from './components/ChatbotWidget.jsx';
 
 const App = () => {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ const App = () => {
         </div>
       </header>
       <Outlet />
+      <ChatbotWidget />
       <footer>© 2026 Zflix · Movie streaming platform</footer>
     </div>
   );

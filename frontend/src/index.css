@@ -102,6 +102,7 @@ button, input, select, textarea { font: inherit; }
 .auth-user { color: #e5e8ef; font-weight: 600; }
 .account-menu { position: relative; }
 .site-header:has(.account-dropdown) { z-index: 110; }
+.site-header:has(.notification-dropdown) { z-index: 120; }
 .app .account-trigger { display: flex; align-items: center; gap: .55rem; max-width: min(15rem, 45vw); padding: .35rem .5rem; background: transparent; color: #e5e8ef; }
 .app .account-trigger:hover, .app .account-trigger[aria-expanded="true"] { background: #252935; filter: none; }
 .account-trigger:focus-visible, .account-dropdown a:focus-visible, .account-dropdown button:focus-visible, .settings-nav button:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
@@ -358,12 +359,33 @@ footer { padding:2rem;text-align:center;border-top:1px solid #20232c;color:#777e
 .notification-dropdown-heading button,.notification-filters button,.notification-pagination button { background:#252936; color:white; border:0; border-radius:6px; padding:6px 10px; cursor:pointer; }
 .notification-preview { width:100%; display:flex; align-items:center; text-align:left; gap:10px; color:white; background:transparent; border:0; border-bottom:1px solid #303544; padding:10px 0; cursor:pointer; }
 .notification-preview.unread { background:#261820; }
+.app .notification-list article { min-width:0; gap:12px; padding:13px 15px; border:1px solid #30343d; border-left:3px solid transparent; border-radius:10px; background:#1A1D24; color:#aeb4bf; transition:background .18s ease,border-color .18s ease; }
+.app .notification-list article.unread { border-left-color:#EF3347; background:#2B1B23; color:#fff; }
+.app .notification-list article:hover { background:#242832; }
+.app .notification-list article.unread:hover { background:#38232e; }
+.app .notification-preview { min-width:0; gap:10px; margin-top:6px; padding:10px 12px; border:1px solid #30343d; border-left:3px solid transparent; border-radius:10px; background:#1A1D24; color:#aeb4bf; font-weight:400; transition:background .18s ease,border-color .18s ease; }
+.app .notification-preview.unread { border-left-color:#EF3347; background:#2B1B23; color:#fff; }
+.app .notification-preview:hover { background:#242832; filter:none; }
+.app .notification-preview.unread:hover { background:#38232e; }
+.notification-copy { flex:1; min-width:0; }
+.notification-list article strong,.notification-preview strong { color:#c2c7d1; font-weight:600; }
+.notification-list article.unread strong,.notification-preview.unread strong { color:#fff; font-weight:700; }
+.notification-list article p,.notification-preview small { color:#9ca3af; }
+.notification-list article.unread p,.notification-preview.unread small { color:#e9dce0; }
+.notification-list article small,.notification-preview small:last-child { color:#818996; }
+.notification-list article.unread small,.notification-preview.unread small:last-child { color:#cbb9c0; }
+.notification-unread-dot { flex:0 0 8px; width:8px; height:8px; border-radius:50%; background:#EF3347; box-shadow:0 0 0 3px #ef334726; }
 .notification-preview img,.notification-image { width:38px; height:38px; object-fit:cover; border-radius:50%; }
-.notification-preview span,.notification-content { display:grid; gap:3px; min-width:0; }
-.notification-preview small { color:#9ca3af; overflow:hidden; text-overflow:ellipsis; }
+.notification-copy,.notification-content { display:grid; gap:3px; min-width:0; }
+.notification-copy small { overflow:hidden; text-overflow:ellipsis; }
 .notification-filters,.notification-pagination { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; align-items:center; }
 .notification-filters button[aria-pressed=true] { background:#e50914; }
-.notification-content { flex:1; text-align:left; color:inherit; background:none; border:0; cursor:pointer; }
+.app .notification-content { flex:1; min-width:0; padding:0; text-align:left; color:inherit; background:transparent; border:0; cursor:pointer; font-weight:400; }
+.app .notification-content:hover { filter:none; }
+.app .notification-list article>button:last-child { flex:0 0 auto; padding:4px 7px; border-radius:6px; color:#9ca3af; background:transparent; }
+.app .notification-list article>button:last-child:hover { color:#fff; background:#ffffff16; filter:none; }
+.notification-image,.notification-preview img { flex:0 0 38px; width:38px; height:38px; object-fit:cover; border-radius:50%; }
+@media (max-width:600px) { .app .notification-list article { gap:9px; padding:11px; } .app .notification-preview { padding:9px 10px; } .notification-image,.notification-preview img { flex-basis:34px; width:34px; height:34px; } }
 .notification-target { outline:2px solid #e50914; border-radius:8px; scroll-margin-top:90px; }
 .notification-preferences { display:grid; gap:12px; }
 .notification-preference-row { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:12px; border:1px solid #303544; border-radius:8px; }

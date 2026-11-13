@@ -88,7 +88,7 @@ try {
   socketB.on('notification:new', (item) => receivedB.push(item));
 
   const moviePath = `/api/v1/productions/${productionId}/comments`;
-  const root = await sendComment(server, A, moviePath, { content: 'Root comment' });
+  const root = await sendComment(server, A, moviePath, { content: 'Root comment', episodeId: oldEpisodeId });
   assert.equal(root.status, 201);
   const replyKey = randomUUID();
   const replyBody = { content: 'Reply to A', parentId: root.body.id };
@@ -97,6 +97,8 @@ try {
   assert.equal((await sendComment(server, B, moviePath, replyBody, replyKey)).body.id, reply.body.id);
   assert.equal((await sendComment(server, B, moviePath, { ...replyBody, content: 'Different payload' }, replyKey)).status, 409);
   assert.equal((await notifications(db, A, 'comment_reply')).length, 1);
+  assert.equal((await notifications(db, A, 'comment_reply'))[0].redirect_url, `/watch-episode/${oldEpisodeId}?commentId=${reply.body.id}`);
+  assert.equal((await db.collection('comments').findOne({ id: reply.body.id })).episode_id, oldEpisodeId);
   assert.equal((await db.collection('comments').countDocuments({ request_key: `${B}:${replyKey}` })), 1);
   assert.equal(receivedA.length, 1);
   assert.equal(receivedB.length, 0);
@@ -238,8 +240,14 @@ try {
     await page.locator(`#post-comment-${postComment.body.id}`).waitFor();
     await page.goto(`http://localhost:5173/community/posts/${postId}?commentId=${postReply.body.id}`);
     await page.locator(`#post-comment-${postReply.body.id}`).waitFor();
-    await page.goto(`http://localhost:5173/movies/${productionId}?commentId=${reply.body.id}`);
+    await page.goto(`http://localhost:5173/watch-episode/${oldEpisodeId}?commentId=${reply.body.id}`);
+    await page.waitForURL(new RegExp(`/movies/${productionId}\\?ep=1&commentId=${reply.body.id}`));
     await page.locator(`#movie-comment-${reply.body.id}`).waitFor();
+    assert.ok(await page.locator(`#movie-comment-${reply.body.id}`).evaluate((element) => element.classList.contains('notification-target')));
+    assert.equal(await page.locator('video').first().evaluate((video) => video.paused && !video.autoplay), true);
+    await page.reload();
+    await page.locator(`#movie-comment-${reply.body.id}`).waitFor();
+    assert.equal(await page.locator('video').first().evaluate((video) => video.paused && !video.autoplay), true);
     console.log('PASS browser bell, dropdown, filters, unread count, mark-all and deep links');
   }
   const changedPassword = await request(server).post('/api/v1/auth/change-password').set(auth(A)).set('Origin', 'http://localhost:5173')

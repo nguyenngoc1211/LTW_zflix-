@@ -16,7 +16,7 @@ const formatTime = (value) => {
 
 const CommentAvatar = ({ comment }) => <UserAvatar src={comment.avatar_url} className="w-8 h-8 rounded-full object-cover border border-gray-700" />;
 
-const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => {
+const CommentSection = ({ productionId, episodeId, composerOnly = false, onSubmitted }) => {
   const [searchParams] = useSearchParams();
   const targetId = Number(searchParams.get('commentId'));
   const { user } = useAuth();
@@ -84,7 +84,7 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
     setError("");
     setWarning("");
     try {
-      const body = JSON.stringify({ content, isSpoiler: false });
+      const body = JSON.stringify({ content, isSpoiler: false, ...(episodeId && { episodeId }) });
       const result = await apiRequest(`/api/v1/productions/${productionId}/comments`, {
         method: "POST",
         body,

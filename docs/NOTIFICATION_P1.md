@@ -118,3 +118,36 @@ Các lỗi kiểm thử trung gian đã được sửa trước vòng cuối: fi
 ## 7. Trạng thái bàn giao
 
 P0 và năm module P1 đã được thực hiện bằng code, kiểm thử unit/integration/browser trên môi trường test riêng, lint/build/syntax/diff đều đạt theo phạm vi bảng trên. Các giới hạn ở mục 6 cần giải quyết hoặc xác nhận trước production. Không commit, không push, không chạy test ghi dữ liệu trên database chính.
+
+## 8. Bổ sung ngày 2026-11-09: sửa deep link reply, autoplay và dropdown trên bản local
+
+### 8.1 Lỗi và nguyên nhân
+
+1. Notification trả lời bình luận phim lưu URL `/movies/:productionId?commentId=:commentId`. Bình luận phim chưa lưu episode ID, còn route `/watch-episode/:episodeId` làm rơi `commentId` khi chuyển sang URL xem phim chuẩn. Trang xem dùng danh sách bình luận phân trang nên reply nhiều cấp không chắc được render để cuộn/highlight.
+2. Player cũ có thuộc tính `autoPlay` trên video của `PlayerPage`; `VideoPlayer` còn gọi `video.play()` trong effect ngay khi nhận tập đầu tiên nếu Auto Play đang bật.
+3. Header tạo stacking context ở `z-index: 10`, thấp hơn khối player `z-index: 50`; nâng riêng dropdown bên trong header không đủ để đưa nó lên trên player.
+
+### 8.2 Thay đổi đã thực hiện
+
+- Khi gửi bình luận từ trang xem, frontend truyền `episodeId` của tập đang xem. Backend xác minh tập thuộc phim hoặc season của series, lưu `episode_id` trong comment MongoDB; reply kế thừa `episode_id` của comment cha khi có. `NotificationService` dùng ID đã lưu để tạo `/watch-episode/:episodeId?commentId=:commentId`, kèm `episodeId` trong metadata. Request comment có `Idempotency-Key` đưa episode ID vào fingerprint để không tái sử dụng cùng key với ngữ cảnh khác.
+- `EpisodeRedirect` giữ `commentId` hợp lệ khi tạo URL xem phim chuẩn. Khi URL có `commentId`, `MovieDiscussion` render `CommentSection` hiện có với toàn bộ bình luận để tìm, cuộn và áp dụng lớp `notification-target` cho đúng reply, kể cả nhiều cấp. Luồng bình luận thông thường vẫn dùng danh sách phân trang.
+- Bỏ thuộc tính `autoPlay` ở `PlayerPage`. `VideoPlayer` chỉ cho effect Auto Play hoạt động sau khi video đã nhận sự kiện `onPlay` do người dùng khởi phát; vào trang và reload không tự phát. Logic `pos`, seek, lưu tiến độ và xem tiếp không bị sửa.
+- Nâng stacking context của `.site-header` lên `z-index: 120` khi dropdown thông báo đang mở. Giữ nguyên component và thao tác của chuông thông báo.
+
+File sửa cho đợt này: `backend-node/src/modules/community/community.routes.js`, `notification.service.js`, `backend-node/integration/notification-p0-smoke.js`, `frontend/src/components/streamingPage/CommentSection.jsx`, `MovieCommentItem.jsx`, `AllDiscussion.jsx`, `MovieDiscussion.jsx`, `VideoPlayer.jsx`, `frontend/src/modules/streaming/EpisodeRedirect.jsx`, `PlayerPage.jsx`, `frontend/src/index.css`. Các thay đổi UI thông báo đã có sẵn trong working tree ở `NotificationBell.jsx`, `NotificationsPage.jsx` và `index.css` được giữ lại; không hoàn nguyên hoặc commit.
+
+### 8.3 Kiểm thử và trạng thái local
+
+| Kiểm tra | Kết quả | Phạm vi |
+| --- | --- | --- |
+| Backend unit | **PASS** | 78/78 sau khi đặt `FRONTEND_ORIGIN=http://localhost:5173` cho test; lần chạy đầu với origin khác có 2 assertion auth thất bại do cấu hình môi trường, lần chạy đúng cấu hình đạt 78/78. |
+| P0 integration | **PASS** | MongoDB 7 replica set `rs0` tạm tại `127.0.0.1:27018`, URI `directConnection=true`, database `notification_test_*`; xác nhận reply kế thừa episode ID và URL mới, retry, realtime, quyền sở hữu, offline và regression P0. |
+| Browser smoke | **PASS** | Bell/dropdown click được; deep link qua `/watch-episode/:episodeId` tới URL xem chuẩn, đúng comment có `notification-target`; video pause lúc vào trang và sau reload. Test dùng frontend Vite mới với backend/Mongo test riêng. |
+| Frontend ESLint | **PASS** | 0 lỗi; còn 3 warning hook có sẵn tại `LibraryPage.jsx` và `PartyRoom.jsx`. |
+| Frontend build | **PASS** | Vite build thành công; còn cảnh báo chunk lớn/dynamic import trước đó. |
+| Backend syntax; `git diff --check` | **PASS** | Các file backend vừa sửa hợp lệ; diff không có lỗi whitespace. |
+| Bản local | **PASS** | Đã build và tạo lại container `backend-node`, `frontend`; backend health trả `ok`, frontend `http://localhost:5173/` trả HTTP 200, cả hai container dùng source mới. |
+
+Sau test, container MongoDB test đã dừng; danh sách database còn `admin`, `config`, `local`, không còn database `notification_test_*`. Không ghi test vào `Zflix` và không commit/push.
+
+**Giới hạn dữ liệu cũ:** notification/comment phim tạo trước thay đổi này không có episode ID. Không thể suy ra chính xác tập từ dữ liệu đó, nên URL cũ có thể vẫn mở trang chi tiết phim. Luồng mới từ trang xem đã được kiểm chứng; chưa kiểm thử trên môi trường triển khai tương đương production.

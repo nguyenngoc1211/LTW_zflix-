@@ -6,7 +6,7 @@ import { apiRequest } from '../../services/api.js';
 import { commentRequestHeaders, clearCommentRequest } from '../../utils/commentRequest.js';
 import { MentionText } from '../community/MentionTextarea.jsx';
 
-export default function MovieCommentItem({ comment, productionId, depth = 0 }) {
+export default function MovieCommentItem({ comment, productionId, episodeId, depth = 0 }) {
   const { user } = useAuth();
   const [replying, setReplying] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -78,7 +78,7 @@ export default function MovieCommentItem({ comment, productionId, depth = 0 }) {
     if (!text.trim() || busy) return;
     setBusy(true); setError('');
     try {
-      const body = JSON.stringify({ content: text.trim(), parentId: comment.id, isSpoiler: false });
+      const body = JSON.stringify({ content: text.trim(), parentId: comment.id, isSpoiler: false, ...(episodeId && { episodeId }) });
       await apiRequest(endpoint, { method: 'POST', body, headers: commentRequestHeaders(pendingComment, body) });
       clearCommentRequest(pendingComment);
       setText(''); setReplying(false); setCount((value) => value + 1);
@@ -93,7 +93,7 @@ export default function MovieCommentItem({ comment, productionId, depth = 0 }) {
       {reporting && <form onSubmit={report} className="movie-reply-form"><label>Lý do<select value={reason} onChange={(event) => setReason(event.target.value)}><option value="spam">Spam</option><option value="harassment">Quấy rối</option><option value="spoiler">Spoiler</option><option value="other">Khác</option></select></label><label>Mô tả<textarea maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} /></label><div className="movie-comment-actions"><button type="submit">Gửi báo cáo</button><button type="button" onClick={() => setReporting(false)}>Hủy</button></div></form>}
       {replying && <CommentForm onSubmit={submit} text={text} onText={setText} busy={busy} onCancel={() => setReplying(false)} label={`Trả lời ${comment.username || `thành viên #${comment.user_id}`}`} />}
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-      {expanded && <div className="movie-replies">{items.map((item) => <MovieCommentItem key={item.id} comment={item} productionId={productionId} depth={depth + 1} />)}
+      {expanded && <div className="movie-replies">{items.map((item) => <MovieCommentItem key={item.id} comment={item} productionId={productionId} episodeId={episodeId} depth={depth + 1} />)}
         {(page > 1 || more) && <CommentPagination page={page} more={more} onPage={setPage} />}
       </div>}
   </CommentFrame>;

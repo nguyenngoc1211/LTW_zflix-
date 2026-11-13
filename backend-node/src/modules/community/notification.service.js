@@ -41,7 +41,7 @@ export const directCommentRecipient = ({ parentId, parentAuthorId, postAuthorId,
   return Number.isSafeInteger(recipient) && recipient > 0 && recipient !== actorId ? recipient : null;
 };
 
-export const notifyComment = async ({ recipientId, actor, commentId, parentId, postId, productionId, postTitle, content, scene = false, session }) => {
+export const notifyComment = async ({ recipientId, actor, commentId, parentId, postId, productionId, episodeId, postTitle, content, scene = false, session }) => {
   if (!directCommentRecipient({ parentId, parentAuthorId: recipientId, postAuthorId: recipientId, actorId: actor.id })) return null;
   const post = Boolean(postId);
   return createNotification({ recipientId, actorId: actor.id,
@@ -49,8 +49,8 @@ export const notifyComment = async ({ recipientId, actor, commentId, parentId, p
     title: parentId ? `${actor.username} đã trả lời bình luận của bạn` : `${actor.username} đã bình luận bài viết`,
     message: post ? `${postTitle || 'Bài viết'}: ${content.slice(0, 120)}` : content.slice(0, 120),
     entityType: post ? 'post_comment' : 'comment', entityId: commentId,
-    redirectUrl: post ? `/community/${scene ? 'scene-questions' : 'posts'}/${postId}?commentId=${commentId}` : `/movies/${productionId}?commentId=${commentId}`,
-    metadata: { actorAvatar: actor.avatar_url || null, postId, productionId, parentId },
+    redirectUrl: post ? `/community/${scene ? 'scene-questions' : 'posts'}/${postId}?commentId=${commentId}` : episodeId ? `/watch-episode/${episodeId}?commentId=${commentId}` : `/movies/${productionId}?commentId=${commentId}`,
+    metadata: { actorAvatar: actor.avatar_url || null, postId, productionId, episodeId, parentId },
     deduplicationKey: `${post ? 'post' : 'movie'}-comment:${commentId}:recipient:${recipientId}`, session });
 };
 

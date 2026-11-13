@@ -10,6 +10,7 @@ import { authRouter } from "./modules/auth/auth.routes.js";
 import { discoveryRouter } from "./modules/discovery/discovery.routes.js";
 import { communityRouter } from "./modules/community/community.routes.js";
 import { postsRouter } from "./modules/community/posts.routes.js";
+import { profilesRouter } from "./modules/community/profiles.routes.js";
 import { avatarRouter } from "./modules/profile/avatar.routes.js";
 import { streamingRouter } from "./modules/streaming/streaming.routes.js";
 import streamingContentRouter from "./modules/streaming/route/index.js";
@@ -59,6 +60,7 @@ export const createApp = () => {
   app.use("/api/v1", discoveryRouter);
   app.use("/api/v1", communityRouter);
   app.use("/api/v1/community/posts", postsRouter);
+  app.use("/api/v1/community/users", profilesRouter);
   app.use("/api/v1/scene-questions", postsRouter);
   app.use("/api/v1/profile", avatarRouter);
   app.use("/api/v1", streamingRouter);

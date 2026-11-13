@@ -8,6 +8,12 @@
 
 ## Community Posts — 2026-11-01
 
+- 2026-11-13 Follow demo: tác giả `zflix_community_demo` của sáu bài mẫu trên DB chính ban đầu có `status=disabled`, nên API hồ sơ trả `canFollow=false`. Đã kiểm tra đúng email fixture, `provider=local`, `password=null` và 6/6 bài mẫu trước khi chuyển riêng tài khoản này sang `active`; không đặt mật khẩu hoặc cấp session. Luồng đăng nhập MongoDB trả thất bại cho user không có password. Không đổi tài khoản khác hoặc middleware xác thực.
+
+- 2026-11-13 Hồ sơ/Follow: API hồ sơ công khai chỉ chiếu `id`, tên, avatar, ngày tham gia, giới thiệu và thống kê; không trả email hoặc trường xác thực. Chỉnh sửa `/community/users/me` chỉ dùng `requireAuth` và cập nhật đúng `req.user.id`; tab bài đã thích chỉ cho chủ tài khoản. Follow yêu cầu session, Origin hợp lệ, tài khoản đích active; chặn tự follow, dùng `_id` cố định và rate limit để chống trùng/spam. Index follow được tạo khi có lượt follow đầu tiên, không chạy migration DB chính. Feed đang theo dõi lọc `community_post` và legacy untyped, loại `scene_question`. Smoke test trên DB `community_test_schema_20261101` đạt cho quyền riêng tư, follow hai lần, thông báo, unfollow và feed; fixture đã dọn.
+
+- 2026-11-13 Poll: `PUT /api/v1/community/posts/:id/poll-vote` vẫn yêu cầu session và quyền xem bài; một user có thể đổi lựa chọn. Phiếu được cập nhật theo `(post_id, user_id)` và `_id` cố định để giữ đúng một phiếu kể cả khi yêu cầu đồng thời. Smoke test trên `community_test_schema_20261101` xác nhận chọn A, đổi sang B, gửi lại B và tổng phiếu vẫn là một. Không ghi thử vào DB chính.
+
 - Bình luận Post mới kiểm tra quyền đọc Post; tạo, sửa và xóa yêu cầu session, sửa/xóa lọc theo tác giả. Tạo/xóa và bộ đếm dùng transaction; replies giới hạn sâu tối đa 3. Hệ thống comment phim cũ không thay đổi.
 
 - Bổ sung endpoint vote yêu cầu session; bài phải active và người dùng phải có quyền đọc. Vote và bộ đếm cập nhật trong transaction MongoDB; cần unique index từ schema và MongoDB hỗ trợ transaction. Chưa coi việc kiểm tra quyền trong giao dịch là chống được mọi thay đổi membership đồng thời.

@@ -21,7 +21,7 @@ việc của nhiều thành viên trên các nhánh Git khác nhau (`dev`, `Du`,
 ```
 frontend/            React 19 + Vite + Tailwind CSS 4 + Ant Design + react-router 7
 backend-node/        Express 5 (ESM) + mysql2 + Socket.IO + helmet + JWT
-backend-python/      FastAPI (ai-chatbot :8002, video-processor :8001) — stub
+backend-python/      FastAPI (ai-chatbot RAG :8002, video-processor :8001)
 database/            init.sql (schema + seed 50 phim) + migrate-hai.sql (idempotent)
 docker-compose.yml   MySQL 8 + Elasticsearch 8 + backend + 2 service Python + frontend
 ```
@@ -102,6 +102,27 @@ phép `0.0.0.0/0` trong Atlas Network Access; cách này cho phép kết nối t
 nên cần giữ mật khẩu MongoDB mạnh và không chia sẻ chuỗi kết nối. Docker Compose
 không thể tự bỏ giới hạn IP do Atlas quản lý. Lần build đầu và kết nối Atlas vẫn
 cần có Internet.
+
+### AI chatbot
+
+Widget gọi FastAPI tại `http://<site-host>:8002/api/v1/chat`. Đặt
+`GEMINI_API_KEY` trong `.env` ở thư mục gốc (file này không được commit).
+Compose truyền key và kết nối MongoDB của Zflix cho service. Lần chạy đầu,
+model embedding và reranker được tải vào volume `ai_chatbot_data`.
+
+Tạo chỉ mục phim một lần sau khi build image:
+
+```bash
+docker compose build ai-chatbot
+docker compose run --rm ai-chatbot python -m src.ingestion.run_ingest
+docker compose up -d ai-chatbot frontend
+```
+
+Khi dữ liệu phim thay đổi, tạo lại chỉ mục bằng
+`docker compose run --rm ai-chatbot python -m src.ingestion.run_ingest --force`.
+Service chỉ mở `/api/v1/chat`; việc lập chỉ mục chạy bằng lệnh nội bộ.
+Nếu service chạy ở host khác, đặt `VITE_AI_CHATBOT_API_URL` thành URL đầy đủ
+khi build frontend. Mặc định không lưu lịch sử chat.
 
 ## 💻 Chạy thủ công không dùng Docker (Dev local)
 

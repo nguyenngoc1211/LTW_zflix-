@@ -87,6 +87,15 @@ services:
     container_name: ai_service
     ports:
       - "8002:8002"
+    environment:
+      DATA_STORE: mongodb
+      MONGODB_URI: ${MONGODB_URI:?MONGODB_URI must be set}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:?MONGODB_DB_NAME must be set}
+      CHAT_HISTORY_ENABLED: "false"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      HF_HOME: /app/data/huggingface
+    volumes:
+      - ai_chatbot_data:/app/data
 
   # Frontend React
   frontend:
@@ -101,3 +110,4 @@ services:
 
 volumes:
   elastic_data:
+  ai_chatbot_data:

@@ -287,7 +287,14 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
   if (!content || content.length > 3000) return res.status(400).json({ message: "content is required and must not exceed 3000 characters" });
   if (req.body?.isSpoiler !== undefined && typeof req.body.isSpoiler !== 'boolean') return res.status(400).json({ message: 'Invalid spoiler flag' });
   const parentId = req.body?.parentId == null ? null : parsePositiveInt(req.body.parentId, "parent id");
+  const requestedEpisodeId = req.body?.episodeId == null ? null : parsePositiveInt(req.body.episodeId, "episode id");
   await ensureProduction(productionId);
+  if (requestedEpisodeId && useMongo()) {
+    const episode = await (await mongoCollection('episodes')).findOne({ id: requestedEpisodeId }, { projection: { production_id: 1 } });
+    const season = episode && await (await mongoCollection('seasons')).findOne({ id: episode.production_id }, { projection: { series_id: 1 } });
+    if (!episode || (episode.production_id !== productionId && season?.series_id !== productionId))
+      return res.status(400).json({ message: 'Episode does not belong to this production' });
+  }
   let depth = 0;
   if (parentId) {
     if (useMongo()) {
@@ -310,7 +317,7 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
   const { isToxic } = detectToxicContent(content);
   if (useMongo()) {
     const comments = await mongoCollection('comments');
-    const identity = commentRequestIdentity(req, { productionId, parentId, content, isSpoiler: req.body?.isSpoiler === true });
+    const identity = commentRequestIdentity(req, { productionId, parentId, episodeId: requestedEpisodeId, content, isSpoiler: req.body?.isSpoiler === true });
     if (identity) {
       await ensureCommentRequestIndex(comments, 'comments');
       const previous = await existingCommentForRequest(comments, identity);
@@ -324,14 +331,15 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
     try { result = await withMongoTransaction(async (session) => {
       const parent = parentId ? await comments.findOne({ id: parentId, production_id: productionId, status: 'active' }, { session }) : null;
       if (parentId && !parent) return false;
+      const episodeId = parent?.episode_id || requestedEpisodeId;
       const mentions = await resolveMentions(content, session);
       await comments.insertOne({ _id: id, id,
-        user_id: req.user.id, production_id: productionId, content,
+        user_id: req.user.id, production_id: productionId, episode_id: episodeId, content,
         parent_id: parentId, depth, mention_user_ids: mentions.map((user) => user.id), likes_count: 0, score: 0, is_spoiler: req.body?.isSpoiler === true, is_toxic: Number(isToxic),
         status: 'active', created_at: now, updated_at: now, ...(identity || {}) }, { session });
       const notification = parent ? await notifyComment({ recipientId: parent.user_id,
         actor: { id: req.user.id, username: req.user.username, avatar_url: req.user.avatarUrl },
-        commentId: id, parentId, productionId, content, session }) : undefined;
+        commentId: id, parentId, productionId, episodeId, content, session }) : undefined;
       const mentionNotifications = await notifyMentions({ recipients: mentions, actor: req.user,
         contentId: id, contentType: 'comment', redirectUrl: `/movies/${productionId}?commentId=${id}`,
         excerpt: content, excludedRecipientId: parent?.user_id, session });
