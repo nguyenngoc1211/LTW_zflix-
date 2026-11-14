@@ -5,7 +5,7 @@ import { PostCard } from '../../modules/community/CommunityPage.jsx';
 import { CommentPagination } from '../community/UnifiedComment.jsx';
 import MovieCommentItem from './MovieCommentItem.jsx';
 
-function DiscussionList({ productionId, version, scene }) {
+function DiscussionList({ productionId, episodeId, version, scene }) {
   const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [items, setItems] = useState([]);
@@ -25,11 +25,11 @@ function DiscussionList({ productionId, version, scene }) {
   const update = (post) => setItems((current) => current.map((item) => item.id === post.id ? post : item));
   return <section className="space-y-4">{scene && <h3 className="text-pink-500 font-bold text-lg">Hỏi đáp khoảnh khắc</h3>}
     {error && <p role="alert" className="text-red-300">{error}</p>}
-    {loading ? <p>Đang tải...</p> : !items.length && !error ? <p>Chưa có {scene ? 'câu hỏi' : 'bình luận'}.</p> : items.map((item) => scene ? <PostCard key={`${item.id}:${user?.id ?? 'guest'}`} post={item} user={user} onDelete={remove} onUpdated={update} compact /> : <MovieCommentItem key={`${item.id}:${user?.id ?? 'guest'}`} comment={item} productionId={productionId} />)}
+    {loading ? <p>Đang tải...</p> : !items.length && !error ? <p>Chưa có {scene ? 'câu hỏi' : 'bình luận'}.</p> : items.map((item) => scene ? <PostCard key={`${item.id}:${user?.id ?? 'guest'}`} post={item} user={user} onDelete={remove} onUpdated={update} compact /> : <MovieCommentItem key={`${item.id}:${user?.id ?? 'guest'}`} comment={item} productionId={productionId} episodeId={episodeId} />)}
     {(page > 1 || more) && <CommentPagination page={page} more={more} onPage={setPage} />}
   </section>;
 }
 
-export default function AllDiscussion({ productionId, version, scene = false }) {
-  return <DiscussionList productionId={productionId} version={version} scene={scene} />;
+export default function AllDiscussion({ productionId, episodeId, version, scene = false }) {
+  return <DiscussionList productionId={productionId} episodeId={episodeId} version={version} scene={scene} />;
 }

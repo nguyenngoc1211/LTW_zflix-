@@ -17,3 +17,6 @@ __pycache__
 # Bỏ qua file Docker
 Dockerfile
 .dockerignore
+data/
+.env
+tests/

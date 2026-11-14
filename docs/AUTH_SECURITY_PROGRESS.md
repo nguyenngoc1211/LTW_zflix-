@@ -8,6 +8,12 @@
 
 ## Community Posts — 2026-11-01
 
+- 2026-11-13 Follow demo: tác giả `zflix_community_demo` của sáu bài mẫu trên DB chính ban đầu có `status=disabled`, nên API hồ sơ trả `canFollow=false`. Đã kiểm tra đúng email fixture, `provider=local`, `password=null` và 6/6 bài mẫu trước khi chuyển riêng tài khoản này sang `active`; không đặt mật khẩu hoặc cấp session. Luồng đăng nhập MongoDB trả thất bại cho user không có password. Không đổi tài khoản khác hoặc middleware xác thực.
+
+- 2026-11-13 Hồ sơ/Follow: API hồ sơ công khai chỉ chiếu `id`, tên, avatar, ngày tham gia, giới thiệu và thống kê; không trả email hoặc trường xác thực. Chỉnh sửa `/community/users/me` chỉ dùng `requireAuth` và cập nhật đúng `req.user.id`; tab bài đã thích chỉ cho chủ tài khoản. Follow yêu cầu session, Origin hợp lệ, tài khoản đích active; chặn tự follow, dùng `_id` cố định và rate limit để chống trùng/spam. Index follow được tạo khi có lượt follow đầu tiên, không chạy migration DB chính. Feed đang theo dõi lọc `community_post` và legacy untyped, loại `scene_question`. Smoke test trên DB `community_test_schema_20261101` đạt cho quyền riêng tư, follow hai lần, thông báo, unfollow và feed; fixture đã dọn.
+
+- 2026-11-13 Poll: `PUT /api/v1/community/posts/:id/poll-vote` vẫn yêu cầu session và quyền xem bài; một user có thể đổi lựa chọn. Phiếu được cập nhật theo `(post_id, user_id)` và `_id` cố định để giữ đúng một phiếu kể cả khi yêu cầu đồng thời. Smoke test trên `community_test_schema_20261101` xác nhận chọn A, đổi sang B, gửi lại B và tổng phiếu vẫn là một. Không ghi thử vào DB chính.
+
 - Bình luận Post mới kiểm tra quyền đọc Post; tạo, sửa và xóa yêu cầu session, sửa/xóa lọc theo tác giả. Tạo/xóa và bộ đếm dùng transaction; replies giới hạn sâu tối đa 3. Hệ thống comment phim cũ không thay đổi.
 
 - Bổ sung endpoint vote yêu cầu session; bài phải active và người dùng phải có quyền đọc. Vote và bộ đếm cập nhật trong transaction MongoDB; cần unique index từ schema và MongoDB hỗ trợ transaction. Chưa coi việc kiểm tra quyền trong giao dịch là chống được mọi thay đổi membership đồng thời.
@@ -443,3 +449,24 @@ Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạ
 
 - Tách namespace API câu hỏi cảnh phim và bài cộng đồng theo `content_type`; các thao tác theo ID kiểm tra loại trước khi dùng quyền hiện có. Báo cáo câu hỏi và câu trả lời yêu cầu đăng nhập, kiểm tra bài đang hiển thị, giới hạn tần suất và chống trùng.
 - Integration test trên database test riêng kiểm tra phân tách feed, vote, trả lời, báo cáo và nội dung cũ chưa phân loại. Chưa có kiểm thử tải ảnh R2 thật hoặc rà soát kiểm duyệt thực tế.
+## Notification P0 — security events (2026-11-08)
+
+- MongoDB password change and password reset now write a security notification in the same transaction as the password update and session revocation. Failed validation or incorrect credentials create no notification. The notification is emitted to the authenticated user room only after commit.
+- The existing JWT plus database session validation from Watch Party is reused for the notification Socket.IO namespace. The client cannot choose a user room. Notification read, read-all, and delete routes scope writes to `req.user.id`; list and unread count use the verified session identity.
+- Static checks and backend unit tests passed. A dedicated MongoDB test URI was unavailable, so no write integration test was run against the main database. The current source is authoritative if older entries in this file describe SQL-only behavior.
+
+## Notification P1 — preference and mention authorization (2026-11-08)
+
+- The new preference GET/PATCH and username autocomplete routes require the existing verified session. PATCH accepts only the six interaction preference keys and writes only `req.user.id`; security, transaction and administration notifications bypass preferences. Autocomplete returns only public username, ID and avatar fields, with bounded input, result count and request rate.
+- Integration tests on a disposable localhost MongoDB replica set verified preference isolation, validation, mention recipient resolution and socket room routing. The root `COMMUNITY_TEST_MONGODB_URI` still equals the primary URI and was not used. Production topology and deployment behavior remain unverified.
+### Phase VIP payment thủ công (2026-11-14)
+
+- Tái sử dụng `users.vip_expires_at`, `subscription_plans`, `transactions`, `user_subscriptions`, DB-backed session, RBAC và Notification. Đơn chuyển khoản có snapshot gói/giá/ngân hàng, mã riêng, trạng thái `PENDING → WAITING_REVIEW → PAID/REJECTED`, người xét duyệt, lý do từ chối và lịch sử thao tác.
+- Chỉ Admin/Moderator duyệt hoặc từ chối. User chỉ được tạo/xem/gửi đơn của chính mình; gửi đơn không cấp VIP. Duyệt dùng MongoDB transaction, điều kiện trạng thái và cập nhật hạn VIP theo tháng lịch; race duyệt đồng thời chỉ ghi nhận một lần. Admin cấp VIP thủ công phải nhập lý do, ghi transaction/audit; Moderator không được cấp thủ công. Giới hạn 5 lần tạo đơn/15 phút và tối đa 2 đơn chưa hoàn tất.
+- QR chuyển khoản được tạo tại backend từ cấu hình `VIP_BANK_*`. Khi thiếu cấu hình, trả QR DEMO không thanh toán và giao diện hiển thị cảnh báo không chuyển tiền. Không có gateway hoặc xác nhận tiền tự động.
+- Đã chạy backend unit 82/82 (với `FRONTEND_ORIGIN=http://localhost:5173`; giá trị nhiều origin trong `.env` làm 2 test auth cũ dùng nguyên chuỗi Origin thất bại), smoke trên database `zflix_vip_payment_test_20261114` tách khỏi database chính: kiểm quyền sở hữu, snapshot giá, user không tự cấp VIP, duyệt đồng thời/duyệt lặp, từ chối, notification, phân quyền và audit cấp thủ công. Frontend build và ESLint qua (3 warning cũ ngoài phạm vi). Browser smoke trang user/admin với dữ liệu giả lập tại 375, 768, 1366, 1920px không tràn ngang. Fixture test được dọn trong database thử nghiệm. Docker backend/frontend local đã build lại và API sống.
+### Phase nhận diện VIP trên giao diện (2026-11-14)
+
+- Chỉ đọc `users.vip_expires_at` từ MongoDB trong các truy vấn tác giả đã có cho bài viết, bình luận, trả lời, đánh giá phim và hồ sơ cộng đồng. Không nhận trạng thái VIP từ request hoặc tạo quyền truy cập mới; playback vẫn dùng entitlement hiện có. Frontend dùng một component nhận diện chung và kiểm tra ngày hết hạn để ẩn badge của tài khoản thường hoặc VIP đã hết hạn.
+- Smoke API trên database thử nghiệm riêng xác nhận dữ liệu của 3 loại tài khoản tại comment/reply phim, post/comment/reply cộng đồng, rating và profile. Không ghi dữ liệu thử vào DB chính.
+- Trang `/vip` được làm lại với hai card gói, bước thanh toán, QR demo và lịch sử có bố cục mobile; đơn PAID/REJECTED không hiện QR như đơn đang xử lý. Browser smoke dùng dữ liệu giả lập xác nhận 375/768/1366/1920px không tràn ngang, trạng thái PAID không hiện QR, badge VIP/đã hết hạn trên post/comment/reply cộng đồng và comment/reply phim. `npm test` backend 82/82, frontend build và lint qua (3 warning cũ ở LibraryPage/PartyRoom); Docker local đã build lại.

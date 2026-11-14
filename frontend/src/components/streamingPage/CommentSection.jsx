@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import ToxicComment from "../community/ToxicComment.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { apiRequest } from "../../services/api.js";
 import UserAvatar from "../UserAvatar.jsx";
+import VipIdentity from '../VipIdentity.jsx';
+import { vipAvatarClass } from '../vipIdentity.js';
+import { commentRequestHeaders, clearCommentRequest } from '../../utils/commentRequest.js';
+import MentionTextarea from '../community/MentionTextarea.jsx';
 
 const MAX_LENGTH = 3000;
 
@@ -12,10 +16,13 @@ const formatTime = (value) => {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("vi-VN");
 };
 
-const CommentAvatar = ({ comment }) => <UserAvatar src={comment.avatar_url} className="w-8 h-8 rounded-full object-cover border border-gray-700" />;
+const CommentAvatar = ({ comment }) => <UserAvatar src={comment.avatar_url} className={`w-8 h-8 rounded-full object-cover border border-gray-700 ${vipAvatarClass(comment.vip_expires_at)}`} />;
 
-const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => {
+const CommentSection = ({ productionId, episodeId, composerOnly = false, onSubmitted }) => {
+  const [searchParams] = useSearchParams();
+  const targetId = Number(searchParams.get('commentId'));
   const { user } = useAuth();
+  const pendingComment = useRef(null);
   const [comments, setComments] = useState([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -51,6 +58,11 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
   }, [loadComments, composerOnly]);
 
   useEffect(() => {
+    if (!composerOnly && comments.some((item) => item.id === targetId))
+      document.getElementById(`movie-comment-${targetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [comments, targetId, composerOnly]);
+
+  useEffect(() => {
     if (openMenuId == null) return undefined;
     const closeMenu = () => setOpenMenuId(null);
     const closeOnEscape = (event) => {
@@ -74,10 +86,13 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
     setError("");
     setWarning("");
     try {
+      const body = JSON.stringify({ content, isSpoiler: false, ...(episodeId && { episodeId }) });
       const result = await apiRequest(`/api/v1/productions/${productionId}/comments`, {
         method: "POST",
-        body: JSON.stringify({ content, isSpoiler: false }),
+        body,
+        headers: commentRequestHeaders(pendingComment, body),
       });
+      clearCommentRequest(pendingComment);
       if (result.warning) setWarning(result.warning);
       setDraft("");
       if (composerOnly) onSubmitted?.();
@@ -144,9 +159,9 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
           onSubmit={handleSubmit}
           className="bg-[#18181b] p-4 rounded-xl border border-gray-800 mb-6"
         >
-          <textarea
+          <MentionTextarea
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={setDraft}
             placeholder="Viết bình luận..."
             rows={2}
             maxLength={MAX_LENGTH}
@@ -193,13 +208,11 @@ const CommentSection = ({ productionId, composerOnly = false, onSubmitted }) => 
             const spoilerRevealed = !comment.is_spoiler || Boolean(revealed[comment.id]);
             const menuIsOpen = openMenuId === comment.id;
             return (
-              <div key={comment.id} className="flex gap-3">
+              <div key={comment.id} id={`movie-comment-${comment.id}`} className={`flex gap-3 ${targetId === comment.id ? 'notification-target' : ''}`}>
                 <CommentAvatar comment={comment} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-gray-200 font-bold text-sm truncate">
-                      {comment.username}
-                    </span>
+                    <VipIdentity username={comment.username} vipExpiresAt={comment.vip_expires_at} className="text-sm" />
                     <span className="text-gray-500 text-xs shrink-0">
                       {formatTime(comment.created_at)}
                     </span>

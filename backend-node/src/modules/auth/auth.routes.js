@@ -395,6 +395,7 @@ authRouter.post(
         return res.status(400).json({ message: "New password must be different" });
       }
 
+
       res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
       securityLog("PASSWORD_CHANGED", {
         userId: req.user.id,
@@ -445,6 +446,7 @@ authRouter.post("/reset-password", resetPasswordRateLimiter, async (req, res, ne
       });
       return res.status(400).json({ message: "Reset token is invalid or expired" });
     }
+
 
     securityLog("PASSWORD_RESET_SUCCESS", {
       userId: result.userId,

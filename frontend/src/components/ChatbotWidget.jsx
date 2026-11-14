@@ -1,181 +1,200 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  FiArrowDown, FiMessageCircle, FiMinus, FiRotateCcw, FiSend, FiX,
+} from "react-icons/fi";
+import ChatMessage from "./chatbot/ChatMessage.jsx";
+import { normalizeChatResponse } from "./chatbot/normalizeChatResponse.js";
 import "../assets/chatbot.css";
 
-const ChatbotWidget = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      type: "bot",
-      text: "Chào bạn! Mình có thể giúp tìm phim, gợi ý theo thể loại/diễn viên, hoặc tóm tắt (không spoil).",
-      suggestion: 'Gợi ý: "Gợi ý phim hành động giống Biệt Đội Đáp Phá"',
-    },
-  ]);
-  const [inputValue, setInputValue] = useState("");
-  const messagesEndRef = useRef(null);
+const suggestions = [
+  "Gợi ý phim hành động",
+  "Có phim nào nhẹ nhàng cuối tuần?",
+  "Tìm phim có cốt truyện bất ngờ",
+];
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+const greeting = () => ({
+  id: "greeting",
+  role: "assistant",
+  text: "Chào bạn! Mình là Zflix AI. Bạn muốn xem phim theo tâm trạng hay thể loại nào?",
+});
+
+const chatEndpoint = () => import.meta.env.VITE_AI_CHATBOT_API_URL?.trim() ||
+  `${window.location.protocol}//${window.location.hostname}:8002/api/v1/chat`;
+
+const visitorId = () => {
+  let id = sessionStorage.getItem("zflix_chat_visitor_id");
+  if (!id) {
+    id = `web-${crypto.randomUUID()}`;
+    sessionStorage.setItem("zflix_chat_visitor_id", id);
+  }
+  return id;
+};
+
+export default function ChatbotWidget() {
+  const [view, setView] = useState("closed");
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
+  const [showJump, setShowJump] = useState(false);
+  const [conversationId, setConversationId] = useState(null);
+  const [messages, setMessages] = useState([greeting]);
+  const listRef = useRef(null);
+  const inputRef = useRef(null);
+  const nearBottomRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const controllerRef = useRef(null);
+  const requestRef = useRef(0);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (view === "open") inputRef.current?.focus();
+  }, [view]);
 
-  const handleSendMessage = () => {
-    if (inputValue.trim() === "") return;
+  useEffect(() => {
+    if (view !== "open" || !nearBottomRef.current) return;
+    const list = listRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
+  }, [messages, view]);
 
-    // Add user message
-    const userMessage = {
-      id: Date.now(),
-      type: "user",
-      text: inputValue,
-    };
+  useEffect(() => () => { controllerRef.current?.abort(); }, []);
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue("");
-
-    // Simulate bot response (replace with actual API call)
-    setTimeout(() => {
-      const botMessage = {
-        id: Date.now() + 1,
-        type: "bot",
-        text: "Đang xử lý yêu cầu của bạn...",
-      };
-      setMessages((prev) => [...prev, botMessage]);
-    }, 500);
+  const reset = () => {
+    requestRef.current += 1;
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    inFlightRef.current = false;
+    nearBottomRef.current = true;
+    setShowJump(false);
+    setBusy(false);
+    setConnectionError(false);
+    setConversationId(null);
+    setInput("");
+    setMessages([greeting()]);
+    inputRef.current?.focus();
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
+  const send = async (text = input, retryId = null) => {
+    const message = text.trim();
+    if (!message || inFlightRef.current) return;
+    inFlightRef.current = true;
+    const requestNumber = ++requestRef.current;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const replyId = retryId || crypto.randomUUID();
+    nearBottomRef.current = true;
+    setShowJump(false);
+    setInput("");
+    setBusy(true);
+    setConnectionError(false);
+    if (retryId) {
+      setMessages((items) => items.map((item) => item.id === retryId
+        ? { id: replyId, role: "assistant", pending: true, text: "" }
+        : item));
+    } else {
+      setMessages((items) => [...items,
+        { id: `user-${replyId}`, role: "user", text: message },
+        { id: replyId, role: "assistant", pending: true, text: "" },
+      ]);
+    }
+
+    try {
+      const response = await fetch(chatEndpoint(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: visitorId(), message, conversation_id: conversationId,
+        }),
+        signal: controller.signal,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(
+        typeof result.detail === "string" ? result.detail : `Chatbot lỗi (${response.status})`,
+      );
+      if (requestRef.current !== requestNumber) return;
+      setConversationId(result.conversation_id || null);
+      const content = normalizeChatResponse(result);
+      setMessages((items) => items.map((item) => item.id === replyId
+        ? { id: replyId, role: "assistant", ...content }
+        : item));
+    } catch (error) {
+      if (requestRef.current !== requestNumber || error.name === "AbortError") return;
+      setConnectionError(true);
+      setMessages((items) => items.map((item) => item.id === replyId
+        ? {
+          id: replyId,
+          role: "assistant",
+          error: error.message || "Không kết nối được với trợ lý phim.",
+          retryText: message,
+        }
+        : item));
+    } finally {
+      if (requestRef.current === requestNumber) {
+        inFlightRef.current = false;
+        controllerRef.current = null;
+        setBusy(false);
+      }
     }
   };
 
-  return (
-    <>
-      {/* Floating Button */}
-      {!isOpen && (
-        <button
-          className="chatbot-float-btn"
-          onClick={() => setIsOpen(true)}
-          aria-label="Open chatbot"
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
-      )}
+  const onScroll = () => {
+    const list = listRef.current;
+    if (!list) return;
+    nearBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 64;
+    setShowJump(!nearBottomRef.current);
+  };
 
-      {/* Chatbot Widget */}
-      {isOpen && (
-        <div className="chatbot-widget">
-          {/* Header */}
-          <div className="chatbot-header">
-            <div className="chatbot-header-info">
-              <div className="chatbot-avatar">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" />
-                </svg>
-              </div>
-              <div className="chatbot-header-text">
-                <div className="chatbot-title">Movie Assistant</div>
-                <div className="chatbot-status">
-                  <span className="status-dot"></span>
-                  Online • trả lời nhanh
-                </div>
-              </div>
-            </div>
-            <div className="chatbot-header-actions">
-              <button
-                className="chatbot-action-btn"
-                onClick={() => setIsOpen(false)}
-                aria-label="Minimize"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                  <path d="M19 13H5v-2h14v2z" fill="currentColor" />
-                </svg>
-              </button>
-              <button
-                className="chatbot-action-btn"
-                onClick={() => setIsOpen(false)}
-                aria-label="Close"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
+  const jumpToBottom = () => {
+    nearBottomRef.current = true;
+    setShowJump(false);
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+  };
 
-          {/* Messages */}
-          <div className="chatbot-messages">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`chatbot-message ${message.type === "user" ? "user-message" : "bot-message"}`}
-              >
-                <div className="message-content">
-                  <div className="message-text">{message.text}</div>
-                  {message.suggestion && (
-                    <div className="message-suggestion">
-                      {message.suggestion}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
+  const status = busy ? "Đang trả lời" : connectionError ? "Kết nối gián đoạn" : "Sẵn sàng trò chuyện";
+  const hasUserMessage = messages.some((item) => item.role === "user");
 
-          {/* Input */}
-          <div className="chatbot-input-container">
-            <textarea
-              className="chatbot-input"
-              placeholder="Nhập tin nhắn... "
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={1}
-            />
-            <button
-              className="chatbot-send-btn"
-              onClick={handleSendMessage}
-              disabled={inputValue.trim() === ""}
-              aria-label="Send message"
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-              </svg>
-            </button>
-          </div>
+  return <div className="zflix-chat" data-view={view}>
+    {view === "closed" && <button type="button" className="zflix-chat-fab" onClick={() => setView("open")} aria-label="Mở trợ lý phim">
+      <FiMessageCircle aria-hidden="true" /><span>Hỏi Zflix AI</span>
+    </button>}
+    {view === "minimized" && <button type="button" className="zflix-chat-minimized" onClick={() => setView("open")} aria-label="Mở lại trợ lý phim">
+      <span className="zflix-chat-mini-mark">Z</span><span>Zflix AI</span><span className="zflix-chat-mini-hint">Mở cuộc trò chuyện</span>
+    </button>}
+    {view === "open" && <section className="zflix-chat-panel" role="dialog" aria-label="Trợ lý phim Zflix" aria-modal="false">
+      <header className="zflix-chat-header">
+        <div className="zflix-chat-identity">
+          <span className="zflix-chat-logo" aria-hidden="true">Z<span>AI</span></span>
+          <div><strong>Zflix AI</strong><span className="zflix-chat-status"><i className={connectionError ? "is-error" : ""} />{status}</span></div>
         </div>
-      )}
-    </>
-  );
-};
+        <div className="zflix-chat-actions">
+          <button type="button" onClick={reset} aria-label="Bắt đầu cuộc trò chuyện mới" title="Bắt đầu lại"><FiRotateCcw aria-hidden="true" /></button>
+          <button type="button" onClick={() => setView("minimized")} aria-label="Thu nhỏ chatbot" title="Thu nhỏ"><FiMinus aria-hidden="true" /></button>
+          <button type="button" onClick={() => setView("closed")} aria-label="Đóng chatbot" title="Đóng"><FiX aria-hidden="true" /></button>
+        </div>
+      </header>
 
-export default ChatbotWidget;
+      <div className="zflix-chat-conversation">
+        <div ref={listRef} className="zflix-chat-messages" role="log" aria-live="polite" onScroll={onScroll}>
+          <div className="zflix-chat-day">Hôm nay</div>
+          {messages.map((item) => <ChatMessage key={item.id} message={item} onRetry={() => send(item.retryText, item.id)} />)}
+          {!hasUserMessage && <div className="zflix-chat-suggestions" aria-label="Gợi ý câu hỏi">
+            <span>Thử hỏi mình</span>
+            {suggestions.map((suggestion) => <button type="button" key={suggestion} disabled={busy} onClick={() => send(suggestion)}>{suggestion}</button>)}
+          </div>}
+        </div>
+        {showJump && <button type="button" className="zflix-chat-jump" onClick={jumpToBottom} aria-label="Cuộn xuống tin nhắn mới"><FiArrowDown aria-hidden="true" /></button>}
+      </div>
+
+      <form className="zflix-chat-compose" onSubmit={(event) => { event.preventDefault(); send(); }}>
+        <div className="zflix-chat-input-wrap">
+          <textarea ref={inputRef} value={input} maxLength={500} rows={1} placeholder="Hỏi Zflix AI về phim..." aria-label="Tin nhắn cho Zflix AI" onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              send();
+            }
+          }} />
+          <button type="submit" className="zflix-chat-send" disabled={busy || !input.trim()} aria-label="Gửi tin nhắn" title="Gửi tin nhắn"><FiSend aria-hidden="true" /></button>
+        </div>
+        <span className="zflix-chat-input-hint">Enter để gửi · Shift + Enter để xuống dòng</span>
+      </form>
+    </section>}
+  </div>;
+}

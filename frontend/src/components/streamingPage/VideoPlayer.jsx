@@ -62,6 +62,7 @@ const VideoPlayer = ({
   resumePosition,
 }) => {
   const videoRef = useRef(null);
+  const hasPlayedRef = useRef(false);
   useEffect(() => {
     if (!theater) return undefined;
     const onKey = (event) => { if (event.key === 'Escape') onToggleTheater(false); };
@@ -87,7 +88,7 @@ const VideoPlayer = ({
   useVideoSource({ videoRef, videoUrl: currentEpisode?.video_url, episodeId: currentEpisode?.id });
 
   useEffect(() => {
-    if (!videoRef.current || !settings.autoPlay) return;
+    if (!videoRef.current || !settings.autoPlay || !hasPlayedRef.current) return;
 
     videoRef.current.play().catch(() => {});
   }, [currentEpisode, settings.autoPlay]);
@@ -160,6 +161,7 @@ const VideoPlayer = ({
               poster={currentEpisode.thumbnail_url}
               onLoadedMetadata={handleLoadedMetadata}
               onCanPlay={handleLoadedMetadata}
+              onPlay={() => { hasPlayedRef.current = true; }}
               onTimeUpdate={handleTimeUpdate}
               onEnded={handleVideoEnded}
             />

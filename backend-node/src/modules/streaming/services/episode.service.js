@@ -4,6 +4,7 @@ import { videoServiceProcessEndpoint } from "../../../config/video-service.confi
 import { applyEpisodeAccess, resolveProductionPremium } from "../playback-access.js";
 import axios from "axios";
 import { fromMongo, mongoCollection, nextNumericId, withMongoTransaction } from "../../../core/database/mongo.js";
+import { queueEpisodeNotification } from '../../community/episode-notification.job.js';
 
 export const getEpisodesBySeasonService = async (seasonId, viewer = null) => {
   const premium = await resolveProductionPremium(Number(seasonId));
@@ -81,8 +82,9 @@ export const createEpisodeService = async (data, file) => {
     const episode = { _id: id, id, production_id: productionId,
       episode_number: Number(data.episode_number), title: data.title,
       duration: Number(data.duration || 0), thumbnail_url: data.thumbnail_url || null,
-      video_url: videoUrl, created_at: new Date() };
+      video_url: videoUrl, notification_pending: Boolean(file), created_at: new Date() };
     await (await mongoCollection("episodes")).insertOne(episode);
+    if (videoUrl && !file) await queueEpisodeNotification({ episodeId: id, productionId });
     if (file && videoUrl) axios.post(videoServiceProcessEndpoint, {
       file_name: videoUrl, production_id: productionId, episode_id: id,
     }).catch((error) => console.error("Lỗi gọi Python Service:", error.message));
@@ -197,11 +199,13 @@ export const updateVideoWebhookService = async (
 
   if (process.env.DATA_STORE === "mongodb") {
     await withMongoTransaction(async (session) => {
+      const previous = await (await mongoCollection('episodes')).findOne({ id: Number(episode_id), production_id: Number(production_id) }, { session });
       const episode = await (await mongoCollection("episodes")).updateOne({ id: Number(episode_id) },
-        { $set: { video_url: m3u8_url } }, { session });
+        { $set: { video_url: m3u8_url, notification_pending: false } }, { session });
       const production = await (await mongoCollection("productions"))
         .updateOne({ id: Number(production_id) }, { $set: { status: "completed" } }, { session });
       if (!episode.matchedCount || !production.matchedCount) throw new Error("Episode or production not found");
+      if (previous?.notification_pending === true && m3u8_url) await queueEpisodeNotification({ episodeId: Number(episode_id), productionId: Number(production_id), session });
     });
     return true;
   }

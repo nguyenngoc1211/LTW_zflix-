@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import UserAvatar from '../UserAvatar.jsx';
+import MentionTextarea from './MentionTextarea.jsx';
+import VipIdentity from '../VipIdentity.jsx';
+import { vipAvatarClass } from '../vipIdentity.js';
 
-export function CommentFrame({ avatar, username, date, children }) {
+export function CommentFrame({ avatar, username, vipExpiresAt, date, profileId, children }) {
   const time = new Date(date);
-  return <article className="movie-comment"><UserAvatar src={avatar} className="movie-comment-avatar" /><div className="movie-comment-main"><div className="movie-comment-meta"><strong>{username}</strong>{!Number.isNaN(time.getTime()) && <time dateTime={time.toISOString()}>{time.toLocaleString('vi-VN')}</time>}</div>{children}</div></article>;
+  const profileUrl = Number.isSafeInteger(Number(profileId)) && Number(profileId) > 0 ? `/community/users/${profileId}` : null;
+  const avatarNode = <UserAvatar src={avatar} className={`movie-comment-avatar ${vipAvatarClass(vipExpiresAt)}`} />;
+  const nameNode = <VipIdentity username={username} vipExpiresAt={vipExpiresAt} />;
+  return <article className="movie-comment">{profileUrl ? <Link className="movie-comment-profile-avatar" to={profileUrl} aria-label={`Xem hồ sơ ${username}`}>{avatarNode}</Link> : avatarNode}<div className="movie-comment-main"><div className="movie-comment-meta">{profileUrl ? <Link className="movie-comment-profile-name" to={profileUrl}>{nameNode}</Link> : nameNode}{!Number.isNaN(time.getTime()) && <time dateTime={time.toISOString()}>{time.toLocaleString('vi-VN')}</time>}</div>{children}</div></article>;
 }
 
 export function SpoilerContent({ spoiler, children }) {
@@ -13,7 +20,7 @@ export function SpoilerContent({ spoiler, children }) {
 }
 
 export function CommentForm({ onSubmit, text, onText, spoiler, onSpoiler, busy, onCancel, label = 'Viết bình luận...' }) {
-  return <form className="movie-reply-form" onSubmit={onSubmit}><label>{label}<textarea value={text} onChange={(event) => onText(event.target.value)} required maxLength={3000} rows={2} /></label>{onSpoiler && <label className="movie-spoiler-option"><input type="checkbox" checked={spoiler} onChange={(event) => onSpoiler(event.target.checked)} /> Nội dung có spoiler</label>}<div className="movie-comment-actions"><button type="submit" disabled={busy || !text.trim()}>{busy ? 'Đang gửi...' : 'Gửi'}</button>{onCancel && <button type="button" onClick={onCancel}>Hủy</button>}</div></form>;
+  return <form className="movie-reply-form" onSubmit={onSubmit}><label>{label}<MentionTextarea value={text} onChange={onText} required maxLength={3000} rows={2} /></label>{onSpoiler && <label className="movie-spoiler-option"><input type="checkbox" checked={spoiler} onChange={(event) => onSpoiler(event.target.checked)} /> Nội dung có spoiler</label>}<div className="movie-comment-actions"><button type="submit" disabled={busy || !text.trim()}>{busy ? 'Đang gửi...' : 'Gửi'}</button>{onCancel && <button type="button" onClick={onCancel}>Hủy</button>}</div></form>;
 }
 
 export function CommentPagination({ page, more, loading = false, onPage }) {

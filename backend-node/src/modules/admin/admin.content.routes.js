@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
 import { fromMongo, mongoCollection, nextNumericId, withMongoTransaction } from "../../core/database/mongo.js";
+import { queueEpisodeNotification } from '../community/episode-notification.job.js';
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler, parsePositiveInt } from "../../core/utils/http.js";
 
@@ -297,6 +298,11 @@ adminContentRouter.post(
     if (!title || title.length > 255) return res.status(400).json({ message: "title là bắt buộc (tối đa 255 ký tự)" });
     const videoUrl = typeof req.body?.videoUrl === "string" ? req.body.videoUrl.trim().slice(0, 500) || null : null;
     const thumbnailUrl = typeof req.body?.thumbnailUrl === "string" ? req.body.thumbnailUrl.trim().slice(0, 255) || null : null;
+    const batchId = req.body?.publicationBatchId;
+    const batchComplete = req.body?.publicationBatchComplete === true;
+    if ((batchId !== undefined && (typeof batchId !== 'string' || !/^[A-Za-z0-9_-]{8,80}$/.test(batchId))) ||
+      (req.body?.publicationBatchComplete !== undefined && typeof req.body.publicationBatchComplete !== 'boolean') ||
+      (batchComplete && !batchId) || (batchId && !videoUrl)) return res.status(400).json({ message: 'Invalid publication batch' });
 
     if (useMongo()) {
       const episodes = await mongoCollection("episodes");
@@ -310,18 +316,7 @@ adminContentRouter.post(
           await episodes.insertOne({ _id: id, id, production_id: productionId,
             episode_number: episodeNumber, title, video_url: videoUrl,
             duration, thumbnail_url: thumbnailUrl, created_at: new Date() }, { session });
-          const interests = await (await mongoCollection("production_interests"))
-            .find({ production_id: productionId }, { session }).toArray();
-          const notifications = await mongoCollection("notifications");
-          for (const interest of interests) {
-            const notificationId = await nextNumericId("notifications");
-            await notifications.insertOne({ _id: notificationId, id: notificationId,
-              user_id: interest.user_id, title: "Có tập mới!",
-              message: `${production.title} đã có tập ${episodeNumber}`,
-              type: "new_episode", entity_type: "episode", entity_id: id,
-              redirect_url: `/watch/${productionId}`, is_read: 0,
-              created_at: new Date(), read_at: null }, { session });
-          }
+          if (videoUrl) await queueEpisodeNotification({ episodeId: id, productionId, batchId, batchComplete, session });
         });
       } catch (error) {
         if (error.code === 11000) { error.status = 409; error.message = "Số tập này đã tồn tại"; }

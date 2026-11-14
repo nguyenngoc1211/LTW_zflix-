@@ -1,0 +1,72 @@
+import 'dotenv/config';
+import assert from 'node:assert/strict';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
+import { MongoClient } from 'mongodb';
+
+const name = process.env.COMMUNITY_TEST_DB_NAME?.trim();
+const uri = process.env.COMMUNITY_TEST_MONGODB_URI?.trim();
+if (!uri || name !== 'community_test_schema_20261101' || name.toLowerCase() === process.env.MONGODB_DB_NAME?.trim().toLowerCase()) throw new Error('Dedicated Community test DB required');
+process.env.MONGODB_URI = uri;
+process.env.MONGODB_DB_NAME = name;
+process.env.DATA_STORE = 'mongodb';
+process.env.FRONTEND_ORIGIN = 'http://localhost:5173';
+process.env.JWT_ACCESS_SECRET ||= 'test-only-secret-with-at-least-thirty-two-characters';
+const { default: app } = await import('../src/app.js');
+const { closeMongo } = await import('../src/core/database/mongo.js');
+const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10000 });
+const a = 2147482661, b = 2147482662, post = 2147482663, scene = 2147482664;
+const sessions = ['profile-follow-a', 'profile-follow-b'];
+try {
+  await client.connect();
+  const db = client.db(name);
+  for (const [collection, ids] of [['users', [a, b]], ['auth_sessions', sessions], ['community_posts', [post, scene]]]) {
+    if (await db.collection(collection).findOne({ _id: { $in: ids } })) throw new Error(`Fixture occupied in ${collection}`);
+  }
+  const expiry = new Date(Date.now() + 3600000);
+  await db.collection('users').insertMany([a, b].map((id) => ({ _id: id, id, username: `profile_smoke_${id}`, email: `profile${id}@example.invalid`, status: 'active', role: 'user', created_at: new Date() })));
+  await db.collection('auth_sessions').insertMany(sessions.map((id, index) => ({ _id: id, id, user_id: index ? b : a, refresh_token_hash: `hash-${id}`, revoked_at: null, expires_at: expiry, absolute_expires_at: expiry })));
+  const base = { author_id: b, type: 'normal', title: 'Profile test', content: 'Test', visibility: 'public', status: 'active', created_at: new Date(), updated_at: new Date() };
+  await db.collection('community_posts').insertMany([{ _id: post, id: post, ...base, content_type: 'community_post' }, { _id: scene, id: scene, ...base, content_type: 'scene_question' }]);
+  const token = (id, sid) => jwt.sign({ sid }, process.env.JWT_ACCESS_SECRET, { subject: String(id), algorithm: 'HS256' });
+  const auth = `Bearer ${token(a, sessions[0])}`;
+  const route = `/api/v1/community/users/${b}`;
+  const publicProfile = await request(app).get(route);
+  assert.equal(publicProfile.status, 200, JSON.stringify(publicProfile.body));
+  assert.equal(publicProfile.body.email, undefined);
+  assert.equal(publicProfile.body.counts.posts, 1);
+  assert.equal((await request(app).put(`/api/v1/community/users/${a}/follow`).set('Authorization', auth).set('Origin', 'http://localhost:5173')).status, 400);
+  const follow = () => request(app).put(`${route}/follow`).set('Authorization', auth).set('Origin', 'http://localhost:5173');
+  const first = await follow();
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.followers, 1);
+  const again = await follow();
+  assert.equal(again.status, 200);
+  assert.equal(again.body.followers, 1);
+  assert.equal(await db.collection('notifications').countDocuments({ actor_id: a, type: 'follow', user_id: b }), 1);
+  const feed = await request(app).get('/api/v1/community/posts?following=true').set('Authorization', auth);
+  assert.equal(feed.status, 200, JSON.stringify(feed.body));
+  assert.equal(feed.body.items.some((item) => item.id === post), true);
+  assert.equal(feed.body.items.some((item) => item.id === scene), false);
+  const followers = await request(app).get(`${route}/followers`);
+  assert.equal(followers.status, 200);
+  assert.equal(followers.body.items[0].email, undefined);
+  assert.equal((await request(app).get(`${route}/activity?tab=liked`).set('Authorization', auth)).status, 403);
+  const update = await request(app).patch('/api/v1/community/users/me').set('Authorization', auth).set('Origin', 'http://localhost:5173').send({ bio: 'Xin chào', displayName: 'Người thử' });
+  assert.equal(update.status, 200, JSON.stringify(update.body));
+  assert.equal(update.body.bio, 'Xin chào');
+  assert.equal(update.body.email, undefined);
+  const unfollow = await request(app).delete(`${route}/follow`).set('Authorization', auth).set('Origin', 'http://localhost:5173');
+  assert.equal(unfollow.status, 200);
+  assert.equal(unfollow.body.followers, 0);
+  console.log('Public profile, follow, privacy and following feed passed');
+} finally {
+  const db = client.db(name);
+  await db.collection('community_follows').deleteMany({ follower_id: a, followed_id: b }).catch(() => {});
+  await db.collection('notifications').deleteMany({ actor_id: a, type: 'follow', user_id: b }).catch(() => {});
+  await db.collection('community_posts').deleteMany({ _id: { $in: [post, scene] } }).catch(() => {});
+  await db.collection('auth_sessions').deleteMany({ _id: { $in: sessions } }).catch(() => {});
+  await db.collection('users').deleteMany({ _id: { $in: [a, b] } }).catch(() => {});
+  await client.close();
+  await closeMongo();
+}

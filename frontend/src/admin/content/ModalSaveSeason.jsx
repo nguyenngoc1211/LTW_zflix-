@@ -14,7 +14,7 @@ const ModalSaveSeason = ({ open, onCancel, seriesId }) => {
       messageApi.success("Tạo mùa mới thành công!");
       form.resetFields();
       onCancel(true);
-    } catch (error) {
+    } catch {
       messageApi.error("Lỗi khi tạo mùa!");
     } finally {
       setLoading(false);

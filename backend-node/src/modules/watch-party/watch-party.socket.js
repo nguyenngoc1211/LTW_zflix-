@@ -39,7 +39,7 @@ const insertMongoChat = async (partyId, userId, message, timestamp = 0, system =
 
 // Xác thực socket bằng access token (JWT + session trong DB). Danh tính lấy từ
 // server, không tin userId/username do client gửi kèm sự kiện.
-const authenticateSocket = async (socket, next) => {
+export const authenticateSocket = async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error("Authentication required"));

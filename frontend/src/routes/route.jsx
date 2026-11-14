@@ -10,6 +10,8 @@ import ViewsPage from "../admin/analytics/ViewsPage.jsx";
 import CommunityAdminPage from "../admin/community/CommunityAdminPage.jsx";
 import PartiesAdminPage from "../admin/community/PartiesAdminPage.jsx";
 import SubscriptionsAdminPage from "../admin/subscriptions/SubscriptionsAdminPage.jsx";
+import VipPaymentsAdminPage from "../admin/subscriptions/VipPaymentsAdminPage.jsx";
+import VipPage from "../modules/vip/VipPage.jsx";
 import SecurityAdminPage from "../admin/security/SecurityAdminPage.jsx";
 import SettingsAdminPage from "../admin/settings/SettingsAdminPage.jsx";
 import ShoppingAdminPage from "../admin/shopping/ShoppingAdminPage.jsx";
@@ -29,6 +31,7 @@ import PartyList from "../pages/PartyList.jsx";
 import CreateParty from "../pages/CreateParty.jsx";
 import PartyRoom from "../pages/PartyRoom.jsx";
 import CommunityPage from "../modules/community/CommunityPage.jsx";
+import CommunityProfilePage from "../modules/community/CommunityProfilePage.jsx";
 
 export const router = createBrowserRouter([
   {
@@ -46,6 +49,8 @@ export const router = createBrowserRouter([
       { path: "community", element: <CommunityPage /> },
       { path: "community/create", element: <CommunityPage view="create" /> },
       { path: "community/posts/:id", element: <CommunityPage view="detail" /> },
+      { path: "community/users/:id", element: <CommunityProfilePage /> },
+      { path: "community/scene-questions/:id", element: <CommunityPage view="detail" scene /> },
       // Route xem theo episode id, dùng cho lịch sử xem (không có slug).
       { path: "watch-episode/:episodeId", element: <EpisodeRedirect /> },
       { path: "watch-party", element: <PartyList /> },
@@ -57,6 +62,7 @@ export const router = createBrowserRouter([
           { path: "history", element: <HistoryPage /> },
           { path: "notifications", element: <NotificationsPage /> },
           { path: "settings", element: <SettingsPage /> },
+          { path: "vip", element: <VipPage /> },
           { path: "account/profile", element: <Navigate to="/settings?tab=profile" replace /> },
           { path: "watch-party/create", element: <CreateParty /> },
           { path: "watch-party/room/:partyId", element: <PartyRoom /> },
@@ -105,6 +111,7 @@ export const router = createBrowserRouter([
           { path: "/admin/parties", element: <PartiesAdminPage /> },
           { path: "/admin/shopping", element: <ShoppingAdminPage /> },
           { path: "/admin/views", element: <ViewsPage /> },
+          { path: "/admin/vip-payments", element: <VipPaymentsAdminPage /> },
           {
             element: <ProtectedRoute allowedRoles={["admin"]} />,
             children: [
