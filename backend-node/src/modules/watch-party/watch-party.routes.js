@@ -9,6 +9,10 @@ import {
   applyEpisodeAccess,
   resolveProductionPremium,
 } from "../streaming/playback-access.js";
+import {
+  emitWatchPartyLeave,
+  leaveWatchParty,
+} from "./watch-party.membership.js";
 
 export const watchPartyRouter = Router();
 const useMongo = () => process.env.DATA_STORE === "mongodb";
@@ -447,50 +451,32 @@ watchPartyRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { partyId } = req.params;
+    const result = await leaveWatchParty({
+      partyId,
+      userId: req.user.id,
+      username: req.user.username,
+    });
 
-    if (useMongo()) {
-      const participants = await mongoCollection("watch_party_participants");
-      const part = await participants.findOne({ party_id: partyId, user_id: req.user.id });
-      if (!part) return res.status(400).json({ message: "Not in this party" });
-      if (part.role === "host") {
-        await (await mongoCollection("watch_parties")).updateOne({ id: partyId },
-          { $set: { status: "ended" } });
-        await insertSystemChat(partyId, req.user.id, "Host đã kết thúc phòng xem.");
-      } else {
-        await participants.deleteOne({ party_id: partyId, user_id: req.user.id });
-        await insertSystemChat(partyId, req.user.id, `${req.user.username} đã rời phòng.`);
+    const namespace = req.app.get("watchPartyNamespace");
+    if (namespace) {
+      const sockets = await namespace.in(partyId).fetchSockets();
+      for (const socket of sockets) {
+        if (Number(socket.data.userId) !== Number(req.user.id)) continue;
+        await socket.leave(partyId);
+        socket.data.partyId = null;
+        namespace.to(partyId).emit("media-peer-left", {
+          peerId: socket.id,
+          userId: req.user.id,
+        });
       }
-      return res.json({ left: true });
     }
-
-    // Kiểm tra nếu là host thì kết thúc phòng luôn
-    const [parts] = await pool.execute(
-      "SELECT role FROM watch_party_participants WHERE party_id = ? AND user_id = ?",
-      [partyId, req.user.id],
-    );
-    if (!parts.length) return res.status(400).json({ message: "Not in this party" });
-
-    if (parts[0].role === "host") {
-      // Host rời = kết thúc phòng
-      await pool.execute("UPDATE watch_parties SET status = 'ended' WHERE id = ?", [partyId]);
-      await pool.execute(
-        `INSERT INTO watch_party_chats (party_id, user_id, message, is_system_message)
-         VALUES (?, ?, ?, 1)`,
-        [partyId, req.user.id, "Host đã kết thúc phòng xem."],
-      );
-    } else {
-      await pool.execute(
-        "DELETE FROM watch_party_participants WHERE party_id = ? AND user_id = ?",
-        [partyId, req.user.id],
-      );
-      await pool.execute(
-        `INSERT INTO watch_party_chats (party_id, user_id, message, is_system_message)
-         VALUES (?, ?, ?, 1)`,
-        [partyId, req.user.id, `${req.user.username} đã rời phòng.`],
-      );
-    }
-
-    res.json({ left: true });
+    emitWatchPartyLeave(namespace, result);
+    res.json({
+      left: true,
+      alreadyLeft: Boolean(result.alreadyLeft),
+      ended: Boolean(result.ended),
+      newHost: result.newHost || null,
+    });
   }),
 );
 

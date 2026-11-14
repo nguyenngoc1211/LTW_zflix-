@@ -61,7 +61,8 @@ const io = new Server(httpServer, {
 });
 
 // Đăng ký Watch Party socket handler
-registerWatchPartySocket(io);
+const watchPartyNamespace = registerWatchPartySocket(io);
+app.set("watchPartyNamespace", watchPartyNamespace);
 const notificationNamespace = io.of('/notifications');
 notificationNamespace.use(authenticateSocket);
 notificationNamespace.on('connection', (socket) => socket.join(`user:${socket.data.userId}`));
