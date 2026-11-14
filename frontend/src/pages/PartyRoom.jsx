@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { watchPartyApi, getCurrentUserId } from "../services/api.js";
 import { getPartySocket } from "../services/socket.js";
 import { useAuth } from "../hooks/useAuth.js";
 import { useVideoSource } from "../hooks/useVideoSource.js";
+import PartyMediaPanel from "../modules/watch-party/PartyMediaPanel.jsx";
+import { usePartyMedia } from "../modules/watch-party/usePartyMedia.js";
 
 export default function PartyRoom() {
   const { partyId } = useParams();
@@ -34,6 +36,8 @@ export default function PartyRoom() {
   // Phát qua proxy backend (URL tương đối + playback token) và hls.js cho m3u8.
   useVideoSource({ videoRef, videoUrl: party?.video_url });
 
+  const partyMedia = usePartyMedia({ partyId, enabled: Boolean(party) });
+
   // Cuộn xuống tin nhắn mới nhất
   const scrollToBottom = () => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -44,7 +48,7 @@ export default function PartyRoom() {
   }, [chats]);
 
   // 1. Tải thông tin phòng từ REST API
-  const loadRoomData = async () => {
+  const loadRoomData = useCallback(async () => {
     try {
       setLoading(true);
       setErrorMsg("");
@@ -58,20 +62,23 @@ export default function PartyRoom() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [partyId]);
 
   useEffect(() => {
     loadRoomData();
-  }, [partyId]);
+  }, [loadRoomData]);
 
   // 2. Kết nối Socket.IO
+  const loadedPartyId = party?.id;
   useEffect(() => {
-    if (!party) return;
+    if (!loadedPartyId) return;
 
     const socket = getPartySocket();
 
-    // Join room — danh tính do backend lấy từ access token của socket.
-    socket.emit("join-party", { partyId });
+    // Join lại sau mỗi lần Socket.IO reconnect vì room socket không được giữ qua reconnect.
+    const joinSocketRoom = () => socket.emit("join-party", { partyId });
+    socket.on("connect", joinSocketRoom);
+    if (socket.connected) joinSocketRoom();
 
     // Lắng nghe sự kiện đồng bộ video từ Host
     const handlePlaybackSync = ({ currentPosition, isPlaying, updatedBy }) => {
@@ -126,17 +133,57 @@ export default function PartyRoom() {
     };
 
     // Người rời phòng
-    const handlePartyLeft = ({ userId, username }) => {
+    const handlePartyLeft = ({ userId, username, message, hostTransferred }) => {
       setParticipants((prev) => prev.filter((p) => p.user_id !== userId));
+      if (hostTransferred) return;
       setChats((prev) => [
         ...prev,
         {
           id: Date.now(),
           is_system_message: 1,
-          message: `${username || "Thành viên"} đã rời phòng.`,
+          message: message || `${username || "Thành viên"} đã rời phòng.`,
           created_at: new Date().toISOString(),
         },
       ]);
+    };
+
+    // Host rời phòng: backend chọn thành viên có thời gian tham gia sớm nhất còn lại.
+    const handleHostChanged = ({
+      previousHostId,
+      newHostId,
+      newHostName,
+      newHostAvatarUrl,
+      message,
+    }) => {
+      setParticipants((prev) => prev.map((participant) => {
+        if (participant.user_id === newHostId) {
+          return {
+            ...participant,
+            role: "host",
+            can_control_playback: 1,
+            username: newHostName || participant.username,
+            avatar_url: newHostAvatarUrl || participant.avatar_url,
+          };
+        }
+        if (participant.user_id === previousHostId && participant.role === "host") {
+          return { ...participant, role: "participant", can_control_playback: 0 };
+        }
+        return participant;
+      }));
+      setParty((prev) => prev ? {
+        ...prev,
+        host_id: newHostId,
+        host_name: newHostName || prev.host_name,
+        host_avatar: newHostAvatarUrl || prev.host_avatar,
+      } : prev);
+      if (message) {
+        setChats((prev) => [...prev, {
+          id: `host-${Date.now()}`,
+          is_system_message: 1,
+          message,
+          created_at: new Date().toISOString(),
+        }]);
+      }
     };
 
     // Quyền thành viên thay đổi (mute/kick/promote)
@@ -170,19 +217,22 @@ export default function PartyRoom() {
     socket.on("new-chat", handleNewChat);
     socket.on("party-joined", handlePartyJoined);
     socket.on("party-left", handlePartyLeft);
+    socket.on("host-changed", handleHostChanged);
     socket.on("participant-updated", handleParticipantUpdated);
     socket.on("party-ended", handlePartyEnded);
 
     return () => {
+      socket.off("connect", joinSocketRoom);
       socket.off("playback-sync", handlePlaybackSync);
       socket.off("new-chat", handleNewChat);
       socket.off("party-joined", handlePartyJoined);
       socket.off("party-left", handlePartyLeft);
+      socket.off("host-changed", handleHostChanged);
       socket.off("participant-updated", handleParticipantUpdated);
       socket.off("party-ended", handlePartyEnded);
       socket.emit("leave-party", { partyId });
     };
-  }, [partyId, party?.id]);
+  }, [currentUserId, loadedPartyId, navigate, partyId]);
 
   // Phân quyền người dùng hiện tại
   const myParticipant = participants.find((p) => p.user_id === currentUserId);
@@ -257,7 +307,7 @@ export default function PartyRoom() {
 
   // Rời phòng
   const handleLeaveParty = async () => {
-    if (isHost && !confirm("Bạn là Host. Rời phòng sẽ KẾT THÚC phòng xem đối với mọi người. Bạn có chắc không?")) {
+    if (isHost && !confirm("Bạn là Host. Khi rời phòng, thành viên tham gia sớm nhất còn lại sẽ tiếp quản vai trò Host. Bạn có chắc không?")) {
       return;
     }
     try {
@@ -407,6 +457,8 @@ export default function PartyRoom() {
               </div>
             )}
           </div>
+
+          <PartyMediaPanel {...partyMedia} />
 
           {/* Quick Playback Bar */}
           <div className="p-4 rounded-2xl glass-strong border border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs">

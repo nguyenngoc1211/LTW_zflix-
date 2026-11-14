@@ -2,6 +2,10 @@ import jwt from "jsonwebtoken";
 import { securityConfig } from "../../config/security.config.js";
 import { pool } from "../../core/database/pool.js";
 import { mongoCollection, nextNumericId } from "../../core/database/mongo.js";
+import {
+  emitWatchPartyLeave,
+  leaveWatchParty,
+} from "./watch-party.membership.js";
 
 const useMongo = () => process.env.DATA_STORE === "mongodb";
 const mongoParticipant = async (partyId, userId) =>
@@ -26,6 +30,10 @@ const insertMongoChat = async (partyId, userId, message, timestamp = 0, system =
  *   chat-message     { partyId, message, timestampInVideo }
  *   sync-playback    { partyId, currentPosition, isPlaying }
  *   request-sync     { partyId }
+ *   webrtc-offer     { partyId, to, description }
+ *   webrtc-answer    { partyId, to, description }
+ *   webrtc-ice-candidate { partyId, to, candidate }
+ *   media-state      { partyId, audioEnabled, videoEnabled }
  *
  * Events (Server → Client):
  *   party-joined     { userId, username, avatarUrl, role }
@@ -34,6 +42,8 @@ const insertMongoChat = async (partyId, userId, message, timestamp = 0, system =
  *   playback-sync    { currentPosition, isPlaying, updatedBy }
  *   party-ended      { partyId }
  *   participant-updated { userId, action, ... }
+ *   host-changed     { previousHostId, newHostId, newHostName }
+ *   media-peers / media-peer-joined / media-peer-left
  *   error            { message }
  */
 
@@ -88,6 +98,99 @@ const authenticateSocket = async (socket, next) => {
 
 export const registerWatchPartySocket = (io) => {
   const partyNamespace = io.of("/watch-party");
+  const pendingDisconnects = new Map();
+  const disconnectGraceMs = 5000;
+
+  const membershipKey = (partyId, userId) => `${partyId}:${userId}`;
+
+  const cancelPendingDisconnect = (partyId, userId) => {
+    const key = membershipKey(partyId, userId);
+    const timer = pendingDisconnects.get(key);
+    if (timer) clearTimeout(timer);
+    pendingDisconnects.delete(key);
+  };
+
+  const peerDetails = (peer) => ({
+    peerId: peer.id,
+    userId: peer.data.userId,
+    username: peer.data.username,
+    avatarUrl: peer.data.avatarUrl,
+    audioEnabled: Boolean(peer.data.mediaState?.audioEnabled),
+    videoEnabled: Boolean(peer.data.mediaState?.videoEnabled),
+  });
+
+  const isJoinedSocket = (socket, partyId) => (
+    Boolean(partyId)
+    && socket.data.partyId === partyId
+    && socket.rooms.has(partyId)
+  );
+
+  const consumeSignalBudget = (socket) => {
+    const now = Date.now();
+    const current = socket.data.webRtcSignalBudget || { startedAt: now, count: 0 };
+    if (now - current.startedAt >= 10_000) {
+      current.startedAt = now;
+      current.count = 0;
+    }
+    current.count += 1;
+    socket.data.webRtcSignalBudget = current;
+    return current.count <= 200;
+  };
+
+  const relayWebRtcSignal = (socket, eventName, payload = {}) => {
+    const { partyId, to } = payload;
+    const isDescription = eventName === "webrtc-offer" || eventName === "webrtc-answer";
+    const validDescription = !isDescription || (
+      payload.description?.type === (eventName === "webrtc-offer" ? "offer" : "answer")
+      && typeof payload.description?.sdp === "string"
+      && payload.description.sdp.length <= 200_000
+    );
+    const validCandidate = eventName !== "webrtc-ice-candidate" || (
+      typeof payload.candidate?.candidate === "string"
+      && payload.candidate.candidate.length <= 8_192
+    );
+    if (!consumeSignalBudget(socket) || !validDescription || !validCandidate
+        || !isJoinedSocket(socket, partyId) || typeof to !== "string" || to === socket.id) {
+      return socket.emit("error", { message: "Invalid WebRTC signal" });
+    }
+
+    const target = partyNamespace.sockets.get(to);
+    if (!target || !isJoinedSocket(target, partyId)) {
+      return socket.emit("media-peer-left", { peerId: to });
+    }
+
+    target.emit(eventName, {
+      from: socket.id,
+      userId: socket.data.userId,
+      username: socket.data.username,
+      description: payload.description,
+      candidate: payload.candidate,
+    });
+  };
+
+  const finishMembershipLeave = async ({ partyId, userId, username, peerId }) => {
+    try {
+      const result = await leaveWatchParty({ partyId, userId, username });
+      emitWatchPartyLeave(partyNamespace, result, peerId);
+    } catch (error) {
+      console.error("[WatchParty] leave error:", error);
+    }
+  };
+
+  const scheduleDisconnectLeave = ({ partyId, userId, username, peerId }) => {
+    const key = membershipKey(partyId, userId);
+    cancelPendingDisconnect(partyId, userId);
+    const timer = setTimeout(async () => {
+      pendingDisconnects.delete(key);
+      const roomSockets = await partyNamespace.in(partyId).fetchSockets();
+      if (roomSockets.some((peer) => peer.data.userId === userId)) {
+        partyNamespace.to(partyId).emit("media-peer-left", { peerId, userId });
+        return;
+      }
+      await finishMembershipLeave({ partyId, userId, username, peerId });
+    }, disconnectGraceMs);
+    pendingDisconnects.set(key, timer);
+  };
 
   partyNamespace.use(authenticateSocket);
 
@@ -113,11 +216,28 @@ export const registerWatchPartySocket = (io) => {
           const part = await mongoParticipant(partyId, userId);
           if (!part) return socket.emit("error", { message: "Not in this party" });
           memberRole = part.role;
+        } else {
+          const [members] = await pool.execute(
+            "SELECT role FROM watch_party_participants WHERE party_id = ? AND user_id = ? LIMIT 1",
+            [partyId, userId],
+          );
+          if (!members.length) return socket.emit("error", { message: "Not in this party" });
+          memberRole = members[0].role;
         }
+
+        cancelPendingDisconnect(partyId, userId);
+        const existingPeers = (await partyNamespace.in(partyId).fetchSockets())
+          .filter((peer) => peer.id !== socket.id)
+          .map(peerDetails);
 
         // Join socket room
         socket.join(partyId);
         socket.data.partyId = partyId;
+        socket.data.role = memberRole;
+        socket.data.mediaState ||= { audioEnabled: false, videoEnabled: false };
+
+        socket.emit("media-peers", { peers: existingPeers });
+        socket.to(partyId).emit("media-peer-joined", peerDetails(socket));
 
         // Thông báo cho những người khác trong phòng
         socket.to(partyId).emit("party-joined", {
@@ -148,14 +268,50 @@ export const registerWatchPartySocket = (io) => {
     // -------------------------------------------------------------------
     // LEAVE PARTY
     // -------------------------------------------------------------------
-    socket.on("leave-party", ({ partyId }) => {
-      if (!partyId) return;
-      socket.leave(partyId);
-      socket.to(partyId).emit("party-left", {
+    socket.on("leave-party", async ({ partyId } = {}) => {
+      if (!isJoinedSocket(socket, partyId)) return;
+      const details = {
+        partyId,
         userId: socket.data.userId,
         username: socket.data.username,
+        peerId: socket.id,
+      };
+      cancelPendingDisconnect(partyId, socket.data.userId);
+      socket.leave(partyId);
+      socket.data.partyId = null;
+      partyNamespace.to(partyId).emit("media-peer-left", {
+        peerId: socket.id,
+        userId: socket.data.userId,
       });
-      console.log(`[WatchParty] ${socket.data.username} left room ${partyId}`);
+      // Grace period tránh React StrictMode/reconnect tạm thời làm mất membership.
+      // Nút "Rời phòng" dùng REST API nên vẫn chuyển host ngay lập tức.
+      scheduleDisconnectLeave(details);
+      console.log(`[WatchParty] ${socket.data.username} left socket room ${partyId}`);
+    });
+
+    // -------------------------------------------------------------------
+    // WEBRTC SIGNALING (real-time voice & camera)
+    // -------------------------------------------------------------------
+    socket.on("webrtc-offer", (payload) => relayWebRtcSignal(socket, "webrtc-offer", payload));
+    socket.on("webrtc-answer", (payload) => relayWebRtcSignal(socket, "webrtc-answer", payload));
+    socket.on("webrtc-ice-candidate", (payload) => {
+      if (!payload?.candidate) return;
+      relayWebRtcSignal(socket, "webrtc-ice-candidate", payload);
+    });
+
+    socket.on("media-state", ({ partyId, audioEnabled, videoEnabled } = {}) => {
+      if (!isJoinedSocket(socket, partyId)) {
+        return socket.emit("error", { message: "Not in this party" });
+      }
+      socket.data.mediaState = {
+        audioEnabled: Boolean(audioEnabled),
+        videoEnabled: Boolean(videoEnabled),
+      };
+      socket.to(partyId).emit("media-state", {
+        peerId: socket.id,
+        userId: socket.data.userId,
+        ...socket.data.mediaState,
+      });
     });
 
     // -------------------------------------------------------------------
@@ -334,6 +490,11 @@ export const registerWatchPartySocket = (io) => {
         for (const s of sockets) {
           if (s.data.userId === Number(targetUserId)) {
             s.leave(partyId);
+            s.data.partyId = null;
+            partyNamespace.to(partyId).emit("media-peer-left", {
+              peerId: s.id,
+              userId: s.data.userId,
+            });
             s.emit("party-ended", { partyId, reason: "You have been kicked from the party" });
           }
         }
@@ -388,7 +549,12 @@ export const registerWatchPartySocket = (io) => {
     socket.on("disconnect", () => {
       const { partyId, username, userId } = socket.data;
       if (partyId) {
-        socket.to(partyId).emit("party-left", { userId, username });
+        scheduleDisconnectLeave({
+          partyId,
+          username,
+          userId,
+          peerId: socket.id,
+        });
       }
       console.log(`[WatchParty] Socket disconnected: ${socket.id} (${username || "unknown"})`);
     });

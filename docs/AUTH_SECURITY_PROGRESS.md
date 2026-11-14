@@ -439,6 +439,13 @@ Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạ
 - Thêm vote và báo cáo bình luận phim yêu cầu phiên đăng nhập hiện có; vote dùng transaction và khóa xác định theo bình luận/người dùng, báo cáo giới hạn tần suất và chặn trùng. Không thay đổi xác thực, session hay quyền tài khoản.
 - Integration test trên `community_test_schema_20261101` xác nhận thiếu token trả 401, vote/chuyển/bỏ vote, báo cáo trùng bị từ chối và không sửa được bình luận người khác. Chưa kiểm thử đầy đủ concurrency, moderation hoặc ảnh đính kèm; không chạy kiểm thử ghi trên database `Zflix`.
 
+### Watch Party: chuyển Host và WebRTC voice/camera (2026-11-09)
+
+- Khi Host rời phòng, backend xóa membership của Host cũ, chọn thành viên còn lại có `joined_at` sớm nhất (tie-break bằng `user_id`), cập nhật đồng bộ `watch_parties.host_id`, role `host` và quyền playback. Luồng này lặp lại cho các Host kế tiếp; chỉ kết thúc phòng khi không còn thành viên.
+- REST `leave` và Socket.IO dùng chung business function. MongoDB dùng transaction; MySQL dùng transaction + row lock. Socket disconnect có grace period 5 giây để reconnect/React StrictMode không làm chuyển Host nhầm.
+- Signaling WebRTC chỉ chuyển tiếp offer/answer/ICE tới một socket đích đang ở cùng party room, có giới hạn kích thước payload và 200 signal/10 giây/socket. Danh tính vẫn lấy từ socket session đã xác thực; payload client không được dùng làm actor identity. REST leave loại mọi socket của user khỏi room. Voice/camera là WebRTC peer-to-peer; Socket.IO không mang luồng media.
+- Unit test mới kiểm tra thứ tự Host kế nhiệm, loại Host đang rời và tie-break xác định. Toàn bộ backend unit test, frontend build và lint các file Watch Party đã chạy đạt; chưa chạy browser test nhiều thiết bị/NAT thật. Production nên cấu hình TURN qua `VITE_WEBRTC_ICE_SERVERS`.
+
 ### Phân loại hỏi đáp cảnh phim (2026-11-01)
 
 - Tách namespace API câu hỏi cảnh phim và bài cộng đồng theo `content_type`; các thao tác theo ID kiểm tra loại trước khi dùng quyền hiện có. Báo cáo câu hỏi và câu trả lời yêu cầu đăng nhập, kiểm tra bài đang hiển thị, giới hạn tần suất và chống trùng.

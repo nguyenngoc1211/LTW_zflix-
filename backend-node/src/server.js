@@ -58,7 +58,8 @@ const io = new Server(httpServer, {
 });
 
 // Đăng ký Watch Party socket handler
-registerWatchPartySocket(io);
+const watchPartyNamespace = registerWatchPartySocket(io);
+app.set("watchPartyNamespace", watchPartyNamespace);
 
 httpServer.listen(PORT, process.env.HOST || undefined, () => {
   console.log(`Server running on port ${PORT}`);
