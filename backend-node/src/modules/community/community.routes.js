@@ -132,7 +132,7 @@ communityRouter.get("/productions/:productionId/ratings", asyncHandler(async (re
       .find({ production_id: productionId }).sort({ updated_at: -1 }).toArray();
     const users = await (await mongoCollection("users"))
       .find({ id: { $in: ratings.map((rating) => rating.user_id) } },
-        { projection: { id: 1, username: 1, avatar_url: 1 } }).toArray();
+        { projection: { id: 1, username: 1, avatar_url: 1, vip_expires_at: 1 } }).toArray();
     const byId = new Map(users.map((user) => [user.id, user]));
     const items = ratings.flatMap((rating) => {
       const user = byId.get(rating.user_id);
@@ -140,7 +140,7 @@ communityRouter.get("/productions/:productionId/ratings", asyncHandler(async (re
         review_content: rating.review_content, likes_count: rating.likes_count,
         is_edited: rating.is_edited, is_toxic: rating.is_toxic,
         created_at: rating.created_at, updated_at: rating.updated_at,
-        user_id: user.id, username: user.username, avatar_url: user.avatar_url }] : [];
+        user_id: user.id, username: user.username, avatar_url: user.avatar_url, vip_expires_at: user.vip_expires_at }] : [];
     });
     return res.json({ items });
   }
@@ -242,7 +242,7 @@ communityRouter.get("/productions/:productionId/comments", optionalAuth, asyncHa
         { $unwind: '$author' },
         { $sort: { created_at: -1, id: -1 } },
         { $skip: (page - 1) * limit }, { $limit: limit + 1 },
-        { $project: { _id: 0, id: 1, content: 1, parent_id: 1, likes_count: 1, score: 1, is_spoiler: 1, is_toxic: 1, created_at: 1, updated_at: 1, user_id: 1, username: '$author.username', avatar_url: '$author.avatar_url' } },
+        { $project: { _id: 0, id: 1, content: 1, parent_id: 1, likes_count: 1, score: 1, is_spoiler: 1, is_toxic: 1, created_at: 1, updated_at: 1, user_id: 1, username: '$author.username', avatar_url: '$author.avatar_url', vip_expires_at: '$author.vip_expires_at' } },
       ]).toArray();
       const visible = rows.slice(0, limit);
       const counts = await (await mongoCollection('comments')).aggregate([
@@ -263,14 +263,14 @@ communityRouter.get("/productions/:productionId/comments", optionalAuth, asyncHa
       .find({ production_id: productionId, status: "active" }).sort({ created_at: -1 }).toArray();
     const users = await (await mongoCollection("users"))
       .find({ id: { $in: comments.map((comment) => comment.user_id) } },
-        { projection: { id: 1, username: 1, avatar_url: 1 } }).toArray();
+        { projection: { id: 1, username: 1, avatar_url: 1, vip_expires_at: 1 } }).toArray();
     const byId = new Map(users.map((user) => [user.id, user]));
     const items = comments.flatMap((comment) => {
       const user = byId.get(comment.user_id);
       return user ? [{ id: comment.id, content: comment.content, parent_id: comment.parent_id,
         likes_count: comment.likes_count, is_spoiler: comment.is_spoiler, is_toxic: comment.is_toxic,
         created_at: comment.created_at, updated_at: comment.updated_at,
-        user_id: user.id, username: user.username, avatar_url: user.avatar_url }] : [];
+        user_id: user.id, username: user.username, avatar_url: user.avatar_url, vip_expires_at: user.vip_expires_at }] : [];
     });
     return res.json({ items });
   }

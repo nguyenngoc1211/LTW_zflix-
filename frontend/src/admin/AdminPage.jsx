@@ -76,7 +76,7 @@ MemoizedHeader.displayName = "MemoizedHeader";
 
 const MemoizedContent = memo(() => {
   return (
-    <Content className="m-4 p-6 bg-white rounded-lg shadow-inner">
+    <Content className="m-2 min-w-0 rounded-lg bg-white p-3 shadow-inner md:m-4 md:p-6">
       <Outlet />
     </Content>
   );
@@ -84,7 +84,7 @@ const MemoizedContent = memo(() => {
 MemoizedContent.displayName = "MemoizedContent";
 
 const AdminPage = () => {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 768);
   const [accessStatus, setAccessStatus] = useState("checking");
   const location = useLocation();
   const navigate = useNavigate();
@@ -115,6 +115,7 @@ const AdminPage = () => {
       community: "community",
       parties: "parties",
       subscriptions: "subscriptions",
+      "vip-payments": "vip-payments",
       views: "views",
       shopping: "shopping",
       security: "security",
@@ -161,6 +162,7 @@ const AdminPage = () => {
       key: "views",
       icon: <BarChartOutlined />,
     },
+    { label: <Link to="/admin/vip-payments">Duyệt thanh toán VIP</Link>, key: "vip-payments", icon: <DollarOutlined /> },
     ...(user?.role === "admin"
       ? [
           {
@@ -216,7 +218,7 @@ const AdminPage = () => {
       <Sider
         width={230}
         trigger={null}
-        collapsedWidth={80}
+        collapsedWidth={64}
         collapsed={collapsed}
         theme="dark"
         className="shadow-sm transition-all duration-300 ease-in-out transform-gpu will-change-transform"
@@ -232,7 +234,7 @@ const AdminPage = () => {
         />
       </Sider>
 
-      <Layout className="!bg-gray-200 transition-all duration-300 ease-in-out">
+      <Layout className="min-w-0 !bg-gray-200 transition-all duration-300 ease-in-out">
         <MemoizedHeader
           collapsed={collapsed}
           onToggle={handleToggle}

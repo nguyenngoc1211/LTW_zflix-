@@ -17,6 +17,7 @@ import streamingContentRouter from "./modules/streaming/route/index.js";
 import { r2ProxyRouter } from "./modules/streaming/r2-proxy.routes.js";
 import { watchPartyRouter } from "./modules/watch-party/watch-party.routes.js";
 import { adminRouter } from "./modules/admin/admin.routes.js";
+import { vipPaymentRouter, vipPaymentAdminRouter } from "./modules/payments/vip-payment.routes.js";
 import { adminContentRouter } from "./modules/admin/admin.content.routes.js";
 import { adminModerationRouter } from "./modules/admin/admin.moderation.routes.js";
 import { adminSystemRouter } from "./modules/admin/admin.system.routes.js";
@@ -57,6 +58,8 @@ export const createApp = () => {
   });
 
   app.use("/api/v1/auth", authRouter);
+  app.use("/api/v1/vip", vipPaymentRouter);
+  app.use("/api/v1/admin/vip-payments", vipPaymentAdminRouter);
   app.use("/api/v1", discoveryRouter);
   app.use("/api/v1", communityRouter);
   app.use("/api/v1/community/posts", postsRouter);

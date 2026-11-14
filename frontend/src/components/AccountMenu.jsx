@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 import UserAvatar from './UserAvatar.jsx';
+import VipIdentity from './VipIdentity.jsx';
+import { vipAvatarClass } from './vipIdentity.js';
 
 export default function AccountMenu() {
   const { user, logout } = useAuth();
@@ -37,12 +39,12 @@ export default function AccountMenu() {
   if (!user) return null;
   return <div className="account-menu" ref={root} onKeyDown={onKeys}>
     <button ref={trigger} type="button" className="account-trigger" aria-expanded={open} aria-controls="account-dropdown" aria-label={`Tài khoản ${user.username}`} onClick={() => setOpen((value) => !value)}>
-      <UserAvatar src={user.avatarUrl} className="account-avatar" />
-      <span className="account-username">{user.username}</span>
+      <UserAvatar src={user.avatarUrl} className={`account-avatar ${vipAvatarClass(user.vipExpiresAt)}`} />
+      <VipIdentity username={user.username} vipExpiresAt={user.vipExpiresAt} className="account-username" />
       <DownOutlined className="account-chevron" aria-hidden="true" />
     </button>
     {open && <div id="account-dropdown" className="account-dropdown">
-      <div className="account-summary"><UserAvatar src={user.avatarUrl} className="account-avatar" /><span className="account-summary-name">{user.username}</span></div>
+      <div className="account-summary"><UserAvatar src={user.avatarUrl} className={`account-avatar ${vipAvatarClass(user.vipExpiresAt)}`} /><VipIdentity username={user.username} vipExpiresAt={user.vipExpiresAt} className="account-summary-name" /></div>
       <Link data-account-action to="/settings?tab=profile" onClick={() => setOpen(false)}>Cài đặt tài khoản</Link>
       <button data-account-action type="button" onClick={signOut}>Đăng xuất</button>
     </div>}

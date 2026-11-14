@@ -85,7 +85,7 @@ export default function MovieCommentItem({ comment, productionId, episodeId, dep
       if (expanded && page === 1) await load(1); else { setPage(1); setExpanded(true); }
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
-  return <CommentFrame avatar={comment.avatar_url} username={comment.username || `Thành viên #${comment.user_id}`} date={comment.created_at}>
+  return <CommentFrame avatar={comment.avatar_url} username={comment.username || `Thành viên #${comment.user_id}`} vipExpiresAt={comment.vip_expires_at} date={comment.created_at} profileId={comment.user_id}>
       {removed ? <p className="movie-comment-content">[Đã xóa]</p> : editing ? <form onSubmit={saveEdit} className="movie-reply-form"><textarea value={content} onChange={(event) => setContent(event.target.value)} required maxLength={3000} /><div className="movie-comment-actions"><button type="submit">Lưu</button><button type="button" onClick={() => { setEditing(false); setContent(comment.content); }}>Hủy</button></div></form> : <SpoilerContent spoiler={spoiler}><ToxicComment content={content} isToxic={Boolean(Number(comment.is_toxic))} className="movie-comment-content"><p><MentionText text={content} /></p></ToxicComment></SpoilerContent>}
       {!removed && <CommentActions user={user} upvotes={upvotes} downvotes={downvotes} vote={vote} voteBusy={voteBusy} onVote={saveVote} canReply={depth < 3} onReply={() => setReplying((value) => !value)} menuItems={menuItems}>
         {(count > 0 || expanded) && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Ẩn trả lời' : `Trả lời (${count})`}</button>}

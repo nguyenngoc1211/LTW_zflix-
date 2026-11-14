@@ -82,7 +82,7 @@ function PostComment({ item, postId, base, depth, user, reload, onChanged, hideS
   };
   const active = item.status === 'active';
   const own = active && user?.id === item.author_id;
-  return <div id={`post-comment-${item.id}`} className={targetId === item.id ? 'notification-target' : ''}><CommentFrame avatar={item.author?.avatar_url} username={item.author?.username || `Thành viên #${item.author_id}`} date={item.created_at}>
+  return <div id={`post-comment-${item.id}`} className={targetId === item.id ? 'notification-target' : ''}><CommentFrame avatar={item.author?.avatar_url} username={item.author?.username || `Thành viên #${item.author_id}`} vipExpiresAt={item.author?.vip_expires_at} date={item.created_at} profileId={active ? item.author?.id : null}>
     {editing ? <CommentForm onSubmit={edit} text={editText} onText={setEditText} busy={busy} onCancel={() => { setEditing(false); setEditText(item.content); setEditSpoiler(Boolean(item.is_spoiler)); }} label="Chỉnh sửa bình luận" /> : <SpoilerContent spoiler={active && item.is_spoiler}><p className="movie-comment-content"><MentionText text={item.content} /></p></SpoilerContent>}
     <CommentActions user={active ? user : null} upvotes={upvotes} downvotes={downvotes} vote={vote} voteBusy={busy} onVote={saveVote} canReply={depth < 3} onReply={() => setExpanded(true)} menuItems={own ? [{ label: 'Sửa', action: () => setEditing(true) }, { label: 'Xóa', action: remove }] : scene ? [{ label: 'Báo xấu', action: () => setReporting(true) }] : []}>
       {depth < 3 && (item.reply_count > 0 || expanded) && <button type="button" onClick={() => setExpanded(!expanded)}>{expanded ? 'Ẩn trả lời' : `Trả lời (${item.reply_count || 0})`}</button>}

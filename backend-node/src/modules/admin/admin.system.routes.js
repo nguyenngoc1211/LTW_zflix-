@@ -133,7 +133,7 @@ adminSystemRouter.get(
   asyncHandler(async (req, res) => {
     if (useMongo()) {
       const [transactions, subscriptions, plans, users] = await Promise.all([
-        (await mongoCollection("transactions")).find({ status: "success",
+        (await mongoCollection("transactions")).find({ status: { $in: ["success", "PAID"] },
           vip_end_date: { $ne: null } }).toArray(),
         (await mongoCollection("user_subscriptions")).find({}).sort({ created_at: -1 }).limit(30).toArray(),
         (await mongoCollection("subscription_plans")).find({}).sort({ display_order: 1 }).toArray(),
@@ -158,7 +158,8 @@ adminSystemRouter.get(
             username: user.username, email: user.email, vip_expires_at: user.vip_expires_at,
             plan_name: plan.name, duration_days: plan.duration_days }] : [];
         }), plans: plans.map((row) => ({ id: row.id, name: row.name,
-          duration_days: row.duration_days, price: numeric(row.price),
+          duration_days: row.duration_days, billing_months: row.billing_months,
+          price: numeric(row.price),
           discount_price: numeric(row.discount_price), is_active: row.is_active })) });
     }
     const [monthly] = await pool.execute(
@@ -194,6 +195,8 @@ adminSystemRouter.post(
     const userId = parsePositiveInt(req.params.id, "user id");
     const days = Math.min(3650, Math.max(1, Number(req.body?.days) || 30));
     const planId = Number(req.body?.planId) || null;
+    const reason = String(req.body?.reason || "").trim();
+    if (reason.length < 5 || reason.length > 500) return res.status(400).json({ message: "Lý do cấp VIP cần 5–500 ký tự" });
 
     if (useMongo()) {
       await ensureNotificationIndexes();
@@ -208,13 +211,15 @@ adminSystemRouter.post(
         const plan = planId ? await (await mongoCollection("subscription_plans"))
           .findOne({ id: planId }, { session }) : null;
         const planName = plan?.name || `Gói VIP ${days} ngày (admin cấp)`;
-        const amount = numeric(plan?.discount_price);
+        const amount = 0;
         await users.updateOne({ id: userId }, { $set: { vip_expires_at: endDate } }, { session });
         const transactionId = await nextNumericId("transactions");
         await (await mongoCollection("transactions")).insertOne({ _id: transactionId,
           id: transactionId, transaction_code: `ADMIN-${Date.now().toString(36).toUpperCase()}-${transactionId}`,
           user_id: userId, plan_id: planId, amount, discount_amount: 0,
-          final_amount: amount, status: "success", payment_method: "credit_card",
+          final_amount: amount, status: "success", payment_method: "manual_grant",
+          grant_reason: reason, reviewed_by: req.user.id, reviewed_at: now,
+          history: [{ action: "MANUAL_GRANT", actor_id: req.user.id, at: now, reason }],
           vip_start_date: base, vip_end_date: endDate, created_at: now }, { session });
         const subscriptionId = await nextNumericId("user_subscriptions");
         await (await mongoCollection("user_subscriptions")).insertOne({ _id: subscriptionId,
@@ -246,7 +251,7 @@ adminSystemRouter.post(
     let amount = 0;
     if (planId) {
       const [plans] = await pool.execute("SELECT id, name, duration_days, discount_price FROM subscription_plans WHERE id = ? LIMIT 1", [planId]);
-      if (plans.length) { planName = plans[0].name; amount = Number(plans[0].discount_price); }
+      if (plans.length) { planName = plans[0].name; }
     }
 
     const connection = await pool.getConnection();
@@ -256,7 +261,7 @@ adminSystemRouter.post(
       const transactionCode = `ADMIN-${Date.now().toString(36).toUpperCase()}`;
       const [txResult] = await connection.execute(
         `INSERT INTO transactions (transaction_code, user_id, plan_id, amount, discount_amount, final_amount, status, payment_method, vip_start_date, vip_end_date)
-         VALUES (?, ?, ?, ?, 0, ?, 'success', 'credit_card', ?, ?)`,
+         VALUES (?, ?, ?, ?, 0, ?, 'success', 'manual_grant', ?, ?)`,
         [transactionCode, userId, planId, amount, amount, base, endDate],
       );
       await connection.execute(
@@ -268,6 +273,10 @@ adminSystemRouter.post(
         `INSERT INTO notifications (user_id, title, message, type, entity_type, entity_id)
          VALUES (?, 'Quyền VIP đã được kích hoạt', ?, 'vip', 'user', ?)`,
         [userId, `Tài khoản của bạn được kích hoạt ${planName}, hiệu lực đến ${endDate.toLocaleDateString("vi-VN")}.`, userId],
+      );
+      await connection.execute(
+        "INSERT INTO security_events (event, user_id, reason, factor) VALUES ('vip_manual_grant', ?, ?, 'admin')",
+        [req.user.id, `target=${userId}; days=${days}; reason=${reason}`],
       );
       await connection.commit();
     } catch (error) {

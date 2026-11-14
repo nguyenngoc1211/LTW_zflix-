@@ -4,6 +4,7 @@ import { message } from "antd";
 import ToxicComment from "../community/ToxicComment.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { apiRequest } from "../../services/api.js";
+import VipIdentity from '../VipIdentity.jsx';
 
 const formatTime = (value) => {
   const date = new Date(value);
@@ -249,7 +250,7 @@ const RatingSection = ({ productionId, onSaved }) => {
                 </div>
               )}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-gray-200 font-bold text-sm">{item.username}</span>
+                <VipIdentity username={item.username} vipExpiresAt={item.vip_expires_at} className="text-sm" />
                 <span className="text-amber-400 text-sm leading-none">
                   {"★".repeat(item.rating)}
                 </span>

@@ -29,6 +29,10 @@ services:
       DATA_STORE: mongodb
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI must be set}
       MONGODB_DB_NAME: ${MONGODB_DB_NAME:?MONGODB_DB_NAME must be set}
+      VIP_BANK_BIN: ${VIP_BANK_BIN:-}
+      VIP_BANK_ACCOUNT: ${VIP_BANK_ACCOUNT:-}
+      VIP_BANK_NAME: ${VIP_BANK_NAME:-}
+      VIP_BANK_ACCOUNT_NAME: ${VIP_BANK_ACCOUNT_NAME:-}
       ELASTICSEARCH_URL: http://elasticsearch:9200
       PORT: 3000
       NODE_ENV: ${NODE_ENV:-development}

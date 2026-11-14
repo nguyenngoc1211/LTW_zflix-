@@ -20,7 +20,7 @@ export const presentMany = async (posts, userId) => {
   if (!posts.length) return [];
   const authorIds = [...new Set(posts.map((post) => post.author_id))];
   const [authors, saved, votes, totals, productions, pollVotes, viewerPollVotes] = await Promise.all([
-    (await mongoCollection('users')).find({ id: { $in: authorIds } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1 } }).toArray(),
+    (await mongoCollection('users')).find({ id: { $in: authorIds } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1, vip_expires_at: 1 } }).toArray(),
     userId ? (await mongoCollection('community_saved_posts')).find({ user_id: userId, post_id: { $in: posts.map((post) => post._id) } }, { projection: { post_id: 1 } }).toArray() : [],
     userId ? (await mongoCollection('community_post_votes')).find({ user_id: userId, post_id: { $in: posts.map((post) => post._id) } }, { projection: { post_id: 1, value: 1 } }).toArray() : [],
     (await mongoCollection('community_post_votes')).aggregate([{ $match: { post_id: { $in: posts.map((post) => post._id) } } }, { $group: { _id: '$post_id', upvotes: { $sum: { $cond: [{ $eq: ['$value', 1] }, 1, 0] } }, downvotes: { $sum: { $cond: [{ $eq: ['$value', -1] }, 1, 0] } } } }]).toArray(),
@@ -358,7 +358,7 @@ postsRouter.get('/:id/comments', optionalAuth, asyncHandler(async (req, res) => 
   if (page > 1000) throw bad('Pagination exceeds limit');
   const items = await (await mongoCollection('community_post_comments')).find({ post_id: postId, parent_id: parent, status: { $in: ['active', 'deleted'] } }).sort({ created_at: 1, _id: 1 }).skip((page - 1) * 20).limit(21).toArray();
   const visible = items.slice(0, 20);
-  const authors = await (await mongoCollection('users')).find({ id: { $in: [...new Set(visible.map((item) => item.author_id))] } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1 } }).toArray();
+  const authors = await (await mongoCollection('users')).find({ id: { $in: [...new Set(visible.map((item) => item.author_id))] } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1, vip_expires_at: 1 } }).toArray();
   const byId = new Map(authors.map((author) => [author.id, author]));
   const counts = await (await mongoCollection('community_post_comments')).aggregate([
     { $match: { post_id: postId, parent_id: { $in: visible.map((item) => item._id) }, status: { $in: ['active', 'deleted'] } } },

@@ -10,7 +10,7 @@ import { presentMany, visibleTo } from './posts.routes.js';
 export const profilesRouter = Router();
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 const contentType = { $in: ['community_post', null] };
-const userFields = { _id: 0, id: 1, username: 1, avatar_url: 1, display_name: 1, bio: 1, created_at: 1, status: 1 };
+const userFields = { _id: 0, id: 1, username: 1, avatar_url: 1, display_name: 1, bio: 1, created_at: 1, status: 1, vip_expires_at: 1 };
 const followLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 40, standardHeaders: 'draft-7', legacyHeaders: false });
 let followIndexes;
 const ensureFollowIndexes = () => followIndexes ||= (async () => {

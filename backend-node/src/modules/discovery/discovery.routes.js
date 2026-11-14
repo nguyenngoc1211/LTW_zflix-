@@ -92,6 +92,61 @@ discoveryRouter.get("/productions", asyncHandler(async (req, res) => {
   res.json({ ...result, page, limit, pages: Math.ceil(result.total / limit) });
 }));
 
+// Keep the catalog API unchanged; this endpoint ranks the banner by recorded watches.
+discoveryRouter.get("/productions/top", asyncHandler(async (req, res) => {
+  if (process.env.DATA_STORE === "mongodb") {
+    const [productions, episodes, seasons, history, links, genres] = await Promise.all([
+      (await mongoCollection("productions")).find({ type: { $in: ["movie", "series"] } }).toArray(),
+      (await mongoCollection("episodes")).find({}, { projection: { id: 1, production_id: 1 } }).toArray(),
+      (await mongoCollection("seasons")).find({}, { projection: { id: 1, series_id: 1 } }).toArray(),
+      (await mongoCollection("watch_history")).find({}, { projection: { episode_id: 1 } }).toArray(),
+      (await mongoCollection("production_genres")).find({}, { projection: { production_id: 1, genre_id: 1 } }).toArray(),
+      (await mongoCollection("genres")).find({}, { projection: { id: 1, name: 1 } }).toArray(),
+    ]);
+    const parent = new Map(seasons.map((item) => [item.id, item.series_id]));
+    const episodeProduction = new Map(episodes.map((item) => [item.id, parent.get(item.production_id) || item.production_id]));
+    const counts = new Map();
+    const episodeCounts = new Map();
+    const seasonCounts = new Map();
+    for (const item of episodes) {
+      const id = parent.get(item.production_id) || item.production_id;
+      episodeCounts.set(id, (episodeCounts.get(id) || 0) + 1);
+    }
+    for (const item of seasons) seasonCounts.set(item.series_id, (seasonCounts.get(item.series_id) || 0) + 1);
+    for (const item of history) {
+      const id = episodeProduction.get(item.episode_id);
+      if (id) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    const genreNames = new Map(genres.map((item) => [item.id, item.name]));
+    const productionGenres = new Map();
+    for (const link of links) {
+      if (!genreNames.has(link.genre_id)) continue;
+      productionGenres.set(link.production_id, [...(productionGenres.get(link.production_id) || []), genreNames.get(link.genre_id)]);
+    }
+    const items = productions.sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0)
+      || Number(b.release_year || 0) - Number(a.release_year || 0) || a.id - b.id)
+      .slice(0, 5).map((item) => ({ ...fromMongo(item), genres: productionGenres.get(item.id) || [],
+        view_count: counts.get(item.id) || 0, episode_count: episodeCounts.get(item.id) || 0,
+        season_count: seasonCounts.get(item.id) || 0 }));
+    return res.json({ items });
+  }
+  const [rows] = await pool.execute(`SELECT p.id, p.title, p.description, p.banner_url, p.poster_url,
+    p.release_year, p.type, COUNT(DISTINCT wh.user_id, wh.episode_id) AS view_count,
+    COUNT(DISTINCT e.id) AS episode_count, COUNT(DISTINCT s.id) AS season_count,
+    GROUP_CONCAT(DISTINCT g.name ORDER BY g.name SEPARATOR '||') AS genres
+    FROM productions p
+    LEFT JOIN seasons s ON s.series_id = p.id
+    LEFT JOIN episodes e ON e.production_id = p.id OR e.production_id = s.id
+    LEFT JOIN watch_history wh ON wh.episode_id = e.id
+    LEFT JOIN production_genres pg ON pg.production_id = p.id
+    LEFT JOIN genres g ON g.id = pg.genre_id
+    WHERE p.type IN ('movie', 'series') GROUP BY p.id
+    ORDER BY view_count DESC, p.release_year DESC, p.id ASC LIMIT 5`);
+  res.json({ items: rows.map((item) => ({ ...item, view_count: Number(item.view_count),
+    episode_count: Number(item.episode_count), season_count: Number(item.season_count),
+    genres: item.genres ? item.genres.split("||") : [] })) });
+}));
+
 // Autocomplete gợi ý khi chuỗi xuất hiện ở bất kỳ vị trí nào trong tên phim.
 discoveryRouter.get("/productions/suggest", asyncHandler(async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";

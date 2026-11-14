@@ -5,6 +5,38 @@ const formatNumber = (value) => new Intl.NumberFormat("vi-VN").format(Number(val
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString("vi-VN") : "—");
 const inputClass = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none";
 
+const PlanEditor = ({ plans, onSaved }) => {
+  const { apiRequest } = useAuth();
+  const [drafts, setDrafts] = useState({});
+  const [error, setError] = useState("");
+  const eligible = plans.filter((plan) => [1, 12].includes(Number(plan.billing_months)) ||
+    [30, 365, 366].includes(Number(plan.duration_days)));
+  const update = (id, field, value) => setDrafts((current) => ({ ...current,
+    [id]: { ...current[id], [field]: value } }));
+  const save = async (plan) => {
+    const draft = drafts[plan.id] || {};
+    const months = Number(draft.months ?? plan.billing_months ?? (plan.duration_days < 100 ? 1 : 12));
+    try {
+      setError("");
+      await apiRequest(`/api/v1/admin/vip-payments/plans/${plan.id}`, { method: "PUT", body: JSON.stringify({
+        months, price: Number(draft.price ?? plan.price), discountPrice: Number(draft.discountPrice ?? plan.discount_price),
+      }) });
+      onSaved();
+    } catch (e) { setError(e.message); }
+  };
+  return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <h2 className="font-semibold text-slate-900">Giá và thời hạn gói VIP thanh toán</h2>
+    <div className="mt-3 grid gap-4 lg:grid-cols-2">{eligible.map((plan) => <div key={plan.id} className="grid gap-2 rounded-lg border border-slate-200 p-4">
+      <strong>{plan.name}</strong>
+      <label>Thời hạn<select className={inputClass} value={drafts[plan.id]?.months ?? plan.billing_months ?? (plan.duration_days < 100 ? 1 : 12)} onChange={(e) => update(plan.id, "months", e.target.value)}><option value="1">1 tháng lịch</option><option value="12">12 tháng lịch</option></select></label>
+      <label>Giá gốc<input className={inputClass} type="number" min="1" value={drafts[plan.id]?.price ?? plan.price} onChange={(e) => update(plan.id, "price", e.target.value)} /></label>
+      <label>Giá bán (0 = giá gốc)<input className={inputClass} type="number" min="0" value={drafts[plan.id]?.discountPrice ?? plan.discount_price} onChange={(e) => update(plan.id, "discountPrice", e.target.value)} /></label>
+      <button className="rounded bg-red-600 px-4 py-2 font-semibold text-white" onClick={() => save(plan)}>Lưu gói</button>
+    </div>)}</div>
+    {error && <p role="alert" className="mt-2 text-red-700">{error}</p>}
+  </section>;
+};
+
 const GrantVipForm = ({ onGranted }) => {
   const { apiRequest } = useAuth();
   const [query, setQuery] = useState("");
@@ -12,6 +44,7 @@ const GrantVipForm = ({ onGranted }) => {
   const [selected, setSelected] = useState(null);
   const [days, setDays] = useState(30);
   const [planId, setPlanId] = useState("");
+  const [reason, setReason] = useState("");
   const [plans, setPlans] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -40,12 +73,13 @@ const GrantVipForm = ({ onGranted }) => {
     try {
       const result = await apiRequest(`/api/v1/admin/users/${selected.id}/vip`, {
         method: "POST",
-        body: JSON.stringify({ days: Number(days), planId: planId ? Number(planId) : null }),
+        body: JSON.stringify({ days: Number(days), planId: planId ? Number(planId) : null, reason }),
       });
       setMessage(`Đã kích hoạt VIP cho "${result.username}" đến ${formatDate(result.vipExpiresAt)}. User nhận được thông báo.`);
       setSelected(null);
       setQuery("");
       setResults([]);
+      setReason("");
       onGranted();
     } catch (e) {
       setError(e.message);
@@ -75,6 +109,9 @@ const GrantVipForm = ({ onGranted }) => {
           ))}
         </ul>
       )}
+      {selected && <label className="block text-sm font-medium text-slate-700">Lý do cấp VIP
+        <input className={inputClass} minLength={5} maxLength={500} required value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Nhập lý do cấp thủ công" />
+      </label>}
       {selected && (
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="text-sm font-medium text-slate-700">
@@ -133,6 +170,8 @@ const SubscriptionsAdminPage = () => {
       </div>
 
       <GrantVipForm onGranted={load} />
+
+      <PlanEditor plans={data.plans || []} onSaved={load} />
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-slate-900">Doanh thu theo tháng</h2>

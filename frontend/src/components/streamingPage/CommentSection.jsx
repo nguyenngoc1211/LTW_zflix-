@@ -4,6 +4,8 @@ import ToxicComment from "../community/ToxicComment.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { apiRequest } from "../../services/api.js";
 import UserAvatar from "../UserAvatar.jsx";
+import VipIdentity from '../VipIdentity.jsx';
+import { vipAvatarClass } from '../vipIdentity.js';
 import { commentRequestHeaders, clearCommentRequest } from '../../utils/commentRequest.js';
 import MentionTextarea from '../community/MentionTextarea.jsx';
 
@@ -14,7 +16,7 @@ const formatTime = (value) => {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("vi-VN");
 };
 
-const CommentAvatar = ({ comment }) => <UserAvatar src={comment.avatar_url} className="w-8 h-8 rounded-full object-cover border border-gray-700" />;
+const CommentAvatar = ({ comment }) => <UserAvatar src={comment.avatar_url} className={`w-8 h-8 rounded-full object-cover border border-gray-700 ${vipAvatarClass(comment.vip_expires_at)}`} />;
 
 const CommentSection = ({ productionId, episodeId, composerOnly = false, onSubmitted }) => {
   const [searchParams] = useSearchParams();
@@ -210,9 +212,7 @@ const CommentSection = ({ productionId, episodeId, composerOnly = false, onSubmi
                 <CommentAvatar comment={comment} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-gray-200 font-bold text-sm truncate">
-                      {comment.username}
-                    </span>
+                    <VipIdentity username={comment.username} vipExpiresAt={comment.vip_expires_at} className="text-sm" />
                     <span className="text-gray-500 text-xs shrink-0">
                       {formatTime(comment.created_at)}
                     </span>
