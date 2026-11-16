@@ -56,13 +56,16 @@ venv/
 env/
 
 # --- AI MODELS (Nặng - Không push) ---
-/backend-python/ai-chatbot/data/
+/backend-python/ai-chatbot/data/huggingface/
 *.pth
 *.pt
 *.bin
 *.onnx
 *.gguf
 *.h5
+
+# Chroma index binaries are application data, not model weights.
+!/backend-python/ai-chatbot/data/chroma_data/**/*.bin
 
 # --- TEMPORARY MEDIA FILES ---
 /backend-python/video-processor/src/temp/

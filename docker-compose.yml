@@ -100,6 +100,8 @@ services:
       HF_HOME: /app/data/huggingface
     volumes:
       - ai_chatbot_data:/app/data
+      - ./backend-python/ai-chatbot/data/bm25_index.pkl:/app/data/bm25_index.pkl:ro
+      - ./backend-python/ai-chatbot/data/chroma_data:/app/data/chroma_data
 
   # Frontend React
   frontend:
