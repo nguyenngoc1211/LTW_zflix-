@@ -25,6 +25,7 @@ const loadSessionUser = async (token) => {
     if (!session) return null;
     const user = await (await mongoCollection("users")).findOne({
       id: Number(payload.sub), status: "active",
+      $or: [{ moderation_locked_until: null }, { moderation_locked_until: { $lte: new Date() } }],
     });
     if (!user) return null;
     return {

@@ -1,252 +1,49 @@
-import {
-  AppstoreOutlined,
-  PlaySquareOutlined,
-  TeamOutlined,
-  UserOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  LogoutOutlined,
-  HomeOutlined,
-  BarChartOutlined,
-  ExceptionOutlined,
-  DollarOutlined,
-  SafetyOutlined,
-  SettingOutlined,
-  ShoppingOutlined,
-} from "@ant-design/icons";
-import { Layout, Menu, Dropdown, Space, Avatar, ConfigProvider } from "antd";
-import { ProConfigProvider, viVNIntl } from "@ant-design/pro-components";
-import viVN from "antd/locale/vi_VN";
-import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
-import React, { useEffect, useState, memo } from "react";
-import Logo from "../components/Logo";
-import { useAuth } from "../hooks/useAuth.js";
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { ConfigProvider, theme } from 'antd';
+import { ProConfigProvider, viVNIntl } from '@ant-design/pro-components';
+import viVN from 'antd/locale/vi_VN';
+import { AppstoreOutlined, BarChartOutlined, ExceptionOutlined, LogoutOutlined, MenuOutlined, PlaySquareOutlined, SafetyOutlined, SettingOutlined, ShoppingOutlined, TeamOutlined } from '@ant-design/icons';
+import { useAuth } from '../hooks/useAuth.js';
+import './admin-shell.css';
 
-const { Content, Sider, Header: AntHeader } = Layout;
+const sectionLabels = { movies: 'Quản lý phim', content: 'Kho phim & tập', parties: 'Watch Party', shopping: 'Mua sắm trong phim', views: 'Thống kê lượt xem', security: 'Nhật ký bảo mật', settings: 'Cài đặt hệ thống' };
+const links = [
+  { to: '/admin/community-hub', label: 'Quản lý cộng đồng', icon: TeamOutlined, hub: true },
+  { to: '/admin/movies', label: 'Quản lý phim', icon: PlaySquareOutlined },
+  { to: '/admin/content', label: 'Kho phim & tập', icon: AppstoreOutlined },
+  { to: '/admin/parties', label: 'Watch Party', icon: ExceptionOutlined },
+  { to: '/admin/shopping', label: 'Mua sắm trong phim', icon: ShoppingOutlined },
+  { to: '/admin/views', label: 'Thống kê lượt xem', icon: BarChartOutlined },
+  { to: '/admin/security', label: 'Nhật ký bảo mật', icon: SafetyOutlined, adminOnly: true },
+  { to: '/admin/settings', label: 'Cài đặt hệ thống', icon: SettingOutlined, adminOnly: true },
+];
 
-const MemoizedHeader = memo(({ collapsed, onToggle, username, onLogout }) => {
-  const dropdownItems = [
-    {
-      label: <Link to="/">Về trang người dùng</Link>,
-      key: "home",
-      icon: <HomeOutlined />,
-    },
-    { type: "divider" },
-    {
-      label: <span style={{ cursor: "pointer" }}>Đăng xuất</span>,
-      key: "logout",
-      icon: <LogoutOutlined />,
-      danger: true,
-    },
-  ];
-
-  return (
-    <AntHeader className="!p-0 flex items-center justify-between shadow-sm sticky top-0 z-10 ">
-      <div className="flex items-center">
-        {React.createElement(
-          collapsed ? MenuUnfoldOutlined : MenuFoldOutlined,
-          {
-            className:
-              "trigger text-lg px-6 cursor-pointer h-full flex items-center !text-white",
-            onClick: onToggle,
-          },
-        )}
-      </div>
-      <div className="pr-6">
-        <Dropdown
-          menu={{
-            items: dropdownItems,
-            onClick: ({ key }) => {
-              if (key === "logout") onLogout();
-            },
-          }}
-          trigger={["click"]}
-        >
-          <Space className="cursor-pointer p-2 rounded-md">
-            <Avatar icon={<UserOutlined />} />
-            <span className="font-medium text-white">{username}</span>
-          </Space>
-        </Dropdown>
-      </div>
-    </AntHeader>
-  );
-});
-
-MemoizedHeader.displayName = "MemoizedHeader";
-
-const MemoizedContent = memo(() => {
-  return (
-    <Content className="m-2 min-w-0 rounded-lg bg-white p-3 shadow-inner md:m-4 md:p-6">
-      <Outlet />
-    </Content>
-  );
-});
-MemoizedContent.displayName = "MemoizedContent";
-
-const AdminPage = () => {
-  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 768);
-  const [accessStatus, setAccessStatus] = useState("checking");
-  const location = useLocation();
-  const navigate = useNavigate();
+export default function AdminPage() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [accessStatus, setAccessStatus] = useState('checking');
   const { user, logout, apiRequest } = useAuth();
-
+  const navigate = useNavigate();
+  const location = useLocation();
   useEffect(() => {
     let active = true;
-    apiRequest("/api/v1/admin/check")
-      .then(() => {
-        if (active) setAccessStatus("allowed");
-      })
-      .catch((error) => {
-        if (active) setAccessStatus(error.status === 403 ? "denied" : "error");
-      });
-    return () => {
-      active = false;
-    };
+    apiRequest('/api/v1/admin/check').then(() => { if (active) setAccessStatus('allowed'); }).catch((error) => { if (active) setAccessStatus(error.status === 403 ? 'denied' : 'error'); });
+    return () => { active = false; };
   }, [apiRequest]);
-  const getActiveMenuKey = () => {
-    const pathSegments = location.pathname.split("/");
-    const lastSegment = pathSegments.pop() || pathSegments.pop(); // Xử lý trường hợp trailing slash
-
-    const keyMap = {
-      admin: "analytics",
-      users: "users",
-      movies: "movies",
-      content: "content",
-      community: "community",
-      parties: "parties",
-      subscriptions: "subscriptions",
-      "vip-payments": "vip-payments",
-      views: "views",
-      shopping: "shopping",
-      security: "security",
-      settings: "settings",
-    };
-    return keyMap[lastSegment] || "analytics";
-  };
-
-  const activeMenuKey = getActiveMenuKey();
-
-  const menuItems = [
-    {
-      label: <Link to="/admin">Tổng quan</Link>,
-      key: "analytics",
-      icon: <AppstoreOutlined />,
-    },
-    {
-      label: <Link to="/admin/movies">Quản lý phim</Link>,
-      key: "movies",
-      icon: <PlaySquareOutlined />,
-    },
-    {
-      label: <Link to="/admin/content">Kho phim & tập</Link>,
-      key: "content",
-      icon: <PlaySquareOutlined />,
-    },
-    {
-      label: <Link to="/admin/community">Cộng đồng</Link>,
-      key: "community",
-      icon: <TeamOutlined />,
-    },
-    {
-      label: <Link to="/admin/parties">Watch Party</Link>,
-      key: "parties",
-      icon: <ExceptionOutlined />,
-    },
-    {
-      label: <Link to="/admin/shopping">Mua sắm trong phim</Link>,
-      key: "shopping",
-      icon: <ShoppingOutlined />,
-    },
-    {
-      label: <Link to="/admin/views">Thống kê lượt xem</Link>,
-      key: "views",
-      icon: <BarChartOutlined />,
-    },
-    { label: <Link to="/admin/vip-payments">Duyệt thanh toán VIP</Link>, key: "vip-payments", icon: <DollarOutlined /> },
-    ...(user?.role === "admin"
-      ? [
-          {
-            label: <Link to="/admin/users">Quản lý người dùng</Link>,
-            key: "users",
-            icon: <UserOutlined />,
-          },
-          {
-            label: <Link to="/admin/subscriptions">VIP & Doanh thu</Link>,
-            key: "subscriptions",
-            icon: <DollarOutlined />,
-          },
-          {
-            label: <Link to="/admin/security">Nhật ký bảo mật</Link>,
-            key: "security",
-            icon: <SafetyOutlined />,
-          },
-          {
-            label: <Link to="/admin/settings">Cài đặt hệ thống</Link>,
-            key: "settings",
-            icon: <SettingOutlined />,
-          },
-        ]
-      : []),
-  ];
-
-  const handleToggle = () => setCollapsed(!collapsed);
-  const handleLogout = async () => {
-    await logout();
-    navigate("/login", { replace: true });
-  };
-
-  if (accessStatus !== "allowed") {
-    return (
-      <main className="grid min-h-screen place-items-center bg-slate-100 px-4">
-        <div className="rounded-xl bg-white p-8 text-center shadow-sm">
-          <h1 className="text-xl font-semibold text-slate-900">
-            {accessStatus === "checking" ? "Đang kiểm tra quyền quản trị..." :
-              accessStatus === "denied" ? "Không có quyền quản trị" : "Không thể xác minh quyền quản trị"}
-          </h1>
-          {accessStatus !== "checking" && (
-            <Link className="mt-4 inline-block text-red-600 hover:underline" to="/">Về trang chủ</Link>
-          )}
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <ConfigProvider locale={viVN}>
-      <ProConfigProvider intl={viVNIntl}>
-        <Layout style={{ minHeight: "100vh" }}>
-      <Sider
-        width={230}
-        trigger={null}
-        collapsedWidth={64}
-        collapsed={collapsed}
-        theme="dark"
-        className="shadow-sm transition-all duration-300 ease-in-out transform-gpu will-change-transform"
-      >
-        <div className="flex items-center justify-center h-16">
-          <Logo theme={"dark"} />
-        </div>
-        <Menu
-          theme="dark"
-          selectedKeys={[activeMenuKey]}
-          mode="inline"
-          items={menuItems}
-        />
-      </Sider>
-
-      <Layout className="min-w-0 !bg-gray-200 transition-all duration-300 ease-in-out">
-        <MemoizedHeader
-          collapsed={collapsed}
-          onToggle={handleToggle}
-          username={user.username}
-          onLogout={handleLogout}
-        />
-        <MemoizedContent />
-      </Layout>
-        </Layout>
-      </ProConfigProvider>
-    </ConfigProvider>
-  );
-};
-
-export default AdminPage;
+  const current = location.pathname.split('/')[2] || 'community-hub';
+  const title = current === 'community-hub' ? 'Trung tâm quản lý cộng đồng' : sectionLabels[current] || 'ZFLIX Admin';
+  const signOut = async () => { await logout(); navigate('/login', { replace: true }); };
+  if (accessStatus !== 'allowed') return <main className="zadmin-gate"><div><strong>ZFLIX ADMIN</strong><h1>{accessStatus === 'checking' ? 'Đang kiểm tra quyền quản trị...' : accessStatus === 'denied' ? 'Không có quyền quản trị' : 'Không thể xác minh quyền quản trị'}</h1><a href="/">Về trang chủ</a></div></main>;
+  return <ConfigProvider locale={viVN} theme={{ algorithm: theme.darkAlgorithm, token: { colorPrimary: '#E50914', colorBgBase: '#0B0F17', borderRadius: 9 } }}><ProConfigProvider intl={viVNIntl}>
+    <div className="zadmin">
+      {menuOpen && <button className="zadmin-overlay" aria-label="Đóng menu" onClick={() => setMenuOpen(false)} />}
+      <aside className={`zadmin-sidebar ${menuOpen ? 'is-open' : ''}`}>
+        <div className="zadmin-brand"><span className="zadmin-brand-mark">Z</span><div><strong>ZFLIX</strong><small>ADMIN CONSOLE</small></div></div>
+        <div className="zadmin-nav-label">KHÔNG GIAN QUẢN TRỊ</div>
+        <nav aria-label="Điều hướng quản trị">{links.filter((item) => !item.adminOnly || user?.role === 'admin').map((item) => <NavLink key={item.to} to={item.to} end={!item.hub} onClick={() => setMenuOpen(false)} className={({ isActive }) => `zadmin-nav-item ${isActive || (item.hub && current === 'community-hub') ? 'is-active' : ''}`}><item.icon /><span>{item.label}</span>{item.hub && <b>01</b>}</NavLink>)}</nav>
+        <div className="zadmin-sidebar-foot"><span className="zadmin-online" /> Hệ thống quản trị</div>
+      </aside>
+      <div className="zadmin-body"><header className="zadmin-topbar"><div className="zadmin-topbar-left"><button className="zadmin-menu-button" aria-label="Mở menu" onClick={() => setMenuOpen(true)}><MenuOutlined /></button><span className="zadmin-breadcrumb">QUẢN TRỊ / <b>{title}</b></span></div><div className="zadmin-user"><span className="zadmin-user-avatar">{user?.username?.slice(0, 1).toUpperCase()}</span><span><strong>{user?.username}</strong><small>{user?.role === 'admin' ? 'Quản trị viên' : 'Điều hành viên'}</small></span><button onClick={signOut} title="Đăng xuất" aria-label="Đăng xuất"><LogoutOutlined /></button></div></header><div className="zadmin-content"><Outlet /></div></div>
+    </div>
+  </ProConfigProvider></ConfigProvider>;
+}

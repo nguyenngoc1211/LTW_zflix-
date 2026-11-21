@@ -1,0 +1,104 @@
+.zflix-post-image-grid,
+.zflix-comment-images {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 12px;
+}
+
+.zflix-post-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 8px;
+}
+
+.zflix-post-image-grid--single {
+  display: flex;
+  justify-content: center;
+}
+
+.app .zflix-post-image-grid button,
+.app .zflix-comment-images button {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid #303744;
+  border-radius: 10px;
+  background: #0b0f17;
+  cursor: zoom-in;
+}
+
+.app .zflix-post-image-grid button {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  height: clamp(160px, 30vw, 280px);
+}
+
+.app .zflix-post-image-grid--single button {
+  display: block;
+  width: max-content;
+  min-height: 0;
+  height: auto;
+}
+
+.zflix-post-image-grid img,
+.zflix-comment-images img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  object-fit: contain;
+  margin-inline: auto;
+}
+
+.zflix-post-image-grid img { max-height: 420px; }
+
+.zflix-comment-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app .zflix-comment-images button { width: max-content; }
+.zflix-comment-images img { max-width: min(420px, 100%); max-height: 320px; }
+
+.zflix-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 48px 16px 16px;
+  background: rgb(0 0 0 / 92%);
+  cursor: zoom-out;
+}
+
+.zflix-image-lightbox img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(100dvh - 64px);
+  object-fit: contain;
+  cursor: default;
+}
+
+.zflix-image-lightbox .zflix-image-lightbox-close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  padding: 4px 11px;
+  border-radius: 8px;
+  background: #252b36;
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+}
+
+@media (max-width: 600px) {
+  .zflix-post-image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .zflix-post-image-grid--single { display: flex; }
+  .app .zflix-post-image-grid button { min-height: 120px; height: 190px; }
+  .app .zflix-post-image-grid--single button { min-height: 0; height: auto; }
+  .zflix-comment-images img { max-width: min(420px, 100%); }
+}

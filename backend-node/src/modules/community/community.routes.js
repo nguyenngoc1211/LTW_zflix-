@@ -9,6 +9,8 @@ import { commentRequestIdentity, ensureCommentRequestIndex, existingCommentForRe
 import { defaultNotificationPreferences, getNotificationPreferences, validateNotificationPreferences } from './notification-preferences.js';
 import { notifyMentions, resolveMentions } from './mention.service.js';
 import { notifyLike, syncLikeCount } from './like-notification.service.js';
+import { awardPoint, reversePoints, ensurePointIndexes, meaningfulContent } from './points.service.js';
+import { commentImageUpload, commentImageHash, commentImageUrls, saveCommentImage, cleanupCommentImages, finalizeCommentImages, commentBool } from './comment-media.js';
 import {
   detectToxicContent,
   TOXIC_COMMENT_WARNING,
@@ -17,6 +19,7 @@ import {
 export const communityRouter = Router();
 const useMongo = () => process.env.DATA_STORE === "mongodb";
 const mentionSearchLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: 'draft-7', legacyHeaders: false });
+const pointsActionLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardHeaders: 'draft-7', legacyHeaders: false });
 
 communityRouter.get('/users/mention-suggestions', requireAuth, mentionSearchLimiter, asyncHandler(async (req, res) => {
   if (!useMongo()) return res.status(503).json({ message: 'MongoDB required' });
@@ -43,7 +46,7 @@ const linkedProductions = async (collectionName, userId, dateField, extra = () =
 const updateRatingSummary = async (productionId, session) => {
   const ratings = await mongoCollection("ratings");
   const summary = await ratings.aggregate([
-    { $match: { production_id: productionId } },
+    { $match: { production_id: productionId, moderation_hidden: { $ne: true } } },
     { $group: { _id: null, count: { $sum: 1 }, average: { $avg: "$rating" } } },
   ], { session }).next();
   await (await mongoCollection("productions")).updateOne({ id: productionId },
@@ -129,7 +132,7 @@ communityRouter.get("/productions/:productionId/ratings", asyncHandler(async (re
   const productionId = parsePositiveInt(req.params.productionId, "production id");
   if (useMongo()) {
     const ratings = await (await mongoCollection("ratings"))
-      .find({ production_id: productionId }).sort({ updated_at: -1 }).toArray();
+      .find({ production_id: productionId, moderation_hidden: { $ne: true } }).sort({ updated_at: -1 }).toArray();
     const users = await (await mongoCollection("users"))
       .find({ id: { $in: ratings.map((rating) => rating.user_id) } },
         { projection: { id: 1, username: 1, avatar_url: 1, vip_expires_at: 1 } }).toArray();
@@ -234,15 +237,16 @@ communityRouter.get("/productions/:productionId/comments", optionalAuth, asyncHa
   const limit = paged ? parsePositiveInt(req.query.limit ?? '20', 'limit') : null;
   if (paged && (page > 1000 || limit > 50)) return res.status(400).json({ message: 'Pagination exceeds limit' });
   const parentFilter = req.query.parentId === undefined ? undefined : req.query.parentId === 'root' ? null : parsePositiveInt(req.query.parentId, 'parent id');
+  const episodeFilter = req.query.episodeId === undefined ? undefined : parsePositiveInt(req.query.episodeId, 'episode id');
   if (useMongo()) {
     if (paged) {
       const rows = await (await mongoCollection('comments')).aggregate([
-        { $match: { production_id: productionId, status: 'active', ...(parentFilter !== undefined && { parent_id: parentFilter }) } },
+        { $match: { production_id: productionId, status: 'active', ...(episodeFilter !== undefined && { episode_id: { $in: [episodeFilter, null] } }), ...(parentFilter !== undefined && { parent_id: parentFilter }) } },
         { $lookup: { from: 'users', localField: 'user_id', foreignField: 'id', as: 'author' } },
         { $unwind: '$author' },
         { $sort: { created_at: -1, id: -1 } },
         { $skip: (page - 1) * limit }, { $limit: limit + 1 },
-        { $project: { _id: 0, id: 1, content: 1, parent_id: 1, likes_count: 1, score: 1, is_spoiler: 1, is_toxic: 1, created_at: 1, updated_at: 1, user_id: 1, username: '$author.username', avatar_url: '$author.avatar_url', vip_expires_at: '$author.vip_expires_at' } },
+        { $project: { _id: 0, id: 1, content: 1, images: 1, episode_id: 1, parent_id: 1, likes_count: 1, score: 1, is_spoiler: 1, is_toxic: 1, created_at: 1, updated_at: 1, user_id: 1, username: '$author.username', avatar_url: '$author.avatar_url', vip_expires_at: '$author.vip_expires_at' } },
       ]).toArray();
       const visible = rows.slice(0, limit);
       const counts = await (await mongoCollection('comments')).aggregate([
@@ -257,17 +261,17 @@ communityRouter.get("/productions/:productionId/comments", optionalAuth, asyncHa
         { $group: { _id: '$comment_id', upvotes: { $sum: { $cond: [{ $eq: ['$value', 1] }, 1, 0] } }, downvotes: { $sum: { $cond: [{ $eq: ['$value', -1] }, 1, 0] } } } },
       ]).toArray();
       const countsById = new Map(voteCounts.map((entry) => [entry._id, entry]));
-      return res.json({ items: visible.map((item) => ({ ...item, reply_count: countById.get(item.id) || 0, viewer_vote: voteById.get(item.id) || 0, upvotes: countsById.get(item.id)?.upvotes || 0, downvotes: countsById.get(item.id)?.downvotes || 0 })), page, hasMore: rows.length > limit });
+      return res.json({ items: visible.map((item) => ({ ...item, image_urls: commentImageUrls(item.images), reply_count: countById.get(item.id) || 0, viewer_vote: voteById.get(item.id) || 0, upvotes: countsById.get(item.id)?.upvotes || 0, downvotes: countsById.get(item.id)?.downvotes || 0 })), page, hasMore: rows.length > limit });
     }
     const comments = await (await mongoCollection("comments"))
-      .find({ production_id: productionId, status: "active" }).sort({ created_at: -1 }).toArray();
+      .find({ production_id: productionId, status: "active", ...(episodeFilter !== undefined && { episode_id: { $in: [episodeFilter, null] } }) }).sort({ created_at: -1 }).toArray();
     const users = await (await mongoCollection("users"))
       .find({ id: { $in: comments.map((comment) => comment.user_id) } },
         { projection: { id: 1, username: 1, avatar_url: 1, vip_expires_at: 1 } }).toArray();
     const byId = new Map(users.map((user) => [user.id, user]));
     const items = comments.flatMap((comment) => {
       const user = byId.get(comment.user_id);
-      return user ? [{ id: comment.id, content: comment.content, parent_id: comment.parent_id,
+      return user ? [{ id: comment.id, content: comment.content, image_urls: commentImageUrls(comment.images), episode_id: comment.episode_id, parent_id: comment.parent_id,
         likes_count: comment.likes_count, is_spoiler: comment.is_spoiler, is_toxic: comment.is_toxic,
         created_at: comment.created_at, updated_at: comment.updated_at,
         user_id: user.id, username: user.username, avatar_url: user.avatar_url, vip_expires_at: user.vip_expires_at }] : [];
@@ -281,11 +285,12 @@ communityRouter.get("/productions/:productionId/comments", optionalAuth, asyncHa
   res.json(paged ? { items: items.slice(0, limit), page, hasMore: items.length > limit } : { items });
 }));
 
-communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHandler(async (req, res) => {
+communityRouter.post("/productions/:productionId/comments", requireAuth, pointsActionLimiter, commentImageUpload, asyncHandler(async (req, res) => {
   const productionId = parsePositiveInt(req.params.productionId, "production id");
-  const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
-  if (!content || content.length > 3000) return res.status(400).json({ message: "content is required and must not exceed 3000 characters" });
-  if (req.body?.isSpoiler !== undefined && typeof req.body.isSpoiler !== 'boolean') return res.status(400).json({ message: 'Invalid spoiler flag' });
+  const content = (typeof req.body?.content === "string" ? req.body.content.trim() : "") || (req.file ? '[Ảnh]' : '');
+  if ((!content && !req.file) || content.length > 3000) return res.status(400).json({ message: "content or image is required and must not exceed 3000 characters" });
+  if (req.body?.isSpoiler !== undefined && ![true, false, 'true', 'false'].includes(req.body.isSpoiler)) return res.status(400).json({ message: 'Invalid spoiler flag' });
+  if (req.file && !useMongo()) return res.status(503).json({ message: 'Comment images require MongoDB' });
   const parentId = req.body?.parentId == null ? null : parsePositiveInt(req.body.parentId, "parent id");
   const requestedEpisodeId = req.body?.episodeId == null ? null : parsePositiveInt(req.body.episodeId, "episode id");
   await ensureProduction(productionId);
@@ -304,8 +309,9 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
       while (nextId != null) {
         if (visited.has(nextId) || depth >= 3) return res.status(400).json({ message: 'Invalid parent or maximum depth reached' });
         visited.add(nextId);
-        const parent = await comments.findOne({ id: nextId, production_id: productionId, status: 'active' }, { projection: { parent_id: 1 } });
+        const parent = await comments.findOne({ id: nextId, production_id: productionId, status: 'active' }, { projection: { parent_id: 1, episode_id: 1 } });
         if (!parent) return res.status(400).json({ message: 'Invalid parent comment' });
+        if (requestedEpisodeId && parent.episode_id && parent.episode_id !== requestedEpisodeId) return res.status(400).json({ message: 'Parent comment belongs to another episode' });
         depth += 1;
         nextId = parent.parent_id ?? null;
       }
@@ -317,26 +323,29 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
   const { isToxic } = detectToxicContent(content);
   if (useMongo()) {
     const comments = await mongoCollection('comments');
-    const identity = commentRequestIdentity(req, { productionId, parentId, episodeId: requestedEpisodeId, content, isSpoiler: req.body?.isSpoiler === true });
+    const identity = commentRequestIdentity(req, { productionId, parentId, episodeId: requestedEpisodeId, content, isSpoiler: commentBool(req.body?.isSpoiler), ...(req.file && { imageHash: commentImageHash(req.file) }) });
     if (identity) {
       await ensureCommentRequestIndex(comments, 'comments');
       const previous = await existingCommentForRequest(comments, identity);
       if (previous) return res.status(200).json({ id: previous.id, content: previous.content,
-        parentId: previous.parent_id, isToxic: Boolean(previous.is_toxic), idempotent: true });
+        image_urls: commentImageUrls(previous.images), parentId: previous.parent_id, isToxic: Boolean(previous.is_toxic), idempotent: true });
     }
     const id = await nextNumericId("comments");
     const now = new Date();
     await ensureNotificationIndexes();
+    await ensurePointIndexes();
+    const imageKeys = await saveCommentImage(req.file);
     let result;
     try { result = await withMongoTransaction(async (session) => {
       const parent = parentId ? await comments.findOne({ id: parentId, production_id: productionId, status: 'active' }, { session }) : null;
-      if (parentId && !parent) return false;
+      if (parentId && (!parent || (requestedEpisodeId && parent.episode_id && parent.episode_id !== requestedEpisodeId))) return false;
       const episodeId = parent?.episode_id || requestedEpisodeId;
       const mentions = await resolveMentions(content, session);
       await comments.insertOne({ _id: id, id,
-        user_id: req.user.id, production_id: productionId, episode_id: episodeId, content,
-        parent_id: parentId, depth, mention_user_ids: mentions.map((user) => user.id), likes_count: 0, score: 0, is_spoiler: req.body?.isSpoiler === true, is_toxic: Number(isToxic),
+        user_id: req.user.id, production_id: productionId, episode_id: episodeId, content, images: imageKeys,
+        parent_id: parentId, depth, mention_user_ids: mentions.map((user) => user.id), likes_count: 0, score: 0, is_spoiler: commentBool(req.body?.isSpoiler), is_toxic: Number(isToxic),
         status: 'active', created_at: now, updated_at: now, ...(identity || {}) }, { session });
+      if (!isToxic && meaningfulContent(content, 12, 3)) await awardPoint({ userId: req.user.id, type: 'comment', sourceType: 'movie_comment', sourceId: id, content, session });
       const notification = parent ? await notifyComment({ recipientId: parent.user_id,
         actor: { id: req.user.id, username: req.user.username, avatar_url: req.user.avatarUrl },
         commentId: id, parentId, productionId, episodeId, content, session }) : undefined;
@@ -345,16 +354,18 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
         excerpt: content, excludedRecipientId: parent?.user_id, session });
       return { notification, mentionNotifications };
     }); } catch (error) {
+      await cleanupCommentImages(imageKeys);
       if (error.code !== 11000 || !identity) throw error;
       const previous = await existingCommentForRequest(comments, identity);
       if (!previous) throw error;
       return res.status(200).json({ id: previous.id, content: previous.content,
-        parentId: previous.parent_id, isToxic: Boolean(previous.is_toxic), idempotent: true });
+        image_urls: commentImageUrls(previous.images), parentId: previous.parent_id, isToxic: Boolean(previous.is_toxic), idempotent: true });
     }
-    if (result === false) return res.status(400).json({ message: 'Invalid parent comment' });
+    if (result === false) { await cleanupCommentImages(imageKeys); return res.status(400).json({ message: 'Invalid parent comment' }); }
+    await finalizeCommentImages(imageKeys);
     emitStoredNotification(result.notification);
     result.mentionNotifications.forEach(emitStoredNotification);
-    return res.status(201).json({ id, content, parentId, isToxic,
+    return res.status(201).json({ id, content, image_urls: commentImageUrls(imageKeys), parentId, isToxic,
       warning: isToxic ? TOXIC_COMMENT_WARNING : null });
   }
   const [result] = await pool.execute("INSERT INTO comments (user_id, production_id, content, parent_id, is_toxic) VALUES (?, ?, ?, ?, ?)", [req.user.id, productionId, content, parentId, isToxic ? 1 : 0]);
@@ -367,12 +378,13 @@ communityRouter.post("/productions/:productionId/comments", requireAuth, asyncHa
   });
 }));
 
-communityRouter.put('/comments/:commentId/vote', requireAuth, asyncHandler(async (req, res) => {
+communityRouter.put('/comments/:commentId/vote', requireAuth, pointsActionLimiter, asyncHandler(async (req, res) => {
   if (!useMongo()) return res.status(503).json({ message: 'MongoDB required' });
   const id = parsePositiveInt(req.params.commentId, 'comment id');
   const value = req.body?.value;
   if (![0, 1, -1].includes(value) || Object.keys(req.body).some((key) => key !== 'value')) return res.status(400).json({ message: 'Invalid vote' });
   if (value === 1) await ensureNotificationIndexes();
+  await ensurePointIndexes();
   const result = await withMongoTransaction(async (session) => {
     const comments = await mongoCollection('comments');
     const votes = await mongoCollection('movie_comment_votes');
@@ -384,11 +396,15 @@ communityRouter.put('/comments/:commentId/vote', requireAuth, asyncHandler(async
     else await votes.updateOne({ _id: voteId }, { $set: { value }, $setOnInsert: { comment_id: id, user_id: req.user.id } }, { upsert: true, session });
     const updated = await comments.findOneAndUpdate({ id, status: 'active' }, { $inc: { score: value - (previous?.value || 0) } }, { session, returnDocument: 'after' });
     if (!updated) return null;
+    const old = previous?.value || 0;
+    if (comment.user_id !== req.user.id && old !== value) {
+      if (old === 1) await reversePoints({ sourceType: 'movie_comment_vote', sourceId: id, actorId: req.user.id, session });
+      if (value === 1) await awardPoint({ userId: comment.user_id, type: 'upvote', sourceType: 'movie_comment_vote', sourceId: id, actorId: req.user.id, session });
+    }
     const upvotes = await votes.countDocuments({ comment_id: id, value: 1 }, { session });
     const downvotes = await votes.countDocuments({ comment_id: id, value: -1 }, { session });
     const notifiedLikes = (previous?.value || 0) !== value && ((previous?.value || 0) === 1 || value === 1)
       ? await votes.countDocuments({ comment_id: id, value: 1, user_id: { $ne: comment.user_id } }, { session }) : null;
-    const old = previous?.value || 0;
     const notification = old !== 1 && value === 1 ? await notifyLike({ recipientId: comment.user_id,
       actor: req.user, targetType: 'movie_comment', targetId: id,
       redirectUrl: `/movies/${comment.production_id}?commentId=${id}`, upvotes: notifiedLikes, session })
@@ -409,28 +425,45 @@ communityRouter.post('/comments/:commentId/reports', requireAuth, reportLimiter,
   if (!useMongo()) return res.status(503).json({ message: 'MongoDB required' });
   const id = parsePositiveInt(req.params.commentId, 'comment id');
   const { reason, description = '' } = req.body || {};
-  if (!['spam', 'harassment', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000) return res.status(400).json({ message: 'Invalid report' });
-  if (!await (await mongoCollection('comments')).findOne({ id, status: 'active' })) return res.status(404).json({ message: 'Comment not found' });
+  if (!['spam', 'harassment', 'inappropriate', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000) return res.status(400).json({ message: 'Invalid report' });
+  const reported = await (await mongoCollection('comments')).findOne({ id, status: 'active' });
+  if (!reported || reported.user_id === req.user.id) return res.status(404).json({ message: 'Comment not found' });
   try {
-    await (await mongoCollection('community_reports')).insertOne({ _id: `movie-comment:${id}:${req.user.id}`, reporter_id: req.user.id, target_type: 'comment', target_id: id, comment_source: 'movie', reason, description: description.trim(), status: 'open', created_at: new Date() });
+    await (await mongoCollection('community_reports')).insertOne({ _id: `movie-comment:${id}:${req.user.id}`, reporter_id: req.user.id, target_type: 'comment', target_id: id, comment_source: 'movie', production_id: reported.production_id, target_excerpt: reported.content.slice(0, 500), reason, description: description.trim(), status: 'open', created_at: new Date() });
   } catch (error) { if (error.code === 11000) return res.status(409).json({ message: 'Bạn đã báo cáo bình luận này.' }); throw error; }
   return res.status(201).json({ message: 'Đã gửi báo cáo.' });
 }));
 
-communityRouter.patch("/comments/:commentId", requireAuth, asyncHandler(async (req, res) => {
+communityRouter.patch("/comments/:commentId", requireAuth, commentImageUpload, asyncHandler(async (req, res) => {
   const commentId = parsePositiveInt(req.params.commentId, "comment id");
-  const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
-  if (!content || content.length > 3000) return res.status(400).json({ message: "content is required and must not exceed 3000 characters" });
-  if (req.body?.isSpoiler !== undefined && typeof req.body.isSpoiler !== 'boolean') return res.status(400).json({ message: 'Invalid spoiler flag' });
+  let content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+  if (content.length > 3000 || (req.body?.isSpoiler !== undefined && ![true, false, 'true', 'false'].includes(req.body.isSpoiler)) || (req.body?.removeImage !== undefined && ![true, false, 'true', 'false'].includes(req.body.removeImage)) || (req.file && commentBool(req.body?.removeImage))) return res.status(400).json({ message: 'Invalid comment' });
+  if (req.file && !useMongo()) return res.status(503).json({ message: 'Comment images require MongoDB' });
   const { isToxic } = detectToxicContent(content);
   if (useMongo()) {
-    const result = await (await mongoCollection("comments")).updateOne({ id: commentId,
-      user_id: req.user.id, status: "active" }, { $set: { content,
-      is_toxic: Number(isToxic), ...(req.body?.isSpoiler !== undefined && { is_spoiler: req.body.isSpoiler }), updated_at: new Date() } });
-    if (!result.matchedCount) return res.status(404).json({ message: "Comment not found" });
-    return res.json({ id: commentId, content, isToxic,
+    const comments = await mongoCollection('comments');
+    const existing = await comments.findOne({ id: commentId, user_id: req.user.id, status: 'active' });
+    if (!existing) return res.status(404).json({ message: 'Comment not found' });
+    if (!content && !req.file && (commentBool(req.body?.removeImage) || !existing.images?.length)) return res.status(400).json({ message: 'Content or image is required' });
+    if (!content) content = '[Ảnh]';
+    await ensurePointIndexes();
+    const imageKeys = await saveCommentImage(req.file);
+    const oldKeys = req.file || commentBool(req.body?.removeImage) ? existing.images || [] : [];
+    let result;
+    try { result = await withMongoTransaction(async (session) => {
+      const changed = await comments.updateOne({ id: commentId,
+        user_id: req.user.id, status: "active", updated_at: existing.updated_at }, { $set: { content,
+        is_toxic: Number(isToxic), ...(req.body?.isSpoiler !== undefined && { is_spoiler: commentBool(req.body.isSpoiler) }), ...(req.file && { images: imageKeys }), ...(commentBool(req.body?.removeImage) && { images: [] }), updated_at: new Date() } }, { session });
+      if (changed.matchedCount && (isToxic || !meaningfulContent(content, 12, 3))) await reversePoints({ sourceType: 'movie_comment', sourceId: commentId, session });
+      return changed;
+    }); } catch (error) { await cleanupCommentImages(imageKeys); throw error; }
+    if (!result.matchedCount) { await cleanupCommentImages(imageKeys); return res.status(409).json({ message: 'Comment changed; retry' }); }
+    await finalizeCommentImages(imageKeys);
+    await cleanupCommentImages(oldKeys);
+    return res.json({ id: commentId, content, image_urls: commentImageUrls(req.file ? imageKeys : commentBool(req.body?.removeImage) ? [] : existing.images), isToxic,
       warning: isToxic ? TOXIC_COMMENT_WARNING : null });
   }
+  if (!content) return res.status(400).json({ message: 'content is required' });
   const [result] = await pool.execute("UPDATE comments SET content=?, is_toxic=? WHERE id=? AND user_id=? AND status='active'", [content, isToxic ? 1 : 0, commentId, req.user.id]);
   if (!result.affectedRows) return res.status(404).json({ message: "Comment not found" });
   res.json({
@@ -445,10 +478,18 @@ communityRouter.delete("/comments/:commentId", requireAuth, asyncHandler(async (
   const commentId = parsePositiveInt(req.params.commentId, "comment id");
   const canModerate = req.user.role === "admin";
   if (useMongo()) {
-    const result = await (await mongoCollection("comments")).updateOne({ id: commentId,
-      ...(!canModerate && { user_id: req.user.id }), status: "active" }, { $set: { status: "deleted",
-      content: "[Đã xóa]", updated_at: new Date() } });
+    await ensurePointIndexes();
+    const result = await withMongoTransaction(async (session) => {
+      const comments = await mongoCollection('comments');
+      const before = await comments.findOne({ id: commentId, ...(!canModerate && { user_id: req.user.id }), status: 'active' }, { session, projection: { images: 1 } });
+      const changed = await comments.updateOne({ id: commentId,
+        ...(!canModerate && { user_id: req.user.id }), status: "active" }, { $set: { status: "deleted",
+        content: "[Đã xóa]", images: [], updated_at: new Date() } }, { session });
+      if (changed.matchedCount) { await reversePoints({ sourceType: 'movie_comment', sourceId: commentId, session }); await reversePoints({ sourceType: 'movie_comment_vote', sourceId: commentId, session }); }
+      return { ...changed, imageKeys: before?.images || [] };
+    });
     if (!result.matchedCount) return res.status(404).json({ message: "Comment not found" });
+    await cleanupCommentImages(result.imageKeys);
     return res.status(204).end();
   }
   const [result] = canModerate

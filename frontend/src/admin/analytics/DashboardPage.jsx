@@ -1,88 +1,37 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "../../hooks/useAuth.js";
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth.js';
+import './dashboard.css';
 
-const formatNumber = (value) => new Intl.NumberFormat("vi-VN").format(Number(value || 0));
-const formatDate = (value) => (value ? new Date(value).toLocaleDateString("vi-VN") : "—");
-
-const StatCard = ({ label, value, hint, accent }) => (
-  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-    <p className={`mt-2 text-3xl font-bold ${accent || "text-slate-900"}`}>{value}</p>
-    {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
-  </div>
-);
-
-const DashboardPage = () => {
-  const { apiRequest } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [error, setError] = useState("");
-
+const number = (value) => new Intl.NumberFormat('vi-VN').format(Number(value || 0));
+const money = (value) => `${number(value)} ₫`;
+export default function DashboardPage() {
+  const { apiRequest, user } = useAuth();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
-    apiRequest("/api/v1/admin/stats")
-      .then((data) => {
-        if (active) setStats(data);
-      })
-      .catch((e) => {
-        if (active) setError(e.message);
-      });
-    return () => {
-      active = false;
-    };
-  }, [apiRequest]);
-
-  if (error) return <p className="alert">{error}</p>;
-  if (!stats) return <p className="text-slate-500">Đang tải số liệu...</p>;
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Tổng quan hệ thống</h1>
-        <p className="text-sm text-slate-500">Số liệu toàn nền tảng Zflix (nguồn: daily_stats + dữ liệu thật)</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Người dùng" value={formatNumber(stats.totalUsers)} hint="tài khoản đã đăng ký" />
-        <StatCard label="Phim / Tập" value={`${formatNumber(stats.totalProductions)} / ${formatNumber(stats.totalEpisodes)}`} hint="đang có trên hệ thống" />
-        <StatCard label="Tổng lượt xem" value={formatNumber(stats.totalViews)} accent="text-red-600" hint="tổng cộng từ daily_stats" />
-        <StatCard label="Doanh thu" value={`${formatNumber(stats.totalRevenue)} ₫`} accent="text-emerald-600" hint="tổng từ daily_stats" />
-        <StatCard label="Đánh giá" value={formatNumber(stats.totalRatings)} hint={`điểm trung bình ${stats.avgRating}/5`} />
-        <StatCard label="Bình luận" value={formatNumber(stats.totalComments)} />
-        <StatCard label="Thời gian xem" value={`${formatNumber(Math.round(stats.totalWatchTime / 3600))} giờ`} hint="tổng thời lượng xem" />
-        <StatCard label="Tỷ lệ hoàn thành TB" value={`${stats.avgRating > 0 ? stats.avgRating : 0} / 5`} hint="điểm hài lòng trung bình" />
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="font-semibold text-slate-900">Người dùng mới nhất</h2>
-        <table className="mt-3 w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-              <th className="py-2">Tên đăng nhập</th>
-              <th className="py-2">Email</th>
-              <th className="py-2">Vai trò</th>
-              <th className="py-2">Trạng thái</th>
-              <th className="py-2">Ngày tham gia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.recentUsers.map((user) => (
-              <tr key={user.id} className="border-b border-slate-100">
-                <td className="py-2 font-medium text-slate-800">{user.username}</td>
-                <td className="py-2 text-slate-600">{user.email}</td>
-                <td className="py-2">{user.role === "admin" ? "Admin" : "User"}</td>
-                <td className="py-2">
-                  <span className={user.status === "active" ? "text-emerald-600" : "text-red-600"}>
-                    {user.status === "active" ? "Hoạt động" : "Bị khóa"}
-                  </span>
-                </td>
-                <td className="py-2 text-slate-500">{formatDate(user.created_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-export default DashboardPage;
+    const calls = [apiRequest('/api/v1/admin/stats'), apiRequest('/api/v1/admin/views')];
+    if (user?.role === 'admin') calls.push(apiRequest('/api/v1/admin/moderation/reports?status=open&page=1'));
+    Promise.all(calls).then(([stats, views, moderation]) => { if (active) setData({ stats, views, moderation }); }).catch((cause) => { if (active) setError(cause.message); });
+    return () => { active = false; };
+  }, [apiRequest, user?.role]);
+  if (error) return <div className="dash-state" role="alert">Không thể tải tổng quan: {error}<button onClick={() => window.location.reload()}>Thử lại</button></div>;
+  if (!data) return <div className="dash-loading" aria-label="Đang tải tổng quan"><div /><div /><div /><div /><div /></div>;
+  const { stats, views, moderation } = data;
+  const cards = [
+    { label: 'Người dùng', value: number(stats.totalUsers), hint: 'Tài khoản trên hệ thống', icon: '◎' },
+    { label: 'Lượt xem', value: number(stats.totalViews), hint: 'Tổng lượt xem', icon: '▶' },
+    { label: 'Bình luận', value: number(stats.totalComments), hint: 'Tương tác cộng đồng', icon: '◉' },
+    { label: 'Đánh giá', value: number(stats.totalRatings), hint: `Trung bình ${stats.avgRating || 0}/5`, icon: '★' },
+    { label: 'Doanh thu', value: money(stats.totalRevenue), hint: 'Từ số liệu hệ thống', icon: '₫' },
+    { label: 'Phim & tập', value: `${number(stats.totalProductions)} / ${number(stats.totalEpisodes)}`, hint: 'Nội dung đang quản lý', icon: '▣' },
+  ];
+  const daily = views.daily || [], max = Math.max(1, ...daily.map((item) => Number(item.total_views || 0)));
+  return <div className="dash"><div className="dash-heading"><div><h2>Tổng quan hoạt động</h2><p>Số liệu hệ thống, cập nhật từ các API quản trị hiện có.</p></div><span>{new Date().toLocaleDateString('vi-VN')}</span></div>
+    <div className="dash-kpis">{cards.map((card) => <article key={card.label}><div className="dash-card-icon">{card.icon}</div><small>{card.label}</small><strong>{card.value}</strong><span>{card.hint}</span></article>)}</div>
+    <div className="dash-middle"><section className="dash-panel dash-chart"><div className="dash-panel-heading"><div><small>HOẠT ĐỘNG</small><h3>Lượt xem 30 ngày</h3></div><Link to="/admin/views">Xem chi tiết →</Link></div>{daily.length ? <><div className="dash-bars" aria-label="Biểu đồ lượt xem theo ngày">{daily.map((item) => <div key={item.stat_date} title={`${new Date(item.stat_date).toLocaleDateString('vi-VN')}: ${number(item.total_views)} lượt xem`}><span style={{ height: `${Math.max(3, Number(item.total_views || 0) / max * 100)}%` }} /></div>)}</div><div className="dash-chart-axis"><span>{new Date(daily[0].stat_date).toLocaleDateString('vi-VN')}</span><span>{new Date(daily[daily.length - 1].stat_date).toLocaleDateString('vi-VN')}</span></div></> : <p className="dash-empty">Chưa có số liệu lượt xem trong giai đoạn này.</p>}</section>
+      <section className="dash-panel dash-alerts"><div className="dash-panel-heading"><div><small>ƯU TIÊN</small><h3>Cần chú ý</h3></div></div>{moderation ? <><Link to="/admin/community-hub/moderation"><b>{moderation.stats?.open || 0}</b><span>Báo cáo chờ xử lý</span><i>→</i></Link><Link to="/admin/community-hub/moderation"><b>{moderation.stats?.flagsOpen || 0}</b><span>Cờ điểm cần kiểm tra</span><i>→</i></Link></> : <p className="dash-empty">Xem mục nội dung để theo dõi hoạt động cộng đồng.</p>}<Link to="/admin/community-hub/vip?view=payments"><b>VIP</b><span>Duyệt thanh toán</span><i>→</i></Link></section></div>
+    <section className="dash-panel"><div className="dash-panel-heading"><div><small>GẦN ĐÂY</small><h3>Người dùng mới</h3></div>{user?.role === 'admin' && <Link to="/admin/community-hub/users">Quản lý người dùng →</Link>}</div><div className="dash-recent">{stats.recentUsers?.length ? stats.recentUsers.map((entry) => <div key={entry.id}><span className="dash-avatar">{entry.username?.slice(0, 1).toUpperCase()}</span><div><strong>{entry.username}</strong><small>{entry.email}</small></div><span className={`dash-status ${entry.status === 'active' ? 'is-active' : ''}`}>{entry.status === 'active' ? 'Hoạt động' : 'Đã khóa'}</span><time>{new Date(entry.created_at).toLocaleDateString('vi-VN')}</time></div>) : <p className="dash-empty">Chưa có người dùng mới.</p>}</div></section>
+  </div>;
+}

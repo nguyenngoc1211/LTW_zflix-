@@ -4,6 +4,8 @@ import { mongoCollection, nextNumericId, withMongoTransaction } from "../../core
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 import { syncProductionIndex } from "../discovery/search.service.js";
+import { ensurePointIndexes, reversePoints } from '../community/points.service.js';
+import { cleanupCommentImages } from '../community/comment-media.js';
 
 export const adminModerationRouter = Router();
 const useMongo = () => process.env.DATA_STORE === "mongodb";
@@ -19,6 +21,32 @@ const requireStaff = (req, res, next) => {
 };
 
 adminModerationRouter.use(requireStaff);
+
+// Search comments within one post or movie without exposing private post content.
+adminModerationRouter.get('/content/comments', asyncHandler(async (req, res) => {
+  if (!useMongo()) return res.status(503).json({ message: 'MongoDB required' });
+  const source = req.query.source;
+  if (!['post', 'movie'].includes(source)) return res.status(400).json({ message: 'Invalid source' });
+  if (source === 'post' && req.user.role !== 'admin') return res.status(403).json({ message: 'Admin required' });
+  const sourceId = parsePositiveInt(req.query.sourceId, 'source id');
+  const page = parsePositiveInt(req.query.page || 1, 'page');
+  if (page > 1000) return res.status(400).json({ message: 'Pagination exceeds limit' });
+  const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
+  if (!search) return res.status(400).json({ message: 'Search is required' });
+  const collection = await mongoCollection(source === 'post' ? 'community_post_comments' : 'comments');
+  const parent = await (await mongoCollection(source === 'post' ? 'community_posts' : 'productions')).findOne(source === 'post' ? { _id: sourceId, status: 'active' } : { id: sourceId }, { projection: { _id: 1 } });
+  if (!parent) return res.status(404).json({ message: 'Content not found' });
+  const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const filter = { [source === 'post' ? 'post_id' : 'production_id']: sourceId, status: 'active', content: { $regex: escaped, $options: 'i' } };
+  const [total, rows] = await Promise.all([collection.countDocuments(filter), collection.find(filter, { projection: { _id: 1, id: 1, author_id: 1, user_id: 1, parent_id: 1, content: 1, created_at: 1, upvotes: 1, downvotes: 1, is_toxic: 1 } }).sort({ created_at: -1, _id: -1 }).skip((page - 1) * 20).limit(20).toArray()]);
+  const counts = await collection.aggregate([{ $match: { [source === 'post' ? 'post_id' : 'production_id']: sourceId, parent_id: { $in: rows.map((row) => row.id) }, status: 'active' } }, { $group: { _id: '$parent_id', total: { $sum: 1 } } }]).toArray();
+  const countById = new Map(counts.map((item) => [item._id, item.total]));
+  const votes = await (await mongoCollection(source === 'post' ? 'community_comment_votes' : 'movie_comment_votes')).aggregate([{ $match: { comment_id: { $in: rows.map((row) => row.id) } } }, { $group: { _id: '$comment_id', upvotes: { $sum: { $cond: [{ $eq: ['$value', 1] }, 1, 0] } }, downvotes: { $sum: { $cond: [{ $eq: ['$value', -1] }, 1, 0] } } } }]).toArray();
+  const votesById = new Map(votes.map((item) => [item._id, item]));
+  const authors = await (await mongoCollection('users')).find({ id: { $in: rows.map((row) => row.author_id ?? row.user_id) } }, { projection: { _id: 0, id: 1, username: 1, avatar_url: 1 } }).toArray();
+  const byId = new Map(authors.map((author) => [author.id, author]));
+  res.json({ items: rows.map((row) => ({ id: row.id, parent_id: row.parent_id ?? null, content: row.content, created_at: row.created_at, is_toxic: row.is_toxic, upvotes: votesById.get(row.id)?.upvotes || 0, downvotes: votesById.get(row.id)?.downvotes || 0, reply_count: countById.get(row.id) || 0, author: byId.get(row.author_id ?? row.user_id) || null, status: 'active' })), total, page, hasMore: page * 20 < total });
+}));
 
 // ---------------------------------------------------------------------------
 // GET /comments — danh sách bình luận mới nhất (tìm kiếm theo nội dung/phim)
@@ -86,8 +114,20 @@ adminModerationRouter.delete(
   asyncHandler(async (req, res) => {
     const commentId = parsePositiveInt(req.params.id, "comment id");
     if (useMongo()) {
-      const result = await (await mongoCollection("comments")).deleteOne({ id: commentId });
+      await ensurePointIndexes();
+      const result = await withMongoTransaction(async (session) => {
+        const collection = await mongoCollection('comments');
+        const existing = await collection.findOne({ id: commentId }, { session, projection: { images: 1 } });
+        const removed = await collection.deleteOne({ id: commentId }, { session });
+        if (removed.deletedCount) {
+          await reversePoints({ sourceType: 'movie_comment', sourceId: commentId, session });
+          await reversePoints({ sourceType: 'movie_comment_vote', sourceId: commentId, session });
+          await (await mongoCollection('moderation_audit')).insertOne({ actorId: req.user.id, targetType: 'movie_comment', targetId: commentId, action: 'delete', source: 'admin_content', createdAt: new Date() }, { session });
+        }
+        return { deletedCount: removed.deletedCount, images: existing?.images || [] };
+      });
       if (!result.deletedCount) return res.status(404).json({ message: "Comment not found" });
+      await cleanupCommentImages(result.images);
       return res.status(204).end();
     }
     const [result] = await pool.execute("DELETE FROM comments WHERE id = ?", [commentId]);
@@ -103,10 +143,12 @@ adminModerationRouter.get(
   "/ratings",
   asyncHandler(async (req, res) => {
     const { page, limit, offset } = clampPagination(req.query);
+    const productionId = req.query.productionId === undefined ? null : parsePositiveInt(req.query.productionId, 'production id');
     if (useMongo()) {
       const ratings = await mongoCollection("ratings");
-      const [total, rows] = await Promise.all([ratings.countDocuments(),
-        ratings.find({}).sort({ updated_at: -1 }).skip(offset).limit(limit).toArray()]);
+      const filter = productionId ? { production_id: productionId } : {};
+      const [total, rows] = await Promise.all([ratings.countDocuments(filter),
+        ratings.find(filter).sort({ updated_at: -1 }).skip(offset).limit(limit).toArray()]);
       const [users, productions] = await Promise.all([
         (await mongoCollection("users")).find({ id: { $in: rows.map((row) => row.user_id) } }).toArray(),
         (await mongoCollection("productions")).find({ id: { $in: rows.map((row) => row.production_id) } }).toArray(),
@@ -120,13 +162,14 @@ adminModerationRouter.get(
           username: usernames.get(row.user_id), production_title: titles.get(row.production_id) }));
       return res.json({ items, page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) });
     }
-    const [countRows] = await pool.execute("SELECT COUNT(*) AS total FROM ratings");
+    const [countRows] = await pool.execute(productionId ? "SELECT COUNT(*) AS total FROM ratings WHERE production_id = ?" : "SELECT COUNT(*) AS total FROM ratings", productionId ? [productionId] : []);
     const [rows] = await pool.execute(
       `SELECT r.user_id, r.production_id, r.rating, r.review_title, r.review_content, r.is_toxic, r.created_at,
               u.username, p.title AS production_title
        FROM ratings r JOIN users u ON u.id = r.user_id JOIN productions p ON p.id = r.production_id
+       ${productionId ? 'WHERE r.production_id = ?' : ''}
        ORDER BY r.updated_at DESC LIMIT ? OFFSET ?`,
-      [limit, offset],
+      productionId ? [productionId, limit, offset] : [limit, offset],
     );
     res.json({ items: rows, page, limit, total: countRows[0].total, pages: Math.max(1, Math.ceil(countRows[0].total / limit)) });
   }),
@@ -146,11 +189,12 @@ adminModerationRouter.delete(
         const result = await ratings.deleteOne({ user_id: userId, production_id: productionId }, { session });
         if (!result.deletedCount) return false;
         const summary = await ratings.aggregate([
-          { $match: { production_id: productionId } },
+          { $match: { production_id: productionId, moderation_hidden: { $ne: true } } },
           { $group: { _id: null, count: { $sum: 1 }, average: { $avg: "$rating" } } },
         ], { session }).next();
         await (await mongoCollection("productions")).updateOne({ id: productionId },
           { $set: { rating_avg: summary?.average || 0, rating_count: summary?.count || 0 } }, { session });
+        await (await mongoCollection('moderation_audit')).insertOne({ actorId: req.user.id, targetType: 'rating', targetId: productionId, targetUserId: userId, action: 'delete', source: 'admin_content', createdAt: new Date() }, { session });
         return true;
       });
       if (!deleted) return res.status(404).json({ message: "Rating not found" });

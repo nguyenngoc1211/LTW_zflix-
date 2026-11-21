@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../hooks/useAuth.js";
+import AdminModal from '../ui/AdminModal.jsx';
 
 const formatNumber = (value) => new Intl.NumberFormat("vi-VN").format(Number(value || 0));
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString("vi-VN") : "—");
@@ -17,6 +18,8 @@ const UsersAdminPage = () => {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const load = (targetPage = page, searchTerm = query) => {
     setLoading(true);
@@ -72,7 +75,7 @@ const UsersAdminPage = () => {
           <p className="text-sm text-slate-500">{formatNumber(total)} tài khoản</p>
         </div>
         <form
-          className="flex gap-2"
+          className="flex w-full flex-wrap gap-2 md:w-auto"
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
@@ -89,6 +92,7 @@ const UsersAdminPage = () => {
           <button className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700" type="submit">
             Tìm
           </button>
+          <select aria-label="Lọc trạng thái trong trang hiện tại" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">Mọi trạng thái</option><option value="active">Hoạt động</option><option value="disabled">Đã khóa</option></select>
         </form>
       </div>
 
@@ -113,12 +117,12 @@ const UsersAdminPage = () => {
                 <td className="px-4 py-6 text-slate-500" colSpan="6">Đang tải...</td>
               </tr>
             )}
-            {!loading && items.length === 0 && (
+            {!loading && items.filter((item) => statusFilter === 'all' || item.status === statusFilter).length === 0 && (
               <tr>
                 <td className="px-4 py-6 text-slate-500" colSpan="6">Không tìm thấy người dùng phù hợp.</td>
               </tr>
             )}
-            {!loading && items.map((item) => {
+            {!loading && items.filter((item) => statusFilter === 'all' || item.status === statusFilter).map((item) => {
               const isSelf = item.id === currentUser?.id;
               return (
                 <tr key={item.id} className="border-b border-slate-100 align-middle">
@@ -132,10 +136,10 @@ const UsersAdminPage = () => {
                       className="rounded-md border border-slate-300 px-2 py-1 text-xs disabled:opacity-50"
                       value={item.role}
                       disabled={isSelf}
-                      onChange={(event) => changeRole(item, event.target.value)}
+                      onChange={(event) => setPending({ kind: 'role', target: item, value: event.target.value })}
                     >
                       <option value="user">Người dùng</option>
-                      <option value="moderator">Moderator</option>
+                      <option value="moderator" disabled>Moderator</option>
                       <option value="admin">Admin</option>
                     </select>
                   </td>
@@ -150,7 +154,7 @@ const UsersAdminPage = () => {
                       type="button"
                       className={`rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 ${item.status === "active" ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"}`}
                       disabled={isSelf}
-                      onClick={() => toggleStatus(item)}
+                      onClick={() => setPending({ kind: 'status', target: item })}
                     >
                       {item.status === "active" ? "Khóa tài khoản" : "Mở khóa"}
                     </button>
@@ -161,6 +165,7 @@ const UsersAdminPage = () => {
           </tbody>
         </table>
       </div>
+      {pending && <AdminModal title={pending.kind === 'role' ? 'Xác nhận phân quyền' : 'Xác nhận trạng thái tài khoản'} onClose={() => setPending(null)}><p>{pending.kind === 'role' ? `Đổi vai trò của ${pending.target.username} thành ${pending.value}?` : `${pending.target.status === 'active' ? 'Khóa' : 'Mở khóa'} tài khoản ${pending.target.username}?`}</p><div className="mt-6 flex justify-end gap-3"><button className="rounded border border-slate-300 px-4 py-2" onClick={() => setPending(null)}>Hủy</button><button className="rounded bg-red-700 px-4 py-2 text-white" onClick={async () => { if (pending.kind === 'role') await changeRole(pending.target, pending.value); else await toggleStatus(pending.target); setPending(null); }}>Xác nhận</button></div></AdminModal>}
 
       <div className="flex items-center justify-between text-sm">
         <span className="text-slate-500">Trang {page} / {pages}</span>

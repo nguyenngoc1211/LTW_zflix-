@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../hooks/useAuth.js";
+import AdminModal from '../ui/AdminModal.jsx';
 
 const formatNumber = (value) => new Intl.NumberFormat("vi-VN").format(Number(value || 0));
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString("vi-VN") : "—");
@@ -69,6 +70,7 @@ const GrantVipForm = ({ onGranted }) => {
   const grant = async (event) => {
     event.preventDefault();
     if (!selected) return;
+    if (!window.confirm(`Kích hoạt VIP thủ công cho ${selected.username}?`)) return;
     setError("");
     try {
       const result = await apiRequest(`/api/v1/admin/users/${selected.id}/vip`, {
@@ -143,6 +145,7 @@ const SubscriptionsAdminPage = () => {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [panel, setPanel] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -169,9 +172,9 @@ const SubscriptionsAdminPage = () => {
         <p className="text-sm text-slate-500">Quản lý gói đăng ký, giao dịch và kích hoạt VIP thủ công</p>
       </div>
 
-      <GrantVipForm onGranted={load} />
-
-      <PlanEditor plans={data.plans || []} onSaved={load} />
+      <div className="flex flex-wrap gap-2"><button className="rounded-lg bg-red-700 px-4 py-2 text-sm text-white" onClick={() => setPanel('grant')}>Kích hoạt VIP thủ công</button><button className="rounded-lg border border-slate-300 px-4 py-2 text-sm" onClick={() => setPanel('plans')}>Chỉnh sửa gói VIP</button></div>
+      {panel === 'grant' && <AdminModal title="Kích hoạt VIP thủ công" onClose={() => setPanel('')}><GrantVipForm onGranted={() => { setPanel(''); load(); }} /></AdminModal>}
+      {panel === 'plans' && <AdminModal title="Chỉnh sửa gói VIP" size="wide" onClose={() => setPanel('')}><PlanEditor plans={data.plans || []} onSaved={() => { setPanel(''); load(); }} /></AdminModal>}
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-slate-900">Doanh thu theo tháng</h2>

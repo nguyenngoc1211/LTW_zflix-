@@ -23,6 +23,9 @@ const RatingSection = ({ productionId, onSaved }) => {
   const [revealedRatingIds, setRevealedRatingIds] = useState(() => new Set());
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
+  const [reportingId, setReportingId] = useState(null);
+  const [reportReason, setReportReason] = useState('spam');
+  const [reportDescription, setReportDescription] = useState('');
   const myRating = user
     ? ratings.find((item) => Number(item.user_id) === Number(user.id))
     : null;
@@ -268,6 +271,7 @@ const RatingSection = ({ productionId, onSaved }) => {
                   className="text-gray-300 text-sm mt-1 whitespace-pre-wrap break-words"
                 />
               )}
+              {user && Number(item.user_id) !== Number(user.id) && item.review_content && <div className="mt-3"><button type="button" className="text-xs text-red-400" onClick={() => setReportingId(reportingId === item.user_id ? null : item.user_id)}>Báo cáo review</button>{reportingId === item.user_id && <form className="mt-2 flex flex-col gap-2" onSubmit={async (event) => { event.preventDefault(); try { await apiRequest('/api/v1/moderation/reports', { method: 'POST', body: JSON.stringify({ targetType: 'rating', targetId: Number(productionId), productionId: Number(productionId), authorId: Number(item.user_id), reason: reportReason, description: reportDescription }) }); message.success('Đã gửi báo cáo review.'); setReportingId(null); setReportDescription(''); } catch (err) { message.error(err.message); } }}><select className="rounded bg-zinc-800 p-2 text-sm" value={reportReason} onChange={(event) => setReportReason(event.target.value)}><option value="spam">Spam</option><option value="harassment">Quấy rối</option><option value="spoiler">Tiết lộ nội dung</option><option value="other">Khác</option></select><textarea className="rounded bg-zinc-800 p-2 text-sm" maxLength={1000} value={reportDescription} onChange={(event) => setReportDescription(event.target.value)} placeholder="Mô tả vi phạm" /><button className="self-start rounded bg-red-700 px-3 py-2 text-xs text-white" type="submit">Gửi báo cáo</button></form>}</div>}
             </div>
           ))}
         </div>

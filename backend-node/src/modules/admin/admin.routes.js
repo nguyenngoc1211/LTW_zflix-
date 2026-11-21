@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
-import { fromMongo, mongoCollection } from "../../core/database/mongo.js";
+import { fromMongo, mongoCollection, withMongoTransaction } from "../../core/database/mongo.js";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 
@@ -149,13 +149,16 @@ adminRouter.patch(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const userId = parsePositiveInt(req.params.id, "user id");
-    const { role, status } = req.body || {};
+    const { role, status, reason } = req.body || {};
 
     if (role !== undefined && !["user", "admin"].includes(role)) {
       return res.status(400).json({ message: "role must be 'user' or 'admin'" });
     }
     if (status !== undefined && !["active", "disabled"].includes(status)) {
       return res.status(400).json({ message: "status must be 'active' or 'disabled'" });
+    }
+    if (reason !== undefined && (typeof reason !== 'string' || reason.trim().length < 10 || reason.trim().length > 500)) {
+      return res.status(400).json({ message: 'reason must be 10-500 characters' });
     }
     // Không cho admin tự hạ/khóa chính mình để tránh khóa hết admin
     if (userId === req.user.id && ((role && role !== "admin") || (status && status !== "active"))) {
@@ -164,18 +167,20 @@ adminRouter.patch(
 
     if (useMongo()) {
       const users = await mongoCollection("users");
-      const updates = {};
-      if (role !== undefined) updates.role = role;
-      if (status !== undefined) {
-        updates.status = status;
-        updates.disabled_at = status === "disabled" ? new Date() : null;
-      }
-      const result = Object.keys(updates).length
-        ? await users.updateOne({ id: userId }, { $set: updates })
-        : { matchedCount: await users.countDocuments({ id: userId }) };
-      if (!result.matchedCount) return res.status(404).json({ message: "User not found" });
-      const user = await users.findOne({ id: userId }, { projection: { id: 1,
-        username: 1, email: 1, role: 1, status: 1, created_at: 1 } });
+      const user = await withMongoTransaction(async (session) => {
+        const before = await users.findOne({ id: userId }, { session, projection: { id: 1, role: 1, status: 1 } });
+        if (!before) return null;
+        const updates = {};
+        if (role !== undefined && role !== before.role) updates.role = role;
+        if (status !== undefined && status !== before.status) {
+          updates.status = status;
+          updates.disabled_at = status === "disabled" ? new Date() : null;
+        }
+        if (Object.keys(updates).length) await users.updateOne({ id: userId }, { $set: updates }, { session });
+        if (updates.status) await (await mongoCollection('moderation_audit')).insertOne({ actorId: req.user.id, targetType: 'user', targetId: userId, action: status === 'disabled' ? 'lock' : 'unlock', source: 'admin_users', reason: reason?.trim() || null, createdAt: new Date() }, { session });
+        return users.findOne({ id: userId }, { session, projection: { id: 1, username: 1, email: 1, role: 1, status: 1, created_at: 1 } });
+      });
+      if (!user) return res.status(404).json({ message: "User not found" });
       return res.json(fromMongo(user));
     }
 

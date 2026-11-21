@@ -1,100 +1,78 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CommentActions, CommentForm, CommentFrame, CommentPagination, SpoilerContent } from '../community/UnifiedComment.jsx';
+import { CommentActions, CommentForm, CommentFrame, CommentMedia, CommentPagination, SpoilerContent } from '../community/UnifiedComment.jsx';
+import { DeleteContentDialog, ReportContentDialog } from '../community/CommunityActionDialogs.jsx';
 import ToxicComment from '../community/ToxicComment.jsx';
 import { useAuth } from '../../hooks/useAuth.js';
 import { apiRequest } from '../../services/api.js';
-import { commentRequestHeaders, clearCommentRequest } from '../../utils/commentRequest.js';
+import { commentPayload, commentRequestHeaders, clearCommentRequest } from '../../utils/commentRequest.js';
 import { MentionText } from '../community/MentionTextarea.jsx';
 
-export default function MovieCommentItem({ comment, productionId, episodeId, depth = 0 }) {
+export default function MovieCommentItem({ comment, productionId, episodeId, depth = 0, onChanged, onRepliesChanged, targetPath = [], targetPages = {} }) {
   const { user } = useAuth();
-  const [replying, setReplying] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [replying, setReplying] = useState(false);
   const [text, setText] = useState('');
+  const [replyImage, setReplyImage] = useState(null);
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
   const [more, setMore] = useState(false);
-  const [count, setCount] = useState(comment.reply_count || 0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [content, setContent] = useState(comment.content === '[Ảnh]' ? '' : comment.content);
+  const [editImage, setEditImage] = useState(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [upvotes, setUpvotes] = useState(comment.upvotes ?? 0);
   const [downvotes, setDownvotes] = useState(comment.downvotes ?? 0);
-  const [vote, setVote] = useState(comment.viewer_vote || 0);
-  const [voteBusy, setVoteBusy] = useState(false);
+  const [vote, setVote] = useState(comment.viewer_vote ?? 0);
   const votePending = useRef(false);
   const pendingComment = useRef(null);
-  const [spoiler] = useState(Boolean(comment.is_spoiler));
-  const [editing, setEditing] = useState(false);
-  const [content, setContent] = useState(comment.content);
-  const [removed, setRemoved] = useState(false);
-  const [reporting, setReporting] = useState(false);
-  const [reason, setReason] = useState('spam');
-  const [description, setDescription] = useState('');
-  const isOwner = Boolean(user && Number(comment.user_id) === Number(user.id));
-  const canEdit = isOwner && user?.role !== 'admin';
-  const canDelete = isOwner || user?.role === 'admin';
-  const menuItems = canEdit || canDelete
-    ? [
-        ...(canEdit ? [{ label: 'Sửa', action: () => setEditing(true) }] : []),
-        ...(canDelete ? [{ label: 'Xóa', action: () => remove() }] : []),
-      ]
-    : [{ label: 'Báo xấu', action: () => setReporting(true) }];
+  const own = user && Number(comment.user_id) === Number(user.id);
+  const staff = user?.role === 'admin';
   const endpoint = `/api/v1/productions/${productionId}/comments`;
-  const load = useCallback(async (targetPage) => {
-    const data = await apiRequest(`${endpoint}?parentId=${comment.id}&page=${targetPage}&limit=10`);
-    setItems(data.items); setMore(data.hasMore); setError('');
-  }, [endpoint, comment.id]);
-  useEffect(() => {
-    if (!expanded) return undefined;
-    let active = true;
-    apiRequest(`${endpoint}?parentId=${comment.id}&page=${page}&limit=10`).then((data) => {
-      if (active) { setItems(data.items); setMore(data.hasMore); setError(''); }
-    }).catch((err) => { if (active) setError(err.message); });
-    return () => { active = false; };
-  }, [endpoint, comment.id, expanded, page]);
+  const branchUrl = `${endpoint}?parentId=${comment.id}&page=${page}&limit=20${episodeId ? `&episodeId=${episodeId}` : ''}`;
+  useEffect(() => { if (!targetPath.includes(comment.id)) return; const timer = setTimeout(() => { setExpanded(true); setPage(targetPages[comment.id] || 1); }, 0); return () => clearTimeout(timer); }, [comment.id, targetPath, targetPages]);
+  const load = useCallback(async () => { const data = await apiRequest(branchUrl); setItems(data.items || []); setMore(Boolean(data.hasMore)); setError(''); }, [branchUrl]);
+  useEffect(() => { if (!expanded) return undefined; let active = true; apiRequest(branchUrl).then((data) => { if (active) { setItems(data.items || []); setMore(Boolean(data.hasMore)); } }).catch((cause) => { if (active) setError(cause.message); }); return () => { active = false; }; }, [expanded, branchUrl]);
   const saveVote = async (value) => {
     if (votePending.current) return;
-    votePending.current = true; setVoteBusy(true);
+    votePending.current = true;
     try { const result = await apiRequest(`/api/v1/comments/${comment.id}/vote`, { method: 'PUT', body: JSON.stringify({ value: vote === value ? 0 : value }) }); setUpvotes(result.upvotes); setDownvotes(result.downvotes); setVote(result.value); }
-    catch (err) { setError(err.message); }
-    finally { votePending.current = false; setVoteBusy(false); }
+    catch (cause) { setError(cause.message); }
+    finally { votePending.current = false; }
   };
-  const saveEdit = async (event) => {
-    event.preventDefault();
-    try { await apiRequest(`/api/v1/comments/${comment.id}`, { method: 'PATCH', body: JSON.stringify({ content, isSpoiler: spoiler }) }); setEditing(false); }
-    catch (err) { setError(err.message); }
-  };
-  const remove = async () => {
-    try { await apiRequest(`/api/v1/comments/${comment.id}`, { method: 'DELETE' }); setRemoved(true); }
-    catch (err) { setError(err.message); }
-  };
-  const report = async (event) => {
-    event.preventDefault();
-    try { await apiRequest(`/api/v1/comments/${comment.id}/reports`, { method: 'POST', body: JSON.stringify({ reason, description }) }); setReporting(false); setError('Đã gửi báo cáo.'); }
-    catch (err) { setError(err.message); }
-  };
-  const submit = async (event) => {
-    event.preventDefault();
-    if (!text.trim() || busy) return;
+  const submitReply = async (event) => {
+    event.preventDefault(); if (busy || (!text.trim() && !replyImage)) return;
     setBusy(true); setError('');
     try {
-      const body = JSON.stringify({ content: text.trim(), parentId: comment.id, isSpoiler: false, ...(episodeId && { episodeId }) });
-      await apiRequest(endpoint, { method: 'POST', body, headers: commentRequestHeaders(pendingComment, body) });
+      const { body, signature } = commentPayload({ content: text, imageFile: replyImage, parentId: comment.id, isSpoiler: false, ...(episodeId && { episodeId }) });
+      await apiRequest(endpoint, { method: 'POST', body, headers: commentRequestHeaders(pendingComment, signature) });
       clearCommentRequest(pendingComment);
-      setText(''); setReplying(false); setCount((value) => value + 1);
-      if (expanded && page === 1) await load(1); else { setPage(1); setExpanded(true); }
-    } catch (err) { setError(err.message); } finally { setBusy(false); }
+      setText(''); setReplyImage(null); setReplying(false); setExpanded(true); setPage(1);
+      if (page === 1) await load();
+      await onRepliesChanged?.(); onChanged?.();
+    } catch (cause) { setError(cause.message); } finally { setBusy(false); }
   };
-  return <CommentFrame avatar={comment.avatar_url} username={comment.username || `Thành viên #${comment.user_id}`} vipExpiresAt={comment.vip_expires_at} date={comment.created_at} profileId={comment.user_id}>
-      {removed ? <p className="movie-comment-content">[Đã xóa]</p> : editing ? <form onSubmit={saveEdit} className="movie-reply-form"><textarea value={content} onChange={(event) => setContent(event.target.value)} required maxLength={3000} /><div className="movie-comment-actions"><button type="submit">Lưu</button><button type="button" onClick={() => { setEditing(false); setContent(comment.content); }}>Hủy</button></div></form> : <SpoilerContent spoiler={spoiler}><ToxicComment content={content} isToxic={Boolean(Number(comment.is_toxic))} className="movie-comment-content"><p><MentionText text={content} /></p></ToxicComment></SpoilerContent>}
-      {!removed && <CommentActions user={user} upvotes={upvotes} downvotes={downvotes} vote={vote} voteBusy={voteBusy} onVote={saveVote} canReply={depth < 3} onReply={() => setReplying((value) => !value)} menuItems={menuItems}>
-        {(count > 0 || expanded) && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Ẩn trả lời' : `Trả lời (${count})`}</button>}
-      </CommentActions>}
-      {reporting && <form onSubmit={report} className="movie-reply-form"><label>Lý do<select value={reason} onChange={(event) => setReason(event.target.value)}><option value="spam">Spam</option><option value="harassment">Quấy rối</option><option value="spoiler">Spoiler</option><option value="other">Khác</option></select></label><label>Mô tả<textarea maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} /></label><div className="movie-comment-actions"><button type="submit">Gửi báo cáo</button><button type="button" onClick={() => setReporting(false)}>Hủy</button></div></form>}
-      {replying && <CommentForm onSubmit={submit} text={text} onText={setText} busy={busy} onCancel={() => setReplying(false)} label={`Trả lời ${comment.username || `thành viên #${comment.user_id}`}`} />}
-      {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-      {expanded && <div className="movie-replies">{items.map((item) => <MovieCommentItem key={item.id} comment={item} productionId={productionId} episodeId={episodeId} depth={depth + 1} />)}
-        {(page > 1 || more) && <CommentPagination page={page} more={more} onPage={setPage} />}
-      </div>}
-  </CommentFrame>;
+  const saveEdit = async (event) => {
+    event.preventDefault(); if (busy) return;
+    setBusy(true); setError('');
+    try { const { body } = commentPayload({ content, imageFile: editImage, isSpoiler: Boolean(comment.is_spoiler), ...(removeImage && { removeImage: true }) }); await apiRequest(`/api/v1/comments/${comment.id}`, { method: 'PATCH', body }); setEditing(false); setEditImage(null); setRemoveImage(false); await onRepliesChanged?.(); onChanged?.(); }
+    catch (cause) { setError(cause.message); }
+    finally { setBusy(false); }
+  };
+  const remove = async () => { await apiRequest(`/api/v1/comments/${comment.id}`, { method: 'DELETE' }); await onRepliesChanged?.(); onChanged?.(); };
+  const report = async ({ reason, description }) => { await apiRequest(`/api/v1/comments/${comment.id}/reports`, { method: 'POST', body: JSON.stringify({ reason, description }) }); setNotice('Đã gửi báo cáo cho quản trị viên.'); };
+  const menuItems = !user ? [] : own ? [{ label: 'Sửa', action: () => { setContent(comment.content === '[Ảnh]' ? '' : comment.content); setEditImage(null); setRemoveImage(false); setEditing(true); } }, { label: 'Xóa', action: () => setConfirmDelete(true) }] : [...(staff ? [{ label: 'Xóa nội dung', action: () => setConfirmDelete(true) }] : []), { label: 'Báo cáo', action: () => setReporting(true) }];
+  return <div id={`movie-comment-${comment.id}`}><CommentFrame avatar={comment.avatar_url} username={comment.username || `Thành viên #${comment.user_id}`} vipExpiresAt={comment.vip_expires_at} date={comment.created_at} profileId={comment.user_id}>
+    {editing ? <CommentForm onSubmit={saveEdit} text={content} onText={setContent} imageFile={editImage} onImageFile={setEditImage} existingImageUrl={removeImage ? null : comment.image_urls?.[0]} onRemoveExisting={() => setRemoveImage(true)} busy={busy} onCancel={() => { setEditing(false); setContent(comment.content === '[Ảnh]' ? '' : comment.content); setEditImage(null); setRemoveImage(false); }} label="Chỉnh sửa bình luận" /> : <SpoilerContent spoiler={comment.is_spoiler}>{comment.content !== '[Ảnh]' && <ToxicComment content={comment.content} isToxic={Boolean(Number(comment.is_toxic))} className="movie-comment-content"><p><MentionText text={comment.content} /></p></ToxicComment>}<CommentMedia urls={comment.image_urls} /></SpoilerContent>}
+    <CommentActions user={user} upvotes={upvotes} downvotes={downvotes} vote={vote} voteBusy={false} onVote={saveVote} canReply={depth < 3} onReply={() => setReplying((value) => !value)} menuItems={menuItems}>{(comment.reply_count > 0 || expanded) && <button type="button" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Ẩn trả lời' : `Trả lời (${comment.reply_count || 0})`}</button>}</CommentActions>
+    {replying && <CommentForm onSubmit={submitReply} text={text} onText={setText} imageFile={replyImage} onImageFile={setReplyImage} busy={busy} onCancel={() => setReplying(false)} label={`Trả lời ${comment.username || 'thành viên'}`} />}
+    {reporting && <ReportContentDialog kind="bình luận" onSubmit={report} onClose={() => setReporting(false)} />}
+    {confirmDelete && <DeleteContentDialog kind="bình luận" onConfirm={remove} onClose={() => setConfirmDelete(false)} />}
+    {notice && <p role="status" className="text-emerald-300 text-xs">{notice}</p>}{error && <p role="alert" className="text-red-300 text-xs">{error}</p>}
+    {expanded && <div className="movie-replies">{items.map((item) => <MovieCommentItem key={item.id} comment={item} productionId={productionId} episodeId={episodeId} depth={depth + 1} onChanged={onChanged} onRepliesChanged={load} targetPath={targetPath} targetPages={targetPages} />)}{(page > 1 || more) && <CommentPagination page={page} more={more} onPage={setPage} />}</div>}
+  </CommentFrame></div>;
 }

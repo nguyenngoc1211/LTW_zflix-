@@ -11,6 +11,7 @@ import { registerWatchPartySocket, authenticateSocket } from "./modules/watch-pa
 import { ensureNotificationIndexes, setNotificationNamespace } from "./modules/community/notification.service.js";
 import { ensureEpisodeNotificationJobIndex, processEpisodeNotificationJobs } from './modules/community/episode-notification.job.js';
 import { processExpiredVipNotifications } from './modules/community/vip-expiration.job.js';
+import { closeMonth, monthKey } from './modules/community/points.service.js';
 
 // Lưu log bảo mật vào bảng security_events (song song với console)
 setSecurityLogSink((line) => {
@@ -70,6 +71,17 @@ setNotificationNamespace(notificationNamespace);
 if (process.env.DATA_STORE === 'mongodb') ensureNotificationIndexes().catch((error) => console.error('Notification indexes:', error));
 if (process.env.DATA_STORE === 'mongodb') ensureEpisodeNotificationJobIndex().catch((error) => console.error('Notification job index:', error));
 if (process.env.DATA_STORE === 'mongodb') {
+  // Close only the previous month. Rewards remain pending until an admin approves them.
+  const closePreviousMonth = () => {
+    const [year, month] = monthKey().split('-').map(Number);
+    const prior = monthKey(new Date(Date.UTC(year, month - 1, 0, 12)));
+    return closeMonth(prior).catch((error) => console.error('Points month close:', error));
+  };
+  if (process.env.POINTS_MONTH_CLOSE_ENABLED !== 'false') {
+    const pointsWorker = setInterval(closePreviousMonth, 3600000);
+    pointsWorker.unref();
+    closePreviousMonth();
+  }
   const worker = setInterval(() => processEpisodeNotificationJobs().catch((error) => console.error('Notification job:', error)), 5000);
   worker.unref();
   const vipWorker = setInterval(() => processExpiredVipNotifications().catch((error) => console.error('VIP notification job:', error)), 3600000);

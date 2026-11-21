@@ -7,10 +7,8 @@ import UsersAdminPage from "../admin/users/UsersAdminPage.jsx";
 import MoviesAdminPage from "../admin/content/MoviesAdminPage.jsx";
 import ContentTable from "../admin/content/ContentTable.jsx";
 import ViewsPage from "../admin/analytics/ViewsPage.jsx";
-import CommunityAdminPage from "../admin/community/CommunityAdminPage.jsx";
+import PointsAdminPage from "../admin/community/PointsAdminPage.jsx";
 import PartiesAdminPage from "../admin/community/PartiesAdminPage.jsx";
-import SubscriptionsAdminPage from "../admin/subscriptions/SubscriptionsAdminPage.jsx";
-import VipPaymentsAdminPage from "../admin/subscriptions/VipPaymentsAdminPage.jsx";
 import VipPage from "../modules/vip/VipPage.jsx";
 import SecurityAdminPage from "../admin/security/SecurityAdminPage.jsx";
 import SettingsAdminPage from "../admin/settings/SettingsAdminPage.jsx";
@@ -32,6 +30,13 @@ import CreateParty from "../pages/CreateParty.jsx";
 import PartyRoom from "../pages/PartyRoom.jsx";
 import CommunityPage from "../modules/community/CommunityPage.jsx";
 import CommunityProfilePage from "../modules/community/CommunityProfilePage.jsx";
+import LeaderboardPage from "../modules/community/LeaderboardPage.jsx";
+import QuestsPage from "../modules/community/QuestsPage.jsx";
+import QuestsAdminPage from "../admin/community/QuestsAdminPage.jsx";
+import ModerationAdminPage from "../admin/community/ModerationAdminPage.jsx";
+import CommunityHubLayout from "../admin/community/CommunityHubLayout.jsx";
+import CommunityContentPage from "../admin/community/CommunityContentPage.jsx";
+import VipHubPage from "../admin/community/VipHubPage.jsx";
 
 export const router = createBrowserRouter([
   {
@@ -47,6 +52,7 @@ export const router = createBrowserRouter([
       //   /movies/:id?ep=1   -> WatchPage (trình phát, chọn mùa/tập)
       { path: "movies/:id", element: <MoviePage /> },
       { path: "community", element: <CommunityPage /> },
+      { path: "leaderboard", element: <LeaderboardPage /> },
       { path: "community/create", element: <CommunityPage view="create" /> },
       { path: "community/posts/:id", element: <CommunityPage view="detail" /> },
       { path: "community/users/:id", element: <CommunityProfilePage /> },
@@ -61,6 +67,7 @@ export const router = createBrowserRouter([
           { path: "community/saved", element: <CommunityPage view="saved" /> },
           { path: "history", element: <HistoryPage /> },
           { path: "notifications", element: <NotificationsPage /> },
+          { path: "quests", element: <QuestsPage /> },
           { path: "settings", element: <SettingsPage /> },
           { path: "vip", element: <VipPage /> },
           { path: "account/profile", element: <Navigate to="/settings?tab=profile" replace /> },
@@ -103,22 +110,36 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <DashboardPage />,
+            element: <Navigate to="/admin/community-hub" replace />,
           },
           { path: "/admin/movies", element: <MoviesAdminPage /> },
           { path: "/admin/content", element: <ContentTable /> },
-          { path: "/admin/community", element: <CommunityAdminPage /> },
+          { path: "/admin/community", element: <Navigate to="/admin/community-hub/content?view=movies" replace /> },
           { path: "/admin/parties", element: <PartiesAdminPage /> },
           { path: "/admin/shopping", element: <ShoppingAdminPage /> },
           { path: "/admin/views", element: <ViewsPage /> },
-          { path: "/admin/vip-payments", element: <VipPaymentsAdminPage /> },
+          { path: "/admin/vip-payments", element: <Navigate to="/admin/community-hub/vip?view=payments" replace /> },
+          { path: "/admin/community-hub", element: <CommunityHubLayout />, children: [
+            { index: true, element: <DashboardPage /> },
+            { path: "content", element: <CommunityContentPage /> },
+            { path: "vip", element: <VipHubPage /> },
+            { element: <ProtectedRoute allowedRoles={["admin"]} />, children: [
+              { path: "users", element: <UsersAdminPage /> },
+              { path: "moderation", element: <ModerationAdminPage /> },
+              { path: "points", element: <PointsAdminPage /> },
+              { path: "quests", element: <QuestsAdminPage /> },
+            ] },
+          ] },
           {
             element: <ProtectedRoute allowedRoles={["admin"]} />,
             children: [
-              { path: "/admin/users", element: <UsersAdminPage /> },
-              { path: "/admin/subscriptions", element: <SubscriptionsAdminPage /> },
+              { path: "/admin/users", element: <Navigate to="/admin/community-hub/users" replace /> },
+              { path: "/admin/subscriptions", element: <Navigate to="/admin/community-hub/vip" replace /> },
               { path: "/admin/security", element: <SecurityAdminPage /> },
               { path: "/admin/settings", element: <SettingsAdminPage /> },
+              { path: "/admin/points", element: <Navigate to="/admin/community-hub/points" replace /> },
+              { path: "/admin/quests", element: <Navigate to="/admin/community-hub/quests" replace /> },
+              { path: "/admin/moderation", element: <Navigate to="/admin/community-hub/moderation" replace /> },
             ],
           },
         ],

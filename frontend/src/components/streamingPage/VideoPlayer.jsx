@@ -11,7 +11,6 @@ import SelectionOverlay from "../SelectionOverlay";
 import ProductPanel from "../ProductPanel";
 import { useLensy } from "../../hooks/useLensy";
 import { useVideoSource } from "../../hooks/useVideoSource";
-import ScreenshotComposer from "./ScreenshotComposer";
 
 const Toggle = ({ checked, onChange, label }) => (
   <button
@@ -56,9 +55,7 @@ const VideoPlayer = ({
   settings,
   setSettings,
   productionId,
-  productionTitle,
   onTimeUpdate,
-  onScreenshotPublished,
   resumePosition,
 }) => {
   const videoRef = useRef(null);
@@ -223,7 +220,6 @@ const VideoPlayer = ({
           >
             {theater ? 'Thoát chế độ rạp' : 'Chế độ rạp'}
           </Button>
-          {!isLocked && <ScreenshotComposer videoRef={videoRef} productionId={productionId} productionTitle={productionTitle} episode={currentEpisode} onPublished={onScreenshotPublished} />}
           {(lensy.state === "SLEEPING" || lensy.state === "AWAKE") && !isLocked && (
             <LensyMascot
               inline

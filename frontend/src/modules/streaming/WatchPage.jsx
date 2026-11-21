@@ -13,7 +13,6 @@ import RelatedMovies from "../../components/streamingPage/RelatedMovies";
 import { useWatchPage } from "../../hooks/streaming/useWatchPage";
 
 const WatchPage = () => {
-  const [momentsVersion, setMomentsVersion] = useState(0);
   const [theater, setTheater] = useState(false);
   const [searchParams] = useSearchParams();
   const {
@@ -83,10 +82,8 @@ const WatchPage = () => {
                   settings={playerSettings}
                   setSettings={setPlayerSettings}
                   productionId={productionData?.id ?? currentEpisode.production_id}
-                  productionTitle={productionData?.title}
                   onTimeUpdate={handlers.handleTimeUpdate}
                   resumePosition={requestedPosition}
-                  onScreenshotPublished={() => setMomentsVersion((value) => value + 1)}
                 />
               ) : (
                 <div className="aspect-video bg-black flex items-center justify-center text-gray-500">
@@ -104,7 +101,7 @@ const WatchPage = () => {
                 />
               </div>
               <div className="watch-discussion">
-                <MovieDiscussion key={currentEpisode?.id} productionId={productionData?.id ?? currentEpisode?.production_id} episodeId={currentEpisode?.id} version={momentsVersion} />
+                <MovieDiscussion key={currentEpisode?.id} productionId={productionData?.id ?? currentEpisode?.production_id} episodeId={currentEpisode?.id} />
               </div>
             </div>
 

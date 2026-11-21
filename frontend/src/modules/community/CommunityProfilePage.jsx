@@ -14,6 +14,11 @@ export default function CommunityProfilePage() {
   const { id } = useParams();
   const { user, updateAvatar } = useAuth();
   const [profile, setProfile] = useState(null);
+  const [myPoints, setMyPoints] = useState(null);
+  const [reportingUser, setReportingUser] = useState(false);
+  const [reportReason, setReportReason] = useState('spam');
+  const [reportDescription, setReportDescription] = useState('');
+  const [achievements, setAchievements] = useState([]);
   const [tab, setTab] = useState('posts');
   const [page, setPage] = useState(1);
   const [items, setItems] = useState([]);
@@ -34,6 +39,8 @@ export default function CommunityProfilePage() {
     catch (err) { setError(err.message); setProfile(null); }
   }, [id]);
   useEffect(() => { loadProfile(); }, [loadProfile, user?.id]);
+  useEffect(() => { if (user && Number(id) === user.id) apiRequest('/api/v1/points/me').then(setMyPoints).catch(() => setMyPoints(null)); else setMyPoints(null); }, [id, user]);
+  useEffect(() => { let active = true; apiRequest(`/api/v1/quests/achievements/${id}`).then((result) => { if (active) setAchievements(result.items || []); }).catch(() => { if (active) setAchievements([]); }); return () => { active = false; }; }, [id]);
   useEffect(() => {
     let active = true; setLoading(true);
     apiRequest(`/api/v1/community/users/${id}/activity?tab=${tab}&page=${page}`).then((result) => { if (active) { setItems(result.items || []); setHasMore(result.hasMore); setError(''); } }).catch((err) => { if (active) { setItems([]); setError(err.message); } }).finally(() => { if (active) setLoading(false); });
@@ -74,9 +81,17 @@ export default function CommunityProfilePage() {
   };
   const changeTab = (next) => { setTab(next); setPage(1); };
   const showList = (next) => { setList(next); setListPage(1); };
+  const reportUser = async (event) => {
+    event.preventDefault();
+    try { await apiRequest('/api/v1/moderation/reports', { method: 'POST', body: JSON.stringify({ targetType: 'user', targetId: Number(id), reason: reportReason, description: reportDescription }) }); setReportingUser(false); setReportDescription(''); setMessage('Đã gửi báo cáo tài khoản.'); }
+    catch (err) { setMessage(err.message); }
+  };
   return <main className="community-profile-page"><div className="community-profile-wrap"><Link className="community-profile-back" to="/community"><FiArrowLeft /> Bảng tin</Link>{error && <p role="alert" className="community-profile-message">{error}</p>}{profile && <>
     <section className="community-profile-hero"><div className="community-profile-banner" /><div className="community-profile-header"><div className="community-profile-avatar-wrap"><UserAvatar src={profile.avatar_url} className={`community-profile-avatar ${vipAvatarClass(profile.vip_expires_at)}`} />{profile.isSelf && <label className="community-profile-camera" title="Đổi ảnh đại diện"><FiCamera /><input type="file" accept="image/jpeg,image/png,image/webp" onChange={avatar} disabled={busy} /></label>}</div><div className="community-profile-identity"><h1><VipIdentity username={profile.display_name || profile.username} vipExpiresAt={profile.vip_expires_at} /></h1><p>@{profile.username}</p><small>Tham gia {profile.created_at ? new Date(profile.created_at).toLocaleDateString('vi-VN') : 'ZFLIX'}</small></div>{profile.isSelf ? <button type="button" className="community-profile-follow muted" onClick={() => setEditing(!editing)}><FiEdit3 /> Chỉnh sửa</button> : <button type="button" className={`community-profile-follow ${profile.isFollowing ? 'muted' : ''}`} onClick={follow} disabled={busy || !profile.canFollow}>{profile.isFollowing ? <FiUserCheck /> : <FiUserPlus />}{profile.isFollowing ? 'Đang theo dõi' : 'Theo dõi'}</button>}</div><p className="community-profile-bio">{profile.bio || (profile.isSelf ? 'Thêm vài dòng giới thiệu về bạn.' : 'Chưa có giới thiệu.')}</p><div className="community-profile-stats"><span><strong>{profile.counts.posts}</strong>Bài viết</span><button type="button" onClick={() => showList('followers')}><strong>{profile.counts.followers}</strong>Người theo dõi</button><button type="button" onClick={() => showList('following')}><strong>{profile.counts.following}</strong>Đang theo dõi</button></div></section>
+    {user && !profile.isSelf && <section className="community-profile-edit"><button type="button" onClick={() => setReportingUser(!reportingUser)}>Báo cáo tài khoản</button>{reportingUser && <form onSubmit={reportUser}><label>Lý do<select value={reportReason} onChange={(event) => setReportReason(event.target.value)}><option value="spam">Spam</option><option value="harassment">Quấy rối</option><option value="fraud">Gian lận</option><option value="other">Khác</option></select></label><label>Mô tả<textarea maxLength={1000} value={reportDescription} onChange={(event) => setReportDescription(event.target.value)} /></label><button type="submit">Gửi báo cáo</button></form>}</section>}
     {editing && profile.isSelf && <form className="community-profile-edit" onSubmit={saveProfile}><label>Tên hiển thị<input maxLength={80} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>Giới thiệu<textarea maxLength={500} value={bio} onChange={(event) => setBio(event.target.value)} /></label><div><button disabled={busy}>Lưu hồ sơ</button><button type="button" onClick={() => setEditing(false)}>Hủy</button></div></form>}
+    {profile.isSelf && myPoints && <section className="community-profile-edit"><h2>Điểm cộng đồng</h2><p>Tổng tích lũy: <strong>{myPoints.totalPoints}</strong> · Tháng này: <strong>{myPoints.monthlyPoints}</strong> · Hạng: <strong>{myPoints.rank ? `#${myPoints.rank}` : '—'}</strong></p><p>Huy hiệu: {myPoints.badges?.filter((badge) => badge.kind === 'badge').map((badge) => `${badge.month} Top ${badge.rank}`).join(', ') || 'Chưa có'}</p><Link to="/leaderboard">Xem lịch sử điểm và bảng xếp hạng →</Link></section>}
+    {achievements.length > 0 && <section className="community-profile-edit"><h2>Thành tựu</h2><div className="community-achievement-list">{achievements.map((item) => <span key={item.id} title={item.description}>{item.icon} {item.title}</span>)}</div>{profile.isSelf && <Link to="/quests">Xem tiến độ nhiệm vụ →</Link>}</section>}
     {message && <p role="status" className="community-profile-message">{message}</p>}
     {list && <section className="community-profile-list"><div><h2>{list === 'followers' ? 'Người theo dõi' : 'Đang theo dõi'}</h2><button type="button" onClick={() => setList('')}>Đóng</button></div>{listItems.length ? listItems.map((entry) => <Link key={entry.id} to={`/community/users/${entry.id}`} onClick={() => setList('')}><UserAvatar src={entry.avatar_url} className={`community-profile-list-avatar ${vipAvatarClass(entry.vip_expires_at)}`} /><span><VipIdentity username={entry.display_name || entry.username} vipExpiresAt={entry.vip_expires_at} /><small>@{entry.username}</small></span></Link>) : <p>Chưa có người dùng nào.</p>}<div className="community-profile-pages"><button disabled={listPage === 1} onClick={() => setListPage(listPage - 1)}>Trước</button><span>{listPage}</span><button disabled={!listMore} onClick={() => setListPage(listPage + 1)}>Sau</button></div></section>}
     <div className="community-profile-tabs" role="group" aria-label="Hoạt động">{tabs.filter(([value]) => value !== 'liked' || profile.isSelf).map(([value, label]) => <button key={value} type="button" aria-pressed={tab === value} onClick={() => changeTab(value)}>{label}</button>)}</div>

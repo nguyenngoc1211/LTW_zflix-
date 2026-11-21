@@ -106,6 +106,7 @@ export const login = async (email, password, metadata = {}) => {
   const user = await users.findOne({ email });
   if (!user || user.provider !== "local" || !user.password) return null;
   if (user.status !== "active") return { denied: "disabled", userId: user.id };
+  if (user.moderation_locked_until && new Date(user.moderation_locked_until).getTime() > Date.now()) return { denied: "locked", userId: user.id };
   if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
     return { denied: "locked", userId: user.id };
   }
@@ -147,7 +148,7 @@ export const refresh = async (currentToken) => {
   if (!existing) return null;
   const user = await users.findOne({ id: existing.user_id });
   const now = new Date();
-  if (!user || user.status !== "active" || !existing.absolute_expires_at || existing.absolute_expires_at <= now) {
+  if (!user || user.status !== "active" || (user.moderation_locked_until && new Date(user.moderation_locked_until) > now) || !existing.absolute_expires_at || existing.absolute_expires_at <= now) {
     await sessions.updateOne({ id: existing.id, revoked_at: null }, { $set: { revoked_at: now } });
     return null;
   }

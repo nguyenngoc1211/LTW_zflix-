@@ -11,6 +11,8 @@ import { commentRequestIdentity, ensureCommentRequestIndex, existingCommentForRe
 import { notifyMentions, resolveMentions } from './mention.service.js';
 import { notifyLike, syncLikeCount } from './like-notification.service.js';
 import { createHash } from 'node:crypto';
+import { awardPoint, reversePoints, ensurePointIndexes, meaningfulContent } from './points.service.js';
+import { commentImageUpload, commentImageHash, commentImageUrls, saveCommentImage, cleanupCommentImages, finalizeCommentImages, commentBool } from './comment-media.js';
 
 export const postsRouter = Router();
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
@@ -100,23 +102,27 @@ const requireMembership = async (communityId, userId) => {
 };
 export const visibleTo = async (user) => {
   if (!user) return { visibility: 'public' };
+  if (user.role === 'admin') return {};
   const memberships = await (await mongoCollection('community_members')).find({ user_id: user.id, status: 'active' }, { projection: { community_id: 1 } }).toArray();
   const groups = await (await mongoCollection('community_groups')).find({ _id: { $in: memberships.map((item) => item.community_id) }, status: 'active' }, { projection: { _id: 1 } }).toArray();
   return { $or: [{ visibility: 'public' }, { visibility: 'members', community_id: { $in: groups.map((group) => group._id) } }] };
 };
 postsRouter.use(guardStore);
 const isScene = (req) => req.baseUrl === '/api/v1/scene-questions';
-const contentFilter = (req) => isScene(req) ? 'scene_question' : { $in: ['community_post', null] };
+const contentFilter = (req) => isScene(req)
+  ? { $or: [{ content_type: 'scene_question' }, { content_type: null, type: 'screenshot' }] }
+  : { content_type: { $in: ['community_post', null] } };
 postsRouter.param('id', async (req, res, next, value) => {
   try {
     const id = parsePositiveInt(value);
-    const post = await (await mongoCollection('community_posts')).findOne({ _id: id, content_type: contentFilter(req) }, { projection: { _id: 1 } });
+    const post = await (await mongoCollection('community_posts')).findOne({ _id: id, ...contentFilter(req) }, { projection: { _id: 1 } });
     if (!post) return res.status(404).json({ message: 'Post not found' });
     return next();
   } catch (error) { return next(error); }
 });
 const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 5, fields: 1 } });
-postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.array('images', 5)(req, res, (error) => {
+const pointsActionLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120, standardHeaders: 'draft-7', legacyHeaders: false });
+postsRouter.post('/with-images', requireAuth, pointsActionLimiter, (req, res, next) => imageUpload.array('images', 5)(req, res, (error) => {
   if (error) return res.status(400).json({ message: 'Invalid upload or image exceeds 5 MB' });
   return next();
 }), asyncHandler(async (req, res) => {
@@ -147,6 +153,7 @@ postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.ar
   const id = await nextNumericId('community_posts');
   const mentions = await resolveMentions(`${fields.title} ${fields.content}`);
   await ensureNotificationIndexes();
+  await ensurePointIndexes();
   const keys = await uploadPostImages(req.files);
   const now = new Date();
   const post = { _id: id, id, author_id: req.user.id, type, content_type: isScene(req) ? 'scene_question' : 'community_post', visibility: 'public', ...fields, mention_user_ids: mentions.map((user) => user.id), images: keys, ...(type === 'screenshot' && { screenshot_key: keys[0], timestamp_seconds: timestampSeconds }), status: 'active', is_spoiler: fields.is_spoiler ?? false, show_on_movie_page: isScene(req), upvotes: 0, downvotes: 0, score: 0, comment_count: 0, created_at: now, updated_at: now, ...(identity || {}) };
@@ -154,6 +161,7 @@ postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.ar
   try {
     notifications = await withMongoTransaction(async (session) => {
       await (await mongoCollection('community_posts')).insertOne(post, { session });
+      if (!isScene(req) && fields.title.length >= 8 && meaningfulContent(fields.content, 30, 5)) await awardPoint({ userId: req.user.id, type: fields.category === 'review' ? 'review' : 'post', sourceType: 'post', sourceId: id, content: `${fields.title} ${fields.content}`, session });
       return notifyMentions({ recipients: mentions, actor: req.user, contentId: id,
         contentType: 'post', redirectUrl: `/community/${isScene(req) ? 'scene-questions' : 'posts'}/${id}`,
         excerpt: fields.content || fields.title, session });
@@ -183,7 +191,7 @@ postsRouter.post('/with-images', requireAuth, (req, res, next) => imageUpload.ar
 postsRouter.get('/saved', requireAuth, asyncHandler(async (req, res) => {
   if (isScene(req)) return res.status(404).json({ message: 'Not found' });
   const saved = await (await mongoCollection('community_saved_posts')).find({ user_id: req.user.id }).sort({ created_at: -1 }).limit(100).toArray();
-  const posts = await (await mongoCollection('community_posts')).find({ _id: { $in: saved.map((item) => item.post_id) }, content_type: contentFilter(req), status: 'active', ...await visibleTo(req.user) }).toArray();
+  const posts = await (await mongoCollection('community_posts')).find({ _id: { $in: saved.map((item) => item.post_id) }, status: 'active', $and: [contentFilter(req), await visibleTo(req.user)] }).toArray();
   const byId = new Map(posts.map((post) => [post._id, post]));
   res.json({ items: await presentMany(saved.flatMap((item) => byId.has(item.post_id) ? [byId.get(item.post_id)] : []), req.user.id) });
 }));
@@ -195,7 +203,7 @@ postsRouter.get('/movie-options', asyncHandler(async (req, res) => {
   res.json({ items });
 }));
 postsRouter.get('/', optionalAuth, asyncHandler(async (req, res) => {
-  const filter = { status: 'active', content_type: contentFilter(req), ...await visibleTo(req.user) };
+  const filter = { status: 'active', $and: [contentFilter(req), await visibleTo(req.user)] };
   if (isScene(req) && req.query.movieId === undefined) throw bad('movieId is required');
   for (const [key, field] of [['movieId', 'production_id'], ['episodeId', 'episode_id'], ['communityId', 'community_id']]) if (req.query[key] !== undefined) filter[field] = parsePositiveInt(req.query[key], key);
   if (req.query.onMoviePage === 'true') filter.show_on_movie_page = true;
@@ -243,7 +251,7 @@ postsRouter.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
 postsRouter.put('/:id/poll-vote', requireAuth, asyncHandler(async (req, res) => {
   if (isScene(req)) return res.status(404).json({ message: 'Not found' });
   const id = parsePositiveInt(req.params.id);
-  const post = await (await mongoCollection('community_posts')).findOne({ _id: id, content_type: contentFilter(req), status: 'active', ...await visibleTo(req.user) });
+  const post = await (await mongoCollection('community_posts')).findOne({ _id: id, status: 'active', $and: [contentFilter(req), await visibleTo(req.user)] });
   if (!post?.poll_options) return res.status(404).json({ message: 'Poll not found' });
   const option = req.body?.option;
   if (!Number.isInteger(option) || option < 0 || option >= post.poll_options.length) throw bad('Invalid poll option');
@@ -259,7 +267,7 @@ postsRouter.put('/:id/poll-vote', requireAuth, asyncHandler(async (req, res) => 
   const counts = await votes.aggregate([{ $match: { post_id: id } }, { $group: { _id: '$option', count: { $sum: 1 } } }]).toArray();
   res.json({ poll_counts: post.poll_options.map((_, index) => counts.find((entry) => entry._id === index)?.count || 0), viewer_poll_option: option });
 }));
-postsRouter.post('/', requireAuth, asyncHandler(async (req, res) => {
+postsRouter.post('/', requireAuth, pointsActionLimiter, asyncHandler(async (req, res) => {
   if (isScene(req)) return res.status(404).json({ message: 'Not found' });
   const fields = await validate(req.body);
   await requireMembership(fields.community_id, req.user.id);
@@ -275,9 +283,11 @@ postsRouter.post('/', requireAuth, asyncHandler(async (req, res) => {
   const mentions = await resolveMentions(`${fields.title} ${fields.content}`);
   const post = { _id: id, id, author_id: req.user.id, type: 'normal', content_type: 'community_post', visibility: 'public', ...fields, mention_user_ids: mentions.map((user) => user.id), status: 'active', is_spoiler: fields.is_spoiler ?? false, show_on_movie_page: false, upvotes: 0, downvotes: 0, score: 0, comment_count: 0, created_at: now, updated_at: now, ...(identity || {}) };
   await ensureNotificationIndexes();
+  await ensurePointIndexes();
   let notifications;
   try { notifications = await withMongoTransaction(async (session) => {
     await (await mongoCollection('community_posts')).insertOne(post, { session });
+    if (fields.title.length >= 8 && meaningfulContent(fields.content, 30, 5)) await awardPoint({ userId: req.user.id, type: fields.category === 'review' ? 'review' : 'post', sourceType: 'post', sourceId: id, content: `${fields.title} ${fields.content}`, session });
     return notifyMentions({ recipients: mentions, actor: req.user, contentId: id,
       contentType: 'post', redirectUrl: `/community/posts/${id}`, excerpt: fields.content || fields.title, session });
   }); } catch (error) {
@@ -296,6 +306,7 @@ postsRouter.patch('/:id', requireAuth, asyncHandler(async (req, res) => {
   const collection = await mongoCollection('community_posts');
   const existing = await collection.findOne({ _id: id, author_id: req.user.id, status: 'active' });
   if (!existing) return res.status(404).json({ message: 'Post not found' });
+  if ('category' in req.body && req.body.category !== existing.category) throw bad('Post category cannot be changed');
   if (existing.type === 'screenshot' && ('productionId' in req.body || 'episodeId' in req.body)) throw bad('Screenshot movie and episode cannot be changed');
   if ('pollOptions' in req.body && existing.poll_options) throw bad('Poll options cannot be changed');
   const fields = await validate(req.body, { title: existing.title, content: existing.content, visibility: existing.visibility, ...(existing.production_id && { production_id: existing.production_id }), ...(existing.episode_id && { episode_id: existing.episode_id }), ...(existing.community_id && { community_id: existing.community_id }), tags: existing.tags || [], is_spoiler: existing.is_spoiler, ...(existing.category && { category: existing.category }), ...(existing.rating && { rating: existing.rating }), ...(existing.poll_options && { poll_options: existing.poll_options }) });
@@ -303,7 +314,12 @@ postsRouter.patch('/:id', requireAuth, asyncHandler(async (req, res) => {
   if ('communityId' in req.body || fields.visibility === 'members') await requireMembership(fields.community_id, req.user.id);
   const unset = {};
   for (const field of ['production_id', 'episode_id', 'community_id']) if (!(field in fields)) unset[field] = '';
-  const result = await collection.findOneAndUpdate({ _id: id, author_id: req.user.id, status: 'active', updated_at: existing.updated_at }, { $set: { ...fields, updated_at: new Date() }, ...(Object.keys(unset).length && { $unset: unset }) }, { returnDocument: 'after' });
+  await ensurePointIndexes();
+  const result = await withMongoTransaction(async (session) => {
+    const changed = await collection.findOneAndUpdate({ _id: id, author_id: req.user.id, status: 'active', updated_at: existing.updated_at }, { $set: { ...fields, updated_at: new Date() }, ...(Object.keys(unset).length && { $unset: unset }) }, { returnDocument: 'after', session });
+    if (changed && (fields.title.length < 8 || !meaningfulContent(fields.content, 30, 5))) { await reversePoints({ sourceType: 'post', sourceId: id, session }); await reversePoints({ sourceType: 'post_milestone', sourceId: id, session }); }
+    return changed;
+  });
   if (!result) return res.status(409).json({ message: 'Post changed; retry' });
   res.json((await presentMany([result], req.user.id))[0]);
 }));
@@ -315,12 +331,13 @@ postsRouter.put('/:id/save', requireAuth, asyncHandler(async (req, res) => {
   await saved.updateOne({ user_id: req.user.id, post_id: postId }, { $setOnInsert: { user_id: req.user.id, post_id: postId, created_at: new Date() } }, { upsert: true });
   res.status(204).end();
 }));
-postsRouter.put('/:id/vote', requireAuth, asyncHandler(async (req, res) => {
+postsRouter.put('/:id/vote', requireAuth, pointsActionLimiter, asyncHandler(async (req, res) => {
   const postId = parsePositiveInt(req.params.id);
   const value = req.body?.value;
   if (![0, 1, -1].includes(value) || Object.keys(req.body).some((key) => key !== 'value')) throw bad('Vote must be -1, 0 or 1');
   const visibility = await visibleTo(req.user);
   if (value === 1) await ensureNotificationIndexes();
+  await ensurePointIndexes();
   const result = await withMongoTransaction(async (session) => {
     const posts = await mongoCollection('community_posts');
     const votes = await mongoCollection('community_post_votes');
@@ -328,12 +345,22 @@ postsRouter.put('/:id/vote', requireAuth, asyncHandler(async (req, res) => {
     if (!post) return null;
     const previous = await votes.findOne({ post_id: postId, user_id: req.user.id }, { session });
     const old = previous?.value || 0;
+    if (post.author_id === req.user.id && value === 1) throw bad('Cannot upvote own post');
     if (value === 0) await votes.deleteOne({ post_id: postId, user_id: req.user.id }, { session });
     else await votes.updateOne({ post_id: postId, user_id: req.user.id }, { $set: { value }, $setOnInsert: { post_id: postId, user_id: req.user.id } }, { upsert: true, session });
     const updated = await posts.findOneAndUpdate({ _id: postId, status: 'active' }, { $inc: { upvotes: Number(value === 1) - Number(old === 1), downvotes: Number(value === -1) - Number(old === -1), score: value - old }, $set: { updated_at: new Date() } }, { session, returnDocument: 'after' });
     if (!updated) return null;
+    if (post.author_id !== req.user.id && old !== value) {
+      if (old === 1) await reversePoints({ sourceType: 'post_vote', sourceId: postId, actorId: req.user.id, session });
+      if (value === 1) await awardPoint({ userId: post.author_id, type: 'upvote', sourceType: 'post_vote', sourceId: postId, actorId: req.user.id, session });
+    }
     const upvotes = await votes.countDocuments({ post_id: postId, value: 1 }, { session });
     const downvotes = await votes.countDocuments({ post_id: postId, value: -1 }, { session });
+    const eligiblePost = await (await mongoCollection('point_transactions')).findOne({ sourceType: 'post', sourceId: postId, points: { $gt: 0 } }, { session, projection: { _id: 1 } });
+    if (eligiblePost && post.author_id !== req.user.id) {
+      if (upvotes >= 10) await awardPoint({ userId: post.author_id, type: 'milestone', sourceType: 'post_milestone', sourceId: postId, session });
+      else await reversePoints({ sourceType: 'post_milestone', sourceId: postId, session });
+    }
     const notifiedLikes = old !== value && (old === 1 || value === 1)
       ? await votes.countDocuments({ post_id: postId, value: 1, user_id: { $ne: post.author_id } }, { session }) : null;
     const notification = old !== 1 && value === 1 ? await notifyLike({ recipientId: post.author_id,
@@ -362,9 +389,9 @@ postsRouter.get('/:id/comments', optionalAuth, asyncHandler(async (req, res) => 
   const byId = new Map(authors.map((author) => [author.id, author]));
   const counts = await (await mongoCollection('community_post_comments')).aggregate([
     { $match: { post_id: postId, parent_id: { $in: visible.map((item) => item._id) }, status: { $in: ['active', 'deleted'] } } },
-    { $group: { _id: '$parent_id', count: { $sum: 1 } } },
+    { $group: { _id: '$parent_id', count: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } }, threadCount: { $sum: 1 } } },
   ]).toArray();
-  const countById = new Map(counts.map((entry) => [entry._id, entry.count]));
+  const countById = new Map(counts.map((entry) => [entry._id, entry]));
   const votes = req.user ? await (await mongoCollection('community_comment_votes')).find({ user_id: req.user.id, comment_id: { $in: visible.map((item) => item._id) } }, { projection: { comment_id: 1, value: 1 } }).toArray() : [];
   const voteById = new Map(votes.map((entry) => [entry.comment_id, entry.value]));
   const voteCounts = await (await mongoCollection('community_comment_votes')).aggregate([
@@ -372,7 +399,7 @@ postsRouter.get('/:id/comments', optionalAuth, asyncHandler(async (req, res) => 
     { $group: { _id: '$comment_id', upvotes: { $sum: { $cond: [{ $eq: ['$value', 1] }, 1, 0] } }, downvotes: { $sum: { $cond: [{ $eq: ['$value', -1] }, 1, 0] } } } },
   ]).toArray();
   const votesById = new Map(voteCounts.map((entry) => [entry._id, entry]));
-  res.json({ items: visible.map((item) => ({ ...item, author: byId.get(item.author_id) || null, viewer_vote: voteById.get(item._id) || 0, reply_count: countById.get(item._id) || 0, upvotes: votesById.get(item._id)?.upvotes || 0, downvotes: votesById.get(item._id)?.downvotes || 0 })), page, hasMore: items.length > 20 });
+  res.json({ items: visible.map((item) => ({ ...item, image_urls: commentImageUrls(item.images), author: byId.get(item.author_id) || null, viewer_vote: voteById.get(item._id) || 0, reply_count: countById.get(item._id)?.count || 0, thread_count: countById.get(item._id)?.threadCount || 0, upvotes: votesById.get(item._id)?.upvotes || 0, downvotes: votesById.get(item._id)?.downvotes || 0 })), page, hasMore: items.length > 20 });
 }));
 
 postsRouter.get('/:id/comments/:commentId/context', optionalAuth, asyncHandler(async (req, res) => {
@@ -395,13 +422,14 @@ postsRouter.get('/:id/comments/:commentId/context', optionalAuth, asyncHandler(a
   if (currentId) return res.status(404).json({ message: 'Comment not found' });
   res.json({ path });
 }));
-postsRouter.put('/:id/comments/:commentId/vote', requireAuth, asyncHandler(async (req, res) => {
+postsRouter.put('/:id/comments/:commentId/vote', requireAuth, pointsActionLimiter, asyncHandler(async (req, res) => {
   const postId = parsePositiveInt(req.params.id);
   const commentId = parsePositiveInt(req.params.commentId);
   const value = req.body?.value;
   if (![0, 1, -1].includes(value) || Object.keys(req.body).some((key) => key !== 'value')) throw bad('Vote must be -1, 0 or 1');
   const visibility = await visibleTo(req.user);
   if (value === 1) await ensureNotificationIndexes();
+  await ensurePointIndexes();
   const result = await withMongoTransaction(async (session) => {
     const posts = await mongoCollection('community_posts');
     const comments = await mongoCollection('community_post_comments');
@@ -412,10 +440,15 @@ postsRouter.put('/:id/comments/:commentId/vote', requireAuth, asyncHandler(async
     const previous = await votes.findOne({ comment_id: commentId, user_id: req.user.id }, { session });
     const voteId = previous?._id ?? `${commentId}:${req.user.id}`;
     const old = previous?.value || 0;
+    if (comment.author_id === req.user.id && value === 1) throw bad('Cannot upvote own comment');
     if (value === 0) await votes.deleteOne({ _id: voteId }, { session });
     else await votes.updateOne({ _id: voteId }, { $set: { value }, $setOnInsert: { comment_id: commentId, user_id: req.user.id } }, { upsert: true, session });
     const updated = await comments.findOneAndUpdate({ _id: commentId, post_id: postId, status: 'active' }, { $inc: { score: value - old } }, { session, returnDocument: 'after' });
     if (!updated) return null;
+    if (comment.author_id !== req.user.id && old !== value) {
+      if (old === 1) await reversePoints({ sourceType: 'comment_vote', sourceId: commentId, actorId: req.user.id, session });
+      if (value === 1) await awardPoint({ userId: comment.author_id, type: 'upvote', sourceType: 'comment_vote', sourceId: commentId, actorId: req.user.id, session });
+    }
     const upvotes = await votes.countDocuments({ comment_id: commentId, value: 1 }, { session });
     const downvotes = await votes.countDocuments({ comment_id: commentId, value: -1 }, { session });
     const notifiedLikes = old !== value && (old === 1 || value === 1)
@@ -434,26 +467,30 @@ postsRouter.put('/:id/comments/:commentId/vote', requireAuth, asyncHandler(async
   const { notification, refreshRecipientId, ...payload } = result;
   res.json(payload);
 }));
-postsRouter.post('/:id/comments', requireAuth, asyncHandler(async (req, res) => {
+postsRouter.post('/:id/comments', requireAuth, pointsActionLimiter, commentImageUpload, asyncHandler(async (req, res) => {
   const postId = parsePositiveInt(req.params.id);
   const body = req.body;
-  if (!body || Object.keys(body).some((key) => !['content', 'parentId', 'isSpoiler'].includes(key)) || typeof body.content !== 'string' || !body.content.trim() || body.content.trim().length > 3000 || ('isSpoiler' in body && typeof body.isSpoiler !== 'boolean')) throw bad('Invalid comment');
+  const content = (typeof body?.content === 'string' ? body.content.trim() : '') || (req.file ? '[Ảnh]' : '');
+  if (!body || Object.keys(body).some((key) => !['content', 'parentId', 'isSpoiler'].includes(key)) || (!content && !req.file) || content.length > 3000 || ('isSpoiler' in body && ![true, false, 'true', 'false'].includes(body.isSpoiler))) throw bad('Invalid comment');
   const parentId = body.parentId == null ? null : parsePositiveInt(body.parentId, 'parentId');
   const visibility = await visibleTo(req.user);
   const comments = await mongoCollection('community_post_comments');
-  const identity = commentRequestIdentity(req, { postId, parentId, content: body.content.trim(), isSpoiler: body.isSpoiler ?? false });
+  const identity = commentRequestIdentity(req, { postId, parentId, content, isSpoiler: commentBool(body.isSpoiler), ...(req.file && { imageHash: commentImageHash(req.file) }) });
   if (identity) {
     await ensureCommentRequestIndex(comments, 'community_post_comments');
     const previous = await existingCommentForRequest(comments, identity);
-    if (previous) return res.status(200).json({ ...previous, idempotent: true });
+    if (previous) return res.status(200).json({ ...previous, image_urls: commentImageUrls(previous.images), idempotent: true });
   }
   const id = await nextNumericId('community_post_comments');
   await ensureNotificationIndexes();
+  await ensurePointIndexes();
+  const imageKeys = await saveCommentImage(req.file);
   let result;
   try { result = await withMongoTransaction(async (session) => {
     const posts = await mongoCollection('community_posts');
     const post = await posts.findOne({ _id: postId, status: 'active', ...visibility }, { session });
     if (!post) return null;
+    if (req.file && post.visibility === 'members') throw bad('Images in members-only comments are unavailable');
     let depth = 0;
     let parent;
     if (parentId) {
@@ -462,9 +499,10 @@ postsRouter.post('/:id/comments', requireAuth, asyncHandler(async (req, res) => 
       depth = parent.depth + 1;
     }
     const now = new Date();
-    const mentions = await resolveMentions(body.content, session);
-    const comment = { _id: id, id, post_id: postId, author_id: req.user.id, content: body.content.trim(), mention_user_ids: mentions.map((user) => user.id), ...(parentId && { parent_id: parentId }), depth, is_spoiler: body.isSpoiler ?? false, status: 'active', created_at: now, updated_at: now, ...(identity || {}) };
+    const mentions = await resolveMentions(content, session);
+    const comment = { _id: id, id, post_id: postId, author_id: req.user.id, content, images: imageKeys, mention_user_ids: mentions.map((user) => user.id), ...(parentId && { parent_id: parentId }), depth, is_spoiler: commentBool(body.isSpoiler), status: 'active', created_at: now, updated_at: now, ...(identity || {}) };
     await comments.insertOne(comment, { session });
+    if (meaningfulContent(comment.content, 12, 3)) await awardPoint({ userId: req.user.id, type: post.content_type === 'scene_question' ? 'answer' : 'comment', sourceType: 'post_comment', sourceId: id, content: comment.content, session });
     await posts.updateOne({ _id: postId, status: 'active' }, { $inc: { comment_count: 1 } }, { session });
     const notification = await notifyComment({ recipientId: parentId ? parent?.author_id : post.author_id,
       actor: { id: req.user.id, username: req.user.username, avatar_url: req.user.avatarUrl },
@@ -476,38 +514,62 @@ postsRouter.post('/:id/comments', requireAuth, asyncHandler(async (req, res) => 
       excerpt: comment.content, excludedRecipientId: parentId ? parent?.author_id : post.author_id, session });
     return { comment, notification, mentionNotifications };
   }); } catch (error) {
+    await cleanupCommentImages(imageKeys);
     if (error.code !== 11000 || !identity) throw error;
     const previous = await existingCommentForRequest(comments, identity);
     if (!previous) throw error;
-    return res.status(200).json({ ...previous, idempotent: true });
+    return res.status(200).json({ ...previous, image_urls: commentImageUrls(previous.images), idempotent: true });
   }
-  if (!result) return res.status(404).json({ message: 'Post not found' });
+  if (!result) { await cleanupCommentImages(imageKeys); return res.status(404).json({ message: 'Post not found' }); }
+  await finalizeCommentImages(imageKeys);
   emitStoredNotification(result.notification);
   result.mentionNotifications.forEach(emitStoredNotification);
-  res.status(201).json(result.comment);
+  res.status(201).json({ ...result.comment, image_urls: commentImageUrls(imageKeys) });
 }));
-postsRouter.patch('/:id/comments/:commentId', requireAuth, asyncHandler(async (req, res) => {
+postsRouter.patch('/:id/comments/:commentId', requireAuth, commentImageUpload, asyncHandler(async (req, res) => {
   const postId = parsePositiveInt(req.params.id), commentId = parsePositiveInt(req.params.commentId);
   const body = req.body;
-  if (!body || Object.keys(body).some((key) => !['content', 'isSpoiler'].includes(key)) || typeof body.content !== 'string' || !body.content.trim() || body.content.trim().length > 3000 || ('isSpoiler' in body && typeof body.isSpoiler !== 'boolean')) throw bad('Invalid comment');
-  if (!await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', ...await visibleTo(req.user) })) return res.status(404).json({ message: 'Post not found' });
-  const updates = { content: body.content.trim(), updated_at: new Date(), ...('isSpoiler' in body && { is_spoiler: body.isSpoiler }) };
-  const result = await (await mongoCollection('community_post_comments')).findOneAndUpdate({ _id: commentId, post_id: postId, author_id: req.user.id, status: 'active' }, { $set: updates }, { returnDocument: 'after' });
-  if (!result) return res.status(404).json({ message: 'Comment not found' });
-  res.json(result);
+  if (!body || Object.keys(body).some((key) => !['content', 'isSpoiler', 'removeImage'].includes(key)) || typeof body.content !== 'string' || body.content.trim().length > 3000 || ('isSpoiler' in body && ![true, false, 'true', 'false'].includes(body.isSpoiler)) || ('removeImage' in body && ![true, false, 'true', 'false'].includes(body.removeImage)) || (req.file && commentBool(body.removeImage))) throw bad('Invalid comment');
+  const post = await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', ...await visibleTo(req.user) });
+  if (!post) return res.status(404).json({ message: 'Post not found' });
+  if (req.file && post.visibility === 'members') throw bad('Images in members-only comments are unavailable');
+  const existing = await (await mongoCollection('community_post_comments')).findOne({ _id: commentId, post_id: postId, author_id: req.user.id, status: 'active' });
+  if (!existing) return res.status(404).json({ message: 'Comment not found' });
+  const content = body.content.trim() || (req.file || (!commentBool(body.removeImage) && existing.images?.length) ? '[Ảnh]' : '');
+  if (!content && !req.file && (commentBool(body.removeImage) || !existing.images?.length)) throw bad('Invalid comment');
+  await ensurePointIndexes();
+  const imageKeys = await saveCommentImage(req.file);
+  const oldKeys = req.file || commentBool(body.removeImage) ? existing.images || [] : [];
+  const updates = { content, updated_at: new Date(), ...('isSpoiler' in body && { is_spoiler: commentBool(body.isSpoiler) }), ...(req.file && { images: imageKeys }), ...(commentBool(body.removeImage) && { images: [] }) };
+  let result;
+  try { result = await withMongoTransaction(async (session) => {
+    const changed = await (await mongoCollection('community_post_comments')).findOneAndUpdate({ _id: commentId, post_id: postId, author_id: req.user.id, status: 'active', updated_at: existing.updated_at }, { $set: updates }, { returnDocument: 'after', session });
+    if (changed && !meaningfulContent(content, 12, 3)) await reversePoints({ sourceType: 'post_comment', sourceId: commentId, session });
+    return changed;
+  }); } catch (error) { await cleanupCommentImages(imageKeys); throw error; }
+  if (!result) { await cleanupCommentImages(imageKeys); return res.status(409).json({ message: 'Comment changed; retry' }); }
+  await finalizeCommentImages(imageKeys);
+  await cleanupCommentImages(oldKeys);
+  res.json({ ...result, image_urls: commentImageUrls(result.images) });
 }));
 postsRouter.delete('/:id/comments/:commentId', requireAuth, asyncHandler(async (req, res) => {
   const postId = parsePositiveInt(req.params.id), commentId = parsePositiveInt(req.params.commentId);
-  const visibility = await visibleTo(req.user);
+  const visibility = ['admin', 'moderator'].includes(req.user.role) ? {} : await visibleTo(req.user);
+  await ensurePointIndexes();
   const deleted = await withMongoTransaction(async (session) => {
     const posts = await mongoCollection('community_posts');
     if (!await posts.findOne({ _id: postId, status: 'active', ...visibility }, { session })) return false;
-    const result = await (await mongoCollection('community_post_comments')).updateOne({ _id: commentId, post_id: postId, author_id: req.user.id, status: 'active' }, { $set: { status: 'deleted', content: '[Đã xóa]', updated_at: new Date() } }, { session });
+    const before = await (await mongoCollection('community_post_comments')).findOne({ _id: commentId, post_id: postId, status: 'active' }, { session, projection: { author_id: 1, images: 1 } });
+    const result = await (await mongoCollection('community_post_comments')).updateOne({ _id: commentId, post_id: postId, ...(['admin', 'moderator'].includes(req.user.role) ? {} : { author_id: req.user.id }), status: 'active' }, { $set: { status: 'deleted', content: '[Đã xóa]', images: [], updated_at: new Date() } }, { session });
     if (!result.matchedCount) return false;
+    await reversePoints({ sourceType: 'post_comment', sourceId: commentId, session });
+    await reversePoints({ sourceType: 'comment_vote', sourceId: commentId, session });
     await posts.updateOne({ _id: postId, status: 'active', comment_count: { $gt: 0 } }, { $inc: { comment_count: -1 } }, { session });
-    return true;
+    if (['admin', 'moderator'].includes(req.user.role) && req.user.id !== before?.author_id) await (await mongoCollection('moderation_audit')).insertOne({ actorId: req.user.id, targetType: 'comment', targetId: commentId, postId, action: 'delete', source: 'admin_content', createdAt: new Date() }, { session });
+    return before?.images || [];
   });
   if (!deleted) return res.status(404).json({ message: 'Comment not found' });
+  await cleanupCommentImages(deleted);
   res.status(204).end();
 }));
 postsRouter.delete('/:id/save', requireAuth, asyncHandler(async (req, res) => {
@@ -517,22 +579,23 @@ postsRouter.delete('/:id/save', requireAuth, asyncHandler(async (req, res) => {
 }));
 const reportLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: 'draft-7', legacyHeaders: false });
 postsRouter.post('/:id/reports', requireAuth, reportLimiter, asyncHandler(async (req, res) => {
-  if (!isScene(req)) return res.status(404).json({ message: 'Not found' });
   const postId = parsePositiveInt(req.params.id);
   const { reason, description = '' } = req.body || {};
-  if (!['spam', 'harassment', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000 || Object.keys(req.body || {}).some((key) => !['reason', 'description'].includes(key))) throw bad('Invalid report');
-  if (!await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', content_type: 'scene_question', ...await visibleTo(req.user) })) return res.status(404).json({ message: 'Post not found' });
-  try { await (await mongoCollection('community_reports')).insertOne({ _id: `scene-question:${postId}:${req.user.id}`, reporter_id: req.user.id, target_type: 'post', target_id: postId, reason, description: description.trim(), status: 'open', created_at: new Date() }); }
+  if (!['spam', 'harassment', 'inappropriate', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000 || Object.keys(req.body || {}).some((key) => !['reason', 'description'].includes(key))) throw bad('Invalid report');
+  const reportedPost = await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', $and: [contentFilter(req), await visibleTo(req.user)] });
+  if (!reportedPost || reportedPost.author_id === req.user.id) return res.status(404).json({ message: 'Post not found' });
+  try { await (await mongoCollection('community_reports')).insertOne({ _id: `${isScene(req) ? 'scene-question' : 'community-post'}:${postId}:${req.user.id}`, reporter_id: req.user.id, target_type: 'post', target_id: postId, target_excerpt: `${reportedPost.title || ''} ${reportedPost.content || ''}`.trim().slice(0, 500), reason, description: description.trim(), status: 'open', created_at: new Date() }); }
   catch (error) { if (error.code === 11000) return res.status(409).json({ message: 'Already reported' }); throw error; }
   res.status(201).json({ message: 'Report submitted' });
 }));
 postsRouter.post('/:id/comments/:commentId/reports', requireAuth, reportLimiter, asyncHandler(async (req, res) => {
-  if (!isScene(req)) return res.status(404).json({ message: 'Not found' });
   const postId = parsePositiveInt(req.params.id), commentId = parsePositiveInt(req.params.commentId);
   const { reason, description = '' } = req.body || {};
-  if (!['spam', 'harassment', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000 || Object.keys(req.body || {}).some((key) => !['reason', 'description'].includes(key))) throw bad('Invalid report');
-  if (!await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', content_type: 'scene_question', ...await visibleTo(req.user) }) || !await (await mongoCollection('community_post_comments')).findOne({ _id: commentId, post_id: postId, status: 'active' })) return res.status(404).json({ message: 'Comment not found' });
-  try { await (await mongoCollection('community_reports')).insertOne({ _id: `scene-comment:${commentId}:${req.user.id}`, reporter_id: req.user.id, target_type: 'comment', target_id: commentId, comment_source: 'scene', post_id: postId, reason, description: description.trim(), status: 'open', created_at: new Date() }); }
+  if (!['spam', 'harassment', 'inappropriate', 'spoiler', 'other'].includes(reason) || typeof description !== 'string' || description.length > 1000 || Object.keys(req.body || {}).some((key) => !['reason', 'description'].includes(key))) throw bad('Invalid report');
+  const reportedPost = await (await mongoCollection('community_posts')).findOne({ _id: postId, status: 'active', $and: [contentFilter(req), await visibleTo(req.user)] });
+  const reportedComment = reportedPost && await (await mongoCollection('community_post_comments')).findOne({ _id: commentId, post_id: postId, status: 'active' });
+  if (!reportedComment || reportedComment.author_id === req.user.id) return res.status(404).json({ message: 'Comment not found' });
+  try { await (await mongoCollection('community_reports')).insertOne({ _id: `${isScene(req) ? 'scene' : 'community'}-comment:${commentId}:${req.user.id}`, reporter_id: req.user.id, target_type: 'comment', target_id: commentId, comment_source: isScene(req) ? 'scene' : 'community', post_id: postId, target_excerpt: reportedComment.content.slice(0, 500), reason, description: description.trim(), status: 'open', created_at: new Date() }); }
   catch (error) { if (error.code === 11000) return res.status(409).json({ message: 'Already reported' }); throw error; }
   res.status(201).json({ message: 'Report submitted' });
 }));
@@ -544,7 +607,19 @@ postsRouter.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
   let permitted = post.author_id === req.user.id || ['admin', 'moderator'].includes(req.user.role);
   if (!permitted && post.community_id) permitted = Boolean(await (await mongoCollection('community_members')).findOne({ community_id: post.community_id, user_id: req.user.id, status: 'active', role: { $in: ['owner', 'moderator'] } }));
   if (!permitted) return res.status(404).json({ message: 'Post not found' });
-  const result = await collection.updateOne({ _id: id, status: 'active', updated_at: post.updated_at, ...(post.community_id ? { community_id: post.community_id } : { community_id: { $exists: false } }) }, { $set: { status: 'deleted', updated_at: new Date() } });
+  await ensurePointIndexes();
+  const result = await withMongoTransaction(async (session) => {
+    const changed = await collection.updateOne({ _id: id, status: 'active', updated_at: post.updated_at, ...(post.community_id ? { community_id: post.community_id } : { community_id: { $exists: false } }) }, { $set: { status: 'deleted', updated_at: new Date() } }, { session });
+    if (changed.matchedCount) {
+      await reversePoints({ sourceType: 'post', sourceId: id, session });
+      await reversePoints({ sourceType: 'post_vote', sourceId: id, session });
+      await reversePoints({ sourceType: 'post_milestone', sourceId: id, session });
+      const comments = await (await mongoCollection('community_post_comments')).find({ post_id: id }, { session, projection: { _id: 1 } }).toArray();
+      for (const comment of comments) { await reversePoints({ sourceType: 'post_comment', sourceId: comment._id, session }); await reversePoints({ sourceType: 'comment_vote', sourceId: comment._id, session }); }
+      if (['admin', 'moderator'].includes(req.user.role) && post.author_id !== req.user.id) await (await mongoCollection('moderation_audit')).insertOne({ actorId: req.user.id, targetType: 'post', targetId: id, action: 'delete', source: 'admin_content', createdAt: new Date() }, { session });
+    }
+    return changed;
+  });
   if (!result.matchedCount) return res.status(404).json({ message: 'Post not found' });
   res.status(204).end();
 }));

@@ -27,6 +27,7 @@ services:
       - "3000:3000"
     environment:
       DATA_STORE: mongodb
+      POINTS_MONTH_CLOSE_ENABLED: ${POINTS_MONTH_CLOSE_ENABLED:-true}
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI must be set}
       MONGODB_DB_NAME: ${MONGODB_DB_NAME:?MONGODB_DB_NAME must be set}
       VIP_BANK_BIN: ${VIP_BANK_BIN:-}
