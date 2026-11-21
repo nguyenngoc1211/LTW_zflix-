@@ -1,228 +1,242 @@
-# 🎬 Zflix — Nền tảng xem phim trực tuyến
+# 🎬 Zflix
 
-Zflix là website xem phim xây dựng theo kiến trúc **Modular Monorepo**, được tích hợp từ công
-việc của nhiều thành viên trên các nhánh Git khác nhau (`dev`, `Du`, `Hai`, `Khoa`) về nhánh
-`integration`.
+Zflix là nền tảng xem phim trực tuyến dạng modular monorepo, kết hợp streaming, cộng đồng, Watch Party, quản trị nội dung và các dịch vụ AI tùy chọn.
 
-## ✨ Chức năng
+Phiên bản hiện tại trên nhánh `main` sử dụng **MongoDB** làm kho dữ liệu chính khi chạy bằng Docker Compose.
 
-| Module | Nguồn gốc | Chức năng |
-| --- | --- | --- |
-| **Discovery** | nhánh `Hai` | Trang chủ, tìm kiếm phim (Elasticsearch + fallback MySQL), lọc theo thể loại/quốc gia/năm/rating, trang chi tiết phim & danh sách tập |
-| **Auth & Security** | nhánh `Du` | Đăng ký, đăng nhập (JWT access token + refresh cookie httpOnly), đăng xuất, MFA/TOTP, quên/đặt lại mật khẩu, quản lý phiên đăng nhập, khóa tài khoản khi brute-force, rate limiting, security logging |
-| **Community** | nhánh `Hai` | Yêu thích (bookmarks), quan tâm phim mới, đánh giá 1–5 sao, bình luận, thông báo |
-| **Streaming** | nhánh `Hai` | Lịch sử xem, lưu/tiếp tục vị trí xem, trình phát video |
-| **Watch Party** | nhánh `Khoa` | Xem phim cùng nhau real-time (Socket.IO): đồng bộ play/pause/nhảy thời gian, chat trong phòng, quản lý thành viên (mute/kick/promote), phòng có mật khẩu |
-| **Admin** | nhánh `Ngoc` | Hệ quản trị riêng cho admin: dashboard tổng quan, quản lý người dùng (tìm kiếm/đổi role/khóa tài khoản), quản lý phim (VIP/trạng thái), thống kê lượt xem (biểu đồ 30 ngày, top phim, theo thể loại). Đăng nhập qua URL ẩn `/admin-login` |
-| **AI Visual Shopping** | nhánh `Ngoc` | Quét khoanh vùng món đồ trong khung hình -> **CLIP self-hosted** (ViT-B/32, Transformers.js/ONNX, load sẵn trong RAM) tạo embedding -> **HNSW index** tìm sản phẩm tương tự trong Local Catalog (import CSV/JSON) -> panel kết quả (ảnh, giá VND, % giống) -> affiliate redirect có ghi click. Vision LLM (Gemini/SerpAPI) chỉ là fallback tùy chọn. Timing riêng từng bước: crop/embed/search/rank |
+## Chức năng chính
 
-## 🏗️ Kiến trúc
-
-```
-frontend/            React 19 + Vite + Tailwind CSS 4 + Ant Design + react-router 7
-backend-node/        Express 5 (ESM) + mysql2 + Socket.IO + helmet + JWT
-backend-python/      FastAPI (ai-chatbot RAG :8002, video-processor :8001)
-database/            init.sql (schema + seed 50 phim) + migrate-hai.sql (idempotent)
-docker-compose.yml   MySQL 8 + Elasticsearch 8 + backend + 2 service Python + frontend
-```
-
-- Backend gồm các module độc lập: `auth`, `discovery`, `community`, `streaming`, `watch-party`.
-- `business-auth.bridge.js` là cầu nối: các module nghiệp vụ dùng chung middleware xác thực
-  của module `auth` (đăng nhập bằng JWT; khi chưa đăng nhập API riêng tư trả 401).
-- Tìm kiếm dùng Elasticsearch nếu khả dụng, tự động fallback về MySQL LIKE khi ES tắt.
-
-## 🛡️ Hệ quản trị (Admin)
-
-Trang đăng nhập quản trị **ẩn** với người dùng thường — không có link nào từ giao diện
-người dùng; truy cập trực tiếp: **`/admin-login`** (vd `http://localhost:5173/admin-login`).
-
-- Tài khoản không phải admin/moderator đăng nhập tại đây sẽ bị **từ chối và thu hồi phiên ngay**.
-- Sau khi đăng nhập: `/admin` (Tổng quan), `/admin/movies`, `/admin/community`, `/admin/parties`,
-  `/admin/views`, `/admin/users`, `/admin/subscriptions`, `/admin/security`, `/admin/settings`.
-- Người dùng thường vào `/admin` sẽ bị chuyển hướng về trang chủ.
-
-**Chức năng theo trang:**
-
-| Trang | Chức năng |
+| Nhóm | Chức năng |
 | --- | --- |
-| Tổng quan | Thẻ số liệu toàn hệ thống + người dùng mới nhất |
-| Quản lý phim | Thêm/sửa/xóa phim + thể loại, quản lý tập (thêm tập tự gửi thông báo người quan tâm), toggle VIP/trạng thái, nút reindex Elasticsearch |
-| Cộng đồng | Duyệt/xóa bình luận & đánh giá, gửi thông báo hàng loạt |
-| Watch Party | Theo dõi phòng, kết thúc/xóa phòng vi phạm |
-| Thống kê lượt xem | Biểu đồ 30 ngày, người dùng hoạt động/mới, top phim, pie thể loại |
-| Quản lý người dùng | Tìm kiếm, phân trang, đổi role (user/moderator/admin), khóa/mở khóa |
-| VIP & Doanh thu | Doanh thu theo tháng, đăng ký VIP, kích hoạt VIP thủ công (ghi giao dịch + thông báo) |
-| Nhật ký bảo mật | Log đăng nhập/MFA/khóa tài khoản từ bảng `security_events` |
-| Cài đặt | Chọn phim nổi bật làm banner trang chủ, export CSV (users/transactions) |
+| Khám phá phim | Trang chủ, phim nổi bật, tìm kiếm, lọc, chi tiết phim, mùa và tập; Elasticsearch hỗ trợ tìm kiếm |
+| Xem phim | Trình phát HLS, lịch sử xem, tiếp tục xem, nội dung VIP và xử lý video qua FastAPI/FFmpeg |
+| Tài khoản & bảo mật | Đăng ký/đăng nhập, JWT + refresh cookie, MFA/TOTP, quên mật khẩu, quản lý phiên, khóa brute-force, rate limit và nhật ký bảo mật |
+| Cộng đồng | Bài viết, bình luận/reply, ảnh và lightbox, vote/poll, lưu bài, hồ sơ, follow, feed theo dõi và câu hỏi theo cảnh phim |
+| Điểm & nhiệm vụ | Điểm hoạt động, lịch sử điểm, bảng xếp hạng, nhiệm vụ, nhận thưởng và huy hiệu |
+| Thông báo | Thông báo lưu trong MongoDB, realtime qua Socket.IO, mention/like/reply/tập mới/VIP và tùy chọn nhận thông báo |
+| VIP | Gói tháng/năm, QR chuyển khoản, gửi yêu cầu và quy trình Admin/Moderator xét duyệt thủ công |
+| Watch Party | Phòng xem chung realtime, đồng bộ phát/tạm dừng/tua, chat, mật khẩu và quản lý thành viên |
+| Lensy | Khoanh vùng vật thể trong video, CLIP + HNSW tìm sản phẩm tương tự và ghi nhận affiliate click |
+| Quản trị | Dashboard, phim/tập, cộng đồng, người dùng, kiểm duyệt, Points, nhiệm vụ, VIP, Watch Party, lượt xem, shopping và cấu hình hệ thống |
+| AI chatbot *(tùy chọn)* | FastAPI RAG dùng chỉ mục BM25/Chroma và Gemini khi được cấu hình |
 
-**Phân quyền:** `admin` toàn quyền; `moderator` chỉ quản lý nội dung (phim, cộng đồng,
-watch party, thống kê) — không xem được người dùng, doanh thu, nhật ký, cài đặt.
-Cấp moderator trong trang Quản lý người dùng. Migration: `database/migrate-ngoc.sql`.
+## Công nghệ và kiến trúc
 
-Dữ liệu mẫu có sẵn tài khoản `admin@moviehub.com` nhưng mật khẩu trong dump đã hash. Để đặt
-lại mật khẩu admin trên máy bạn (ví dụ `Admin@12345`):
-
-```bash
-cd backend-node
-node -e "const b=require('bcryptjs');console.log(b.hashSync('Admin@12345',12))"   # copy hash
-mysql -u root -p -e "UPDATE movie_streaming_db.users SET password='<hash>' WHERE email='admin@moviehub.com'"
+```text
+frontend/                 React 19, Vite 7, React Router 7, Tailwind CSS 4, Ant Design
+backend-node/             Node.js 22, Express 5, MongoDB, Socket.IO, JWT, Helmet
+backend-python/
+├── video-processor/      FastAPI + FFmpeg, cổng 8001
+└── ai-chatbot/           FastAPI + RAG, cổng 8002 (tùy chọn)
+docker-compose.yml        Frontend, backend, Elasticsearch và hai service Python
+docs/                     Thiết kế, API, bảo mật, triển khai và báo cáo kiểm thử
 ```
 
-## 🚀 Chạy bằng Docker (khuyên dùng)
+Các cổng mặc định:
 
-Yêu cầu: **Docker Desktop**. Không cần cài Node/Python/MySQL trên máy.
+| Dịch vụ | URL |
+| --- | --- |
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:3000 |
+| Video processor | http://localhost:8001 |
+| AI chatbot *(tùy chọn)* | http://localhost:8002 |
+| Elasticsearch | http://localhost:9200 |
+
+## Khởi chạy nhanh bằng Docker
+
+### 1. Chuẩn bị
+
+- Cài và mở Docker Desktop.
+- Chuẩn bị MongoDB Atlas hoặc một MongoDB mà container có thể truy cập.
+- Clone nhánh `main`:
 
 ```bash
-# 1. Clone repo và chuyển nhánh integration
-git clone -b integration https://github.com/nguyenngoc1211/LTW_zflix-.git
+git clone -b main https://github.com/nguyenngoc1211/LTW_zflix-.git
 cd LTW_zflix-
-
-# 2. Tạo file .env ở thư mục gốc từ mẫu
-cp .env.example .env
-# Sinh JWT_ACCESS_SECRET ngẫu nhiên rồi dán vào .env:
-node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
-
-# 3. Khởi động toàn bộ stack (lần đầu sẽ build image khá lâu)
-docker compose up
-
-# 4. Truy cập
-#    Frontend:  http://localhost:5173
-#    Backend:   http://localhost:3000  ({"message":"Zflix API","status":"ok"})
 ```
 
-Sau lần build đầu, chỉ cần chạy `docker compose up` từ thư mục gốc. Compose dùng
-dependency đã cài trong image; khi sửa source hoặc package, chạy lại
-`docker compose up --build`. Mở `http://localhost:5173` trên chính máy chạy Docker.
-Frontend tự gọi API ở `localhost:3000`, nên đổi Wi-Fi không cần sửa địa chỉ API.
+### 2. Tạo `.env`
 
-Backend vẫn dùng MongoDB Atlas theo `MONGODB_URI` trong `.env` gốc. Nếu đổi mạng mà
-API không đọc được dữ liệu, kiểm tra **Atlas > Network Access**: IP công cộng của
-mạng mới phải được cho phép. Muốn không phải cập nhật IP khi đổi mạng, có thể cho
-phép `0.0.0.0/0` trong Atlas Network Access; cách này cho phép kết nối từ mọi IP,
-nên cần giữ mật khẩu MongoDB mạnh và không chia sẻ chuỗi kết nối. Docker Compose
-không thể tự bỏ giới hạn IP do Atlas quản lý. Lần build đầu và kết nối Atlas vẫn
-cần có Internet.
+```bash
+cp .env.example .env
+```
 
-### AI chatbot
+Điền tối thiểu các biến sau:
 
-Widget gọi FastAPI tại `http://<site-host>:8002/api/v1/chat`. Đặt
-`GEMINI_API_KEY` trong `.env` ở thư mục gốc (file này không được commit).
-Compose truyền key và kết nối MongoDB của Zflix cho service. Lần chạy đầu,
-model embedding và reranker được tải vào volume `ai_chatbot_data`.
+```dotenv
+MONGODB_URI=mongodb://...
+MONGODB_DB_NAME=Zflix
+JWT_ACCESS_SECRET=chuoi-ngau-nhien-toi-thieu-32-ky-tu
+NODE_ENV=development
+FRONTEND_ORIGIN=http://localhost:5173
+```
 
-Tạo chỉ mục phim một lần sau khi build image:
+Sinh JWT secret bằng Node.js:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
+
+Không commit `.env`. Các cấu hình R2, ngân hàng, MFA, Lensy và Gemini được mô tả trong [`.env.example`](.env.example).
+
+### 3. Chạy hệ thống web không có AI chatbot
+
+```bash
+docker compose up -d --build elasticsearch backend-node video-processor frontend
+```
+
+Mở http://localhost:5173. Kiểm tra backend tại http://localhost:3000; kết quả mong đợi:
+
+```json
+{"message":"Zflix API","status":"ok"}
+```
+
+Những lần sau chỉ cần:
+
+```bash
+docker compose up -d elasticsearch backend-node video-processor frontend
+```
+
+Xem trạng thái và log:
+
+```bash
+docker compose ps
+docker compose logs -f backend-node frontend
+```
+
+Dừng hệ thống:
+
+```bash
+docker compose stop
+```
+
+### 4. Bật AI chatbot *(tùy chọn)*
+
+AI chatbot không bắt buộc đối với web chính. Lần build đầu tải nhiều thư viện ML và có thể mất khá lâu.
 
 ```bash
 docker compose build ai-chatbot
 docker compose run --rm ai-chatbot python -m src.ingestion.run_ingest
-docker compose up -d ai-chatbot frontend
+docker compose up -d ai-chatbot
 ```
 
-Khi dữ liệu phim thay đổi, tạo lại chỉ mục bằng
-`docker compose run --rm ai-chatbot python -m src.ingestion.run_ingest --force`.
-Service chỉ mở `/api/v1/chat`; việc lập chỉ mục chạy bằng lệnh nội bộ.
-Nếu service chạy ở host khác, đặt `VITE_AI_CHATBOT_API_URL` thành URL đầy đủ
-khi build frontend. Mặc định không lưu lịch sử chat.
-
-## 💻 Chạy thủ công không dùng Docker (Dev local)
-
-### Cách nhanh nhất — 1 lệnh (Windows)
-
-```cmd
-setup-zflix.bat
-start-zflix.bat
-```
-
-`setup-zflix.bat` tự tìm MySQL, tạo database đủ 35 bảng, sinh `.env` với secret ngẫu nhiên,
-cài dependency và đặt mật khẩu dev. Chi tiết + xử lý lỗi: **[docs/SETUP_TEAM.md](docs/SETUP_TEAM.md)**.
-
-Tài khoản demo sau khi cài: `admin@moviehub.com` / `Zflix@2026`
-
-### Cách thủ công
-
-Yêu cầu: Node.js ≥ 20, MySQL 8 (hoặc MariaDB ≥ 10.8, xem ghi chú bên dưới).
+Khi catalog phim thay đổi:
 
 ```bash
-# 1. Database: tạo DB, nạp schema (32 bảng) + 3 bảng visual shopping
-mysql -u root -p -e "CREATE DATABASE movie_streaming_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root -p movie_streaming_db < database/init.sql
-mysql -u root -p movie_streaming_db < database/migrate-visual-shopping.sql
-
-# 2. Backend
-cd backend-node
-cp .env.example .env        # sửa DATABASE_URL, JWT_ACCESS_SECRET cho máy bạn
-npm install
-npx prisma generate         # bắt buộc: module quản lý phim dùng Prisma
-npm run migrate:auth
-npm run db:password         # đặt mật khẩu dev (nếu không, không đăng nhập được)
-npm run dev                 # chạy tại http://localhost:3000
-
-# 3. Frontend (mở terminal khác)
-cd frontend
-npm install
-npm run dev                 # chạy tại http://localhost:5173
+docker compose run --rm ai-chatbot python -m src.ingestion.run_ingest --force
 ```
 
-> **Ghi chú MariaDB:** `database/init.sql` đã được chuẩn hoá cho MariaDB 10.4
-> (`utf8mb4_unicode_ci`, procedure tạo trước trigger). Nếu import một dump MySQL 8.0 mới
-> có `utf8mb4_0900_ai_ci`, thay collation trước khi import:
-> `sed 's/utf8mb4_0900_ai_ci/utf8mb4_unicode_ci/g' dump.sql | mysql -u root -p movie_streaming_db`
+Đặt `GEMINI_API_KEY` trong `.env` nếu muốn chatbot sinh câu trả lời bằng Gemini.
 
-## 🔐 Biến môi trường
+## Chạy local để phát triển
 
-| File | Biến | Ý nghĩa |
+Yêu cầu: Node.js 20+, MongoDB và Elasticsearch có thể truy cập.
+
+Backend:
+
+```bash
+cd backend-node
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Frontend, trong terminal khác:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend tự dùng backend tại `http://localhost:3000` nếu không đặt `VITE_API_URL`.
+
+## Các trang quan trọng
+
+### Người dùng
+
+- `/` — trang chủ và khám phá phim
+- `/community` — cộng đồng
+- `/leaderboard` — bảng xếp hạng điểm
+- `/quests` — nhiệm vụ và phần thưởng; yêu cầu đăng nhập
+- `/library`, `/history`, `/notifications`, `/settings`, `/vip` — khu vực tài khoản
+- `/watch-party` — danh sách phòng xem chung
+
+### Quản trị
+
+Truy cập trực tiếp `/admin-login`. Khu vực `/admin` chỉ dành cho `admin` hoặc `moderator`; backend vẫn kiểm tra quyền riêng cho từng API.
+
+Community Hub tại `/admin/community-hub` gồm:
+
+- tổng quan và quản lý nội dung;
+- người dùng và kiểm duyệt;
+- Points, nhiệm vụ và huy hiệu;
+- VIP, doanh thu và xét duyệt thanh toán.
+
+Các trang quản trị khác gồm phim/tập, Watch Party, thống kê lượt xem, shopping, nhật ký bảo mật và cài đặt.
+
+## Biến môi trường đáng chú ý
+
+| Biến | Bắt buộc | Mục đích |
 | --- | --- | --- |
-| `.env` (gốc, cho docker-compose) | `JWT_ACCESS_SECRET` | **Bắt buộc** — bí mật ký JWT (≥ 32 ký tự) |
-| | `MFA_ENCRYPTION_KEY` | Base64 của 32 byte ngẫu nhiên, cần cho MFA ở production |
-| | `FRONTEND_ORIGIN`, `NODE_ENV` | CORS origin và môi trường |
-| `backend-node/.env` | `DATABASE_URL` | Chuỗi kết nối MySQL, vd `mysql://root:pass@localhost:3306/movie_streaming_db` |
-| | `ELASTICSEARCH_URL` | **Tùy chọn** — bỏ trống/tắt ES thì search tự dùng MySQL |
-| | `JWT_ACCESS_SECRET` và các biến `MFA_*`, rate-limit | Xem `backend-node/.env.example` |
-| `frontend` | `VITE_API_URL` | Mặc định `http://localhost:3000`, chỉ cần đặt khi backend ở host khác |
+| `MONGODB_URI`, `MONGODB_DB_NAME` | Có | Kết nối và tên database MongoDB |
+| `JWT_ACCESS_SECRET` | Có | Ký access token, tối thiểu 32 ký tự |
+| `FRONTEND_ORIGIN` | Có | Danh sách origin được CORS cho phép |
+| `MFA_ENCRYPTION_KEY` | Khi dùng MFA production | Khóa base64 của đúng 32 byte |
+| `R2_*`, `VIDEO_WEBHOOK_SECRET` | Khi upload/xử lý video | Cloudflare R2 và xác thực webhook |
+| `VIP_BANK_*` | Khi nhận chuyển khoản | Thông tin tài khoản và QR thanh toán |
+| `POINTS_MONTH_CLOSE_ENABLED` | Không | Bật/tắt job chốt điểm tháng; mặc định `true` trong Compose |
+| `VISION_PROVIDER`, `DEEPSEEK_*` | Không | Provider nhận diện cho Lensy |
+| `GEMINI_API_KEY` | Không | AI chatbot |
+| `VITE_API_URL` | Không | URL backend khi không chạy cùng máy frontend |
 
-Không có API key bên thứ ba nào được nhúng trong code. Các giá trị bí mật chỉ nằm trong
-`.env` (đã liệt kê trong `.gitignore`).
+## Kiểm thử
 
-**Chống lộ secret:** repo có hook chặn commit file `.env` — bật cho máy của bạn sau khi
-clone (1 lần):
-
-```bash
-git config core.hooksPath .githooks
-```
-
-Nếu lỡ tay commit secret thật: **revoke/đổi key ngay** ở nhà cung cấp (Gemini/Shopee...),
-rồi dọn history bằng `git filter-repo` trước khi force-push (cần đồng ý cả nhóm).
-
-## 🧪 Kiểm thử
+Backend unit test:
 
 ```bash
 cd backend-node
-npm test                    # 30 unit test
-npm run catalog:index       # tải catalog CSV, tạo CLIP embeddings + rebuild HNSW index (auth, MFA, schema, search, security logger, vision parser)
-npm run test:integration    # smoke test luồng auth (cần DB đang chạy)
-npm run sync:r2             # dry-run: đối chiếu catalog với thư mục HLS trên R2
-npm run sync:r2:apply       # đồng bộ catalog R2 (bỏ qua thư mục HLS dùng chung cho nhiều phim)
-                            # Lưu ý: xoá production không có video R2, giữ nguyên users
-
-cd frontend
-npm run lint                # ESLint
-npm run build               # build production
+npm test
 ```
 
-## 📚 Tài liệu thêm
+Smoke test auth cơ bản, yêu cầu database test được cấu hình:
 
-- [Cấu trúc dự án cho thành viên mới](docs/PROJECT_STRUCTURE.md)
-- [Danh sách API các module Discovery/Community/Streaming](docs/HAI_API_REFERENCE.md)
-- [Hướng dẫn merge và vận hành module của Hai](docs/HAI_MODULES_GUIDE.md)
-- [Báo cáo kiểm thử branch Hai](docs/HAI_TEST_REPORT.md)
-- [Hướng dẫn tích hợp authorization](docs/AUTHORIZATION_INTEGRATION_GUIDE.md)
-- [Tiến độ bảo mật auth](docs/AUTH_SECURITY_PROGRESS.md)
+```bash
+npm run test:integration
+```
 
-## 👥 Đóng góp từ các nhánh
+Repo còn có smoke test riêng trong `backend-node/integration/` cho community, notification, VIP, Points, quests, moderation và quản trị nội dung. Không chạy chúng trên database production.
 
-- `dev` — khung dự án, schema database, docker-compose, service Python
-- `Du` — xác thực & bảo mật (login/register/MFA/reset password/session)
-- `Hai` — discovery (tìm kiếm/lọc phim), community, streaming
-- `Khoa` — watch party (Socket.IO real-time)
-- `Ngoc` — hệ quản trị admin (dashboard, quản lý user/phim, thống kê lượt xem)
-- `Nam` — (chưa có code trên nhánh)
+Frontend:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+npm run test:ui
+```
+
+Các smoke test UI bổ sung nằm trong `frontend/integration/` và `frontend/tests/`.
+
+## Lưu ý vận hành
+
+- MongoDB Atlas phải cho phép IP công cộng hiện tại trong **Network Access**.
+- Elasticsearch không chứa dữ liệu gốc; backend có thể xây lại search index từ catalog MongoDB.
+- Thanh toán VIP hiện là chuyển khoản và xét duyệt thủ công, không phải cổng ngân hàng tự động.
+- R2 chỉ cần thiết cho upload/video HLS và các luồng media dùng object storage.
+- Bật Git hook chống commit nhầm secret bằng `git config core.hooksPath .githooks`.
+
+## Tài liệu
+
+- [Cấu trúc dự án](docs/PROJECT_STRUCTURE.md)
+- [API Discovery, Community và Streaming](docs/HAI_API_REFERENCE.md)
+- [Thiết kế database Community](docs/COMMUNITY_DATABASE_DESIGN.md)
+- [Tiến độ bảo mật Auth](docs/AUTH_SECURITY_PROGRESS.md)
+- [Hệ thống Notification](docs/NOTIFICATION_P1.md)
+- [Triển khai](docs/DEPLOYMENT.md)
+- [Hướng dẫn setup cho nhóm](docs/SETUP_TEAM.md)
+- [Báo cáo dự án cập nhật](docs/ZFLIX_PERSONAL_REPORT.md)
+
+## Bảo mật
+
+Không đưa `.env`, MongoDB URI, JWT secret, R2 key hoặc API key vào commit. Nếu secret từng bị chia sẻ hoặc commit, hãy thu hồi/đổi secret trước, sau đó mới làm sạch lịch sử Git nếu cần.
