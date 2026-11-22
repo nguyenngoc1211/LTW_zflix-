@@ -10,6 +10,7 @@
     "migrate:toxic-comments": "node scripts/migrate-toxic-comments.js",
     "db:password": "node scripts/set-dev-password.js",
     "cleanup:auth": "node scripts/cleanup-auth-data.js",
+    "repair:history-progress": "node scripts/repair-watch-history-progress.mjs",
     "test": "node --test \"test/**/*.test.js\"",
     "test:search-cases": "node integration/search-cases-smoke.js",
     "test:integration": "node integration/auth-smoke.js && node integration/password-lifecycle-smoke.js && node integration/mfa-smoke.js && node integration/registration-smoke.js",

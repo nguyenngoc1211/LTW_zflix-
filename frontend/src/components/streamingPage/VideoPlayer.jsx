@@ -69,8 +69,12 @@ const VideoPlayer = ({
   const stageRef = useRef(null);
   const positionRef = useRef(0);
   const seekRef = useRef({ key: null, applied: false });
+  const onTimeUpdateRef = useRef(onTimeUpdate);
   const resumeKey = resumePosition === null ? null : `${currentEpisode.id}:${resumePosition}`;
   const isLocked = Boolean(currentEpisode?.locked);
+  useEffect(() => {
+    onTimeUpdateRef.current = onTimeUpdate;
+  }, [onTimeUpdate]);
 
   // CineLens: quét đồ vật trong khung hình (Lensy)
   const lensy = useLensy({
@@ -120,7 +124,27 @@ const VideoPlayer = ({
     if (onTimeUpdate && (resumeKey === null || (seekRef.current.key === resumeKey && seekRef.current.applied))) onTimeUpdate(Math.floor(t));
   };
 
+  const saveCurrentProgress = (completed = false) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const currentTime = Number(video.currentTime);
+    const duration = Number(video.duration);
+    const position = completed && Number.isFinite(duration) && duration > 0
+      ? duration
+      : currentTime;
+    if (!Number.isFinite(position) || position <= 0) return;
+    onTimeUpdateRef.current?.(Math.floor(position), { force: true, completed });
+  };
+
+  useEffect(() => () => {
+    const video = videoRef.current;
+    if (video && Number.isFinite(video.currentTime) && video.currentTime > 0) {
+      saveCurrentProgress(video.ended);
+    }
+  }, [currentEpisode.id]);
+
   const handleVideoEnded = () => {
+    saveCurrentProgress(true);
     if (!settings.autoNext) return;
     message.loading("Tự động chuyển tập tiếp theo sau 3 giây...", 2);
     setTimeout(onNextEpisode, 3000);
@@ -160,6 +184,7 @@ const VideoPlayer = ({
               onCanPlay={handleLoadedMetadata}
               onPlay={() => { hasPlayedRef.current = true; }}
               onTimeUpdate={handleTimeUpdate}
+              onPause={() => saveCurrentProgress(false)}
               onEnded={handleVideoEnded}
             />
             {!currentEpisode.video_url && (

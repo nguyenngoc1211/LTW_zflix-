@@ -5,6 +5,7 @@ import { requireAuth, optionalAuth } from "../../core/middleware/business-auth.b
 import { asyncHandler, parsePositiveInt } from "../../core/utils/http.js";
 import { applyEpisodeAccess, resolveProductionPremium } from "./playback-access.js";
 import { selectContinueWatching } from "./continue-watching.js";
+import { resolveWatchProgress } from "./watch-progress.js";
 
 export const streamingRouter = Router();
 
@@ -54,12 +55,32 @@ streamingRouter.get("/history", requireAuth, asyncHandler(async (req, res) => {
     const productionMap = new Map(productions.map((item) => [item.id, item]));
     const seasons = await (await mongoCollection("seasons")).find({ id: { $in: episodes.map((item) => item.production_id) } }).toArray();
     const seasonMap = new Map(seasons.map((item) => [item.id, item]));
+    const historyCollection = await mongoCollection("watch_history");
+    const repairs = [];
     const items = history.flatMap((row) => {
       const episode = episodeMap.get(row.episode_id);
       const production = episode && productionMap.get(episode.production_id);
+      if (!episode || !production) return [];
+      const progress = resolveWatchProgress({
+        position: row.last_position,
+        duration: episode.duration,
+        completed: Number(row.is_completed) === 1,
+      });
+      if (progress.completed && (Number(row.is_completed) !== 1
+        || Number(row.watched_percent) !== 100
+        || Number(row.last_position) !== progress.position)) {
+        repairs.push({ updateOne: {
+          filter: { user_id: req.user.id, episode_id: row.episode_id },
+          update: { $set: {
+            last_position: progress.position,
+            watched_percent: progress.watchedPercent,
+            is_completed: 1,
+          } },
+        } });
+      }
       return episode && production ? [{ episode_id: row.episode_id,
-        last_position: row.last_position, watched_percent: fromMongo(row.watched_percent),
-        watched_duration: row.watched_duration, is_completed: row.is_completed,
+        last_position: progress.position, watched_percent: progress.watchedPercent,
+        watched_duration: row.watched_duration, is_completed: progress.completed ? 1 : 0,
         last_watched_at: row.last_watched_at, episode_number: episode.episode_number,
         episode_title: episode.title, duration: episode.duration,
         thumbnail_url: episode.thumbnail_url, production_id: production.id,
@@ -67,9 +88,20 @@ streamingRouter.get("/history", requireAuth, asyncHandler(async (req, res) => {
         season_number: seasonMap.get(production.id)?.season_number ?? null,
         title: production.title, slug: production.slug, poster_url: production.poster_url }] : [];
     });
+    if (repairs.length) await historyCollection.bulkWrite(repairs);
     return res.json({ items, continueWatching: selectContinueWatching(items) });
   }
-  const [items] = await pool.execute(`SELECT wh.episode_id, wh.last_position, wh.watched_percent, wh.watched_duration, wh.is_completed, wh.last_watched_at, e.episode_number, e.title AS episode_title, e.duration, e.thumbnail_url, p.id AS production_id, COALESCE(s.series_id,p.id) AS watch_production_id, s.season_number, p.title, p.slug, p.poster_url FROM watch_history wh JOIN episodes e ON e.id=wh.episode_id JOIN productions p ON p.id=e.production_id LEFT JOIN seasons s ON s.id=p.id WHERE wh.user_id=? ORDER BY wh.last_watched_at DESC`, [req.user.id]);
+  const [historyItems] = await pool.execute(`SELECT wh.episode_id, wh.last_position, wh.watched_percent, wh.watched_duration, wh.is_completed, wh.last_watched_at, e.episode_number, e.title AS episode_title, e.duration, e.thumbnail_url, p.id AS production_id, COALESCE(s.series_id,p.id) AS watch_production_id, s.season_number, p.title, p.slug, p.poster_url FROM watch_history wh JOIN episodes e ON e.id=wh.episode_id JOIN productions p ON p.id=e.production_id LEFT JOIN seasons s ON s.id=p.id WHERE wh.user_id=? ORDER BY wh.last_watched_at DESC`, [req.user.id]);
+  const items = historyItems.map((item) => {
+    const progress = resolveWatchProgress({
+      position: item.last_position,
+      duration: item.duration,
+      completed: Number(item.is_completed) === 1,
+    });
+    return { ...item, last_position: progress.position,
+      watched_percent: progress.watchedPercent,
+      is_completed: progress.completed ? 1 : 0 };
+  });
 
   // "Xem tiếp" chỉ lấy tập gần nhất của mỗi phim đang xem dở.
   // Một phim bộ có thể có nhiều tập trong lịch sử nên phải khử trùng theo production_id.
@@ -82,14 +114,16 @@ streamingRouter.put("/history/:episodeId", requireAuth, asyncHandler(async (req,
   const episodeId = parsePositiveInt(req.params.episodeId, "episode id");
   const position = Math.max(0, Math.floor(Number(req.body.position)));
   if (!Number.isFinite(position)) return res.status(400).json({ message: "position must be a non-negative number" });
+  const completedEvent = req.body?.completed === true;
   if (process.env.DATA_STORE === "mongodb") {
     const episodes = await mongoCollection("episodes");
     const episode = await episodes.findOne({ id: episodeId });
     if (!episode) return res.status(404).json({ message: "Episode not found" });
     const duration = Number(episode.duration);
-    const safePosition = Math.min(position, duration);
-    const watchedPercent = duration ? Math.min(100, safePosition / duration * 100) : 0;
-    const completed = watchedPercent >= 90;
+    const progress = resolveWatchProgress({ position, duration, completed: completedEvent });
+    const safePosition = progress.position;
+    const watchedPercent = progress.watchedPercent;
+    const completed = progress.completed;
     const history = await mongoCollection("watch_history");
     await history.updateOne({ user_id: req.user.id, episode_id: episodeId }, {
       $set: { last_position: safePosition, watched_percent: watchedPercent,
@@ -103,9 +137,10 @@ streamingRouter.put("/history/:episodeId", requireAuth, asyncHandler(async (req,
   const [episodes] = await pool.execute("SELECT id, duration FROM episodes WHERE id=?", [episodeId]);
   if (!episodes.length) return res.status(404).json({ message: "Episode not found" });
   const duration = Number(episodes[0].duration);
-  const safePosition = Math.min(position, duration);
-  const watchedPercent = duration ? Math.min(100, (safePosition / duration) * 100) : 0;
-  const completed = watchedPercent >= 90;
+  const progress = resolveWatchProgress({ position, duration, completed: completedEvent });
+  const safePosition = progress.position;
+  const watchedPercent = progress.watchedPercent;
+  const completed = progress.completed;
   await pool.execute(`INSERT INTO watch_history (user_id, episode_id, last_position, watched_percent, watched_duration, is_completed) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE last_position=VALUES(last_position), watched_percent=VALUES(watched_percent), watched_duration=GREATEST(watched_duration, VALUES(watched_duration)), is_completed=VALUES(is_completed), last_watched_at=CURRENT_TIMESTAMP`, [req.user.id, episodeId, safePosition, watchedPercent, safePosition, completed]);
   res.json({ episodeId, position: safePosition, watchedPercent, completed });
 }));

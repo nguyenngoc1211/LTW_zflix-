@@ -162,15 +162,15 @@ export const useWatchPage = () => {
   // Lưu vị trí xem vào lịch sử (giống PlayerPage): mỗi 10 giây một lần.
   const lastSavedRef = useRef({ episodeId: null, position: 0 });
   const handleTimeUpdate = useCallback(
-    (seconds) => {
+    (seconds, options = {}) => {
       const episodeId = currentEpisode?.id;
       if (!episodeId) return;
       if (lastSavedRef.current.episodeId !== episodeId) lastSavedRef.current = { episodeId, position: 0 };
-      if (seconds <= 0 || Math.abs(seconds - lastSavedRef.current.position) < 10) return;
+      if (seconds <= 0 || (!options.force && Math.abs(seconds - lastSavedRef.current.position) < 10)) return;
       lastSavedRef.current.position = seconds;
       apiRequest(`/api/v1/history/${episodeId}`, {
         method: "PUT",
-        body: JSON.stringify({ position: seconds }),
+        body: JSON.stringify({ position: seconds, ...(options.completed && { completed: true }) }),
       }).catch(() => {});
     },
     [currentEpisode],

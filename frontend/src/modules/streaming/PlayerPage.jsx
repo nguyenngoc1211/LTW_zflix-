@@ -69,13 +69,13 @@ const PlayerPage = () => {
     });
     return () => hls.destroy();
   }, [episode]);
-  const save = (seconds, force = false) => {
+  const save = (seconds, force = false, completed = false) => {
     const positionInSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
     if (!force && Math.abs(positionInSeconds - lastSaved.current) < 10) return;
     lastSaved.current = positionInSeconds;
     apiRequest(`/api/v1/history/${episodeId}`, {
       method: "PUT",
-      body: JSON.stringify({ position: positionInSeconds }),
+      body: JSON.stringify({ position: positionInSeconds, ...(completed && { completed: true }) }),
     }).catch(() => {});
   };
   const handleLoadedMetadata = () => {
@@ -159,7 +159,7 @@ const PlayerPage = () => {
               onLoadedMetadata={handleLoadedMetadata}
               onTimeUpdate={(e) => { setPosition(e.currentTarget.currentTime); save(Math.floor(e.currentTarget.currentTime)); }}
               onPause={(e) => save(Math.floor(e.currentTarget.currentTime), true)}
-              onEnded={(e) => save(Math.floor(e.currentTarget.duration), true)}
+              onEnded={(e) => save(Math.floor(e.currentTarget.duration), true, true)}
             />
           ) : (
             <div className="video-placeholder"><span>▶</span><p>Chưa có URL video trong dữ liệu mẫu.</p></div>
