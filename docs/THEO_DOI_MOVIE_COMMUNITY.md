@@ -1,6 +1,8 @@
-# Theo dõi Movie Community
+# Theo dõi Movie Community (nhật ký cũ)
 
 Cập nhật: 02/11/2026. Trạng thái dưới đây phân biệt mã đã viết với chức năng đã kiểm thử trên môi trường thực tế.
+
+> Đây là nhật ký triển khai theo thời điểm, không phải checklist hiện tại. Nhiều mục “chưa triển khai” bên dưới đã thay đổi sau ngày 02/11. Source trên `main` (`63cdba4`, code tương ứng `0bc2732`) có Posts, scene questions, ảnh comment, reports, moderation, profile/follow, Points, Quests và Admin Community Hub. Xem [API tham khảo](HAI_API_REFERENCE.md), [cấu trúc source](PROJECT_STRUCTURE.md) và [Auth/Security progress](AUTH_SECURITY_PROGRESS.md) để biết tình hình mới hơn. Kết quả smoke cũ chỉ áp dụng cho database/test fixture ghi trong từng mục.
 
 ## Kiến trúc hiện tại
 

@@ -1,6 +1,8 @@
-# Báo cáo build và kiểm thử branch Hai
+# Báo cáo kiểm thử branch Hai (lưu trữ)
 
 Ngày kiểm tra: 19/10/2026.
+
+> Đây là ảnh chụp kết quả của branch Hai trước các lần tích hợp. Các môi trường, số test và kết luận `AUTH_MODULE_NOT_INTEGRATED` bên dưới không mô tả code hiện tại. Dùng `README.md`, `SETUP_TEAM.md` và các test đang có nếu cần kiểm tra repository hiện tại.
 
 ## Môi trường
 

@@ -77,7 +77,7 @@ Sinh JWT secret bằng Node.js:
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-Không commit `.env`. Các cấu hình R2, ngân hàng, MFA, Lensy và Gemini được mô tả trong [`.env.example`](.env.example).
+Không commit `.env`. Các cấu hình R2, ngân hàng, MFA, Lensy và Gemini chatbot được mô tả trong [`.env.example`](.env.example).
 
 ### 3. Chạy hệ thống web không có AI chatbot
 

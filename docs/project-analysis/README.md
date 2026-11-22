@@ -1,6 +1,8 @@
-# Biên bản phân tích dự án Movie-Watching-Web
+# Biên bản phân tích dự án Movie-Watching-Web (lưu trữ)
 
-Tài liệu này bắt đầu từ câu hỏi thứ hai trong cuộc trao đổi và tổng hợp các nội dung được trích xuất trực tiếp từ source của dự án: database/ERD, API, UI và công nghệ đang sử dụng.
+> Tài liệu lưu lại một lần phân tích trên snapshot cũ. Danh sách Prisma, API, UI và tổng số endpoint bên dưới không phải bản đồ repository hiện tại; phần ERD chỉ phản ánh `backend-node/prisma/schema.prisma`, không đại diện cho schema MongoDB đang dùng trong Compose. Hãy dùng [README](../../README.md), [Project structure](../PROJECT_STRUCTURE.md) và [API reference](../HAI_API_REFERENCE.md) cho source hiện tại.
+
+Phần nội dung cũ được giữ để tra cứu lịch sử, không cập nhật đồng bộ theo mỗi thay đổi code.
 
 > Phạm vi: nội dung trao đổi giữa người dùng và trợ lý liên quan đến dự án. Không bao gồm system prompt, developer prompt và log nội bộ của công cụ.
 
@@ -1078,7 +1080,7 @@ Development commands:
 - [README dự án](../../README.md)
 - [Docker Compose](../../docker-compose.yml)
 - [Frontend package](../../frontend/package.json)
-- [Frontend routes](../../frontend/src/app/routes/route.jsx)
+- [Frontend routes](../../frontend/src/routes/route.jsx)
 - [Node package](../../backend-node/package.json)
 - [Node app entry](../../backend-node/src/app.js)
 - [Prisma schema](../../backend-node/prisma/schema.prisma)

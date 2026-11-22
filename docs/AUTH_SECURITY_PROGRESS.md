@@ -1,5 +1,15 @@
 # Tiến độ bảo mật Authentication & Authorization
 
+## Trạng thái source hiện tại — 2026-11-22
+
+- Mốc đã đối chiếu: `main` tại `63cdba4`; code tương ứng `0bc2732` vì commit mới chỉ sửa README. Các mục ghi ngày 2026-09 đến 2026-11-21 phía dưới là lịch sử triển khai/kiểm thử ở thời điểm tương ứng; không dùng kết quả MySQL cũ để khẳng định trạng thái hiện tại.
+- Auth có đường MongoDB và đường MySQL tương thích. Compose chọn `DATA_STORE=mongodb`; source MySQL cũ vẫn còn. `requireAuth` xác thực JWT/session và đọc role/status từ database. `requireRole` vẫn là middleware dùng chung; các module cũng có guard staff/admin riêng.
+- Sau merge `Du`, MongoDB có thêm khóa kiểm duyệt tạm thời. Đăng nhập, refresh và middleware request kiểm tra `moderation_locked_until`; API kiểm duyệt/admin dùng role từ `req.user`. Thay đổi này được ghi chi tiết trong các mục ngày 2026-11-21 phía dưới.
+- Backend unit tests chạy sau merge: **89/89 đạt** với `DATA_STORE=mongodb` và `FRONTEND_ORIGIN=http://localhost:5173`. Frontend production build thành công, có cảnh báo bundle lớn và dynamic import. Không chạy integration smoke ghi database trong lần kiểm tra này; các kết quả integration trong lịch sử chỉ áp dụng cho database/môi trường ghi ở từng mục.
+- Docker Compose vẫn được đánh dấu development-only. Các kết quả test không xác nhận triển khai production, gửi email reset, topology nhiều backend instance, SIEM hay cấu hình storage private.
+
+> Cập nhật trạng thái tài liệu không thay cho security audit. Khi sửa auth/authorization, đọc source và test mới nhất trước khi dựa vào các ghi chép lịch sử bên dưới.
+
 ## Ảnh trong bình luận phim và Cộng đồng — 2026-11-21
 
 - Upload ảnh bình luận dùng `requireAuth`, bộ lọc PNG/JPEG/WebP, tối đa 5 MB và xác minh nội dung ảnh bằng bộ lưu trữ hiện có. Phim và bài Cộng đồng vẫn dùng collection/API riêng; reply phim bị từ chối nếu khai báo tập khác với comment cha.
@@ -43,24 +53,7 @@
 - Bổ sung gắn nhóm: kiểm tra nhóm hoạt động và tư cách thành viên khi gắn/chuyển nhóm. Các endpoint lưu bài yêu cầu session hợp lệ và kiểm tra quyền xem.
 - DELETE bài hiện cho phép tác giả, admin/moderator hệ thống hoặc owner/moderator đang hoạt động của nhóm chứa bài. Các vai trò nhóm được đọc từ database. Upload ảnh yêu cầu đăng nhập, giới hạn số lượng/kích thước và giải mã ảnh; chưa kiểm thử R2 thật.
 
-Ngày rà soát source và Git gần nhất: 2026-10-28
-Current branch: `integration`  
-Current latest security phase commit: `8988504`
-Mốc source hiện tại: `55430bf update UI User` (đã commit follow-up auth UI và đăng ký local)
-Current latest documentation commit: `55430bf update UI User`
-Current uncommitted documentation work: authorization integration guide (xem `docs/AUTHORIZATION_INTEGRATION_GUIDE.md`)
-
-Tài liệu này là bản ghi nhớ để các phiên Codex sau có thể tiếp tục công việc. Nội dung mô tả implementation hiện tại, không phải các API dự kiến. Nếu tài liệu khác source thì source code là technical truth.
-
-## Current working tree expectation
-
-Phase 7 audit đã commit tại `56253a9`; follow-up auth UI và đăng ký local đã commit tại `55430bf`. Trước guide này, working tree chỉ có `docs/AUTH_SCOPE_STATUS.md` untracked; giữ nguyên file đó. Guide mới và reference trong file này chưa commit.
-
-```text
-git status -> kiểm tra trực tiếp trước mọi công việc tiếp theo
-```
-
-Nếu `git status` khác trạng thái ghi nhận trên, phải kiểm tra và bảo toàn mọi thay đổi hiện hữu trước khi làm việc tiếp. Không được ghi đè hoặc giả định các thay đổi dở dang trong working tree.
+Các mục sau ghi lại từng phase và hậu kiểm theo ngày/commit. Trạng thái branch, working tree và số test ở các mục lịch sử không đại diện cho lần kiểm tra hiện tại; xem phần “Trạng thái source hiện tại” ở đầu tài liệu.
 
 ## Kiến trúc hiện tại
 
@@ -70,7 +63,7 @@ Nếu `git status` khác trạng thái ghi nhận trên, phải kiểm tra và b
 - **JWT:** access token dùng `HS256`, thời hạn mặc định 15 phút, có `sub` và `sid`. Claim role có thể tồn tại vì tương thích nhưng không được dùng làm nguồn phân quyền; verify allow-list rõ `HS256`.
 - **`auth_sessions`:** session server-side lưu user ID, refresh-token hash, idle expiry, absolute expiry, last-used, revoked-at, created-at và metadata user-agent/IP tùy chọn. Cả access authentication và refresh đều phụ thuộc database session hiện tại.
 - **Role:** `requireAuth` đọc lại user từ database và tạo `req.user`; `requireRole("admin")` dùng role lấy từ database. JWT role giả không thể nâng quyền.
-- **Account status:** `active/disabled` được đọc từ database. User disabled không login, refresh hoặc tiếp tục dùng access token cũ. Temporary login lock cũng lưu trong database.
+- **Account status and moderation lock:** `active/disabled`, temporary login lock và, ở đường MongoDB, `moderation_locked_until` được đọc từ database. User bị khóa moderation còn hạn không login/refresh/được middleware cấp quyền; khóa tạm không tự đổi VIP expiry hoặc account status.
 - **Frontend `AuthContext`:** bootstrap bằng refresh, giữ access token qua API service in-memory, cung cấp login/logout/logout-all/change-password và xóa user/token khi auth thất bại hoặc session bị revoke.
 - **`ProtectedRoute`:** chỉ phục vụ UX điều hướng/render. Đây không phải security boundary; API protected/admin vẫn enforce ở backend.
 
@@ -184,7 +177,7 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 - **Tests:** backend unit `14/14`; full auth/password/MFA integration live MySQL pass; cleanup integration xóa đúng 3 session cũ, 2 reset token, 2 MFA challenge, 1 used recovery code và giữ toàn bộ record active/recent; frontend lint/build và toàn bộ UI smoke pass. Integration cũng kiểm tra event bắt buộc và credential thực không xuất hiện trong log.
 - **Rủi ro vận hành còn lại:** chưa có external log transport/SIEM, alerting, scheduler deployment, refresh-token family/history để phân biệt replay với token ngẫu nhiên, hoặc chính sách archive/audit bất biến.
 
-### Phase 7 — final auth/security audit
+### Phase 7 — final auth/security audit (snapshot 2026-09-30)
 
 - **Trạng thái:** audit hoàn tất ngày 2026-09-30 trên branch `Du`, baseline clean tại `2156329`; không thay đổi source, không thêm feature và không commit.
 - **Phạm vi source thật:** login/lock/disabled, bcrypt/password, JWT và DB-backed role/status, refresh/session rotation/revocation, password lifecycle, MFA/TOTP/recovery, session ownership, route admin thật, CORS/Origin/cookie/Helmet, secrets/config, security logging, cleanup/retention, error handling, dependencies và regression hiện có. Source hiện tại khớp các kiểm soát chính được mô tả ở trên.
@@ -194,14 +187,14 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 - **Not applicable hiện tại:** authorization/IDOR cho profile update, comments, favorites, history, ratings, watching party, premium/subscriptions và admin CRUD vì backend chưa có các API đó. Phải rà soát ownership, mass assignment, entitlement và admin policy khi API tương ứng xuất hiện.
 - **Kết luận:** auth module sẵn sàng đóng theo scope API tại thời điểm audit; deferred controls bên dưới vẫn deferred. Tài liệu audit Phase 7 đã commit tại `56253a9`; follow-up UI bên dưới đã commit riêng tại `55430bf`.
 
-### Hậu kiểm Phase 7 — giao diện password lifecycle
+### Hậu kiểm Phase 7 — giao diện password lifecycle (lịch sử)
 
 - **Lý do:** sau khi test local, user không thấy đổi mật khẩu và quên mật khẩu vì Phase 3 mới có backend API và helper `AuthContext.changePassword`; frontend chưa có form/link/route tương ứng. Đây là thiếu sót UX, không phải API backend bị thiếu.
 - **Frontend:** thêm form đổi mật khẩu trong `/account/security`, link quên mật khẩu từ `/login`, trang `/forgot-password`, trang `/reset-password` đọc token từ link rồi xóa token khỏi thanh địa chỉ. Chỉ gọi ba API thật `change-password`, `forgot-password`, `reset-password`; không thêm backend API hay thay đổi chính sách token.
 - **Giới hạn:** local development chỉ giữ reset link/token trong memory của backend phục vụ test tự động; không gửi email hoặc trả raw token qua API. Form quên mật khẩu gửi yêu cầu và hiển thị phản hồi generic, nhưng user không thể hoàn tất reset thủ công nếu không có kênh nhận link. Production email delivery tiếp tục deferred.
 - **Xác minh:** frontend lint/build pass; smoke UI mới cho forgot/reset/change pass; MFA login, MFA management và session management UI smoke pass sau khi selector MFA được giới hạn đúng khu vực; `git diff --check` pass. Backend password lifecycle integration đã pass ở Phase 7; không sửa backend trong follow-up này.
 
-### Hậu kiểm Phase 7 — đăng ký local và kiểm tra giao diện auth
+### Hậu kiểm Phase 7 — đăng ký local và kiểm tra giao diện auth (lịch sử)
 
 - **Phạm vi:** theo yêu cầu mới của user, bổ sung đăng ký đầy đủ backend + UI. Chỉ rà soát và sửa giao diện thuộc đăng nhập/đăng xuất/bảo mật; không triển khai UI hay API cho business, premium hoặc admin CRUD.
 - **Backend:** thêm `POST /api/v1/auth/register` với Origin check, rate limit mặc định `5/15 phút`, kiểm tra username/email/password, chuẩn hóa email, hash bcrypt cost `12`, tạo account cố định `role=user`, `provider=local`, `status=active`; không auto-login hoặc cấp token. Trùng username/email trả `409` generic; không tin các field đặc quyền từ client. Không cần schema migration.
@@ -209,7 +202,7 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 - **Frontend:** thêm `/register` và link từ `/login`; thành công chuyển về login. Admin shell kiểm tra thêm API thật `GET /api/v1/admin/check` trước khi hiển thị, nhưng backend RBAC vẫn là security boundary. Password lifecycle, MFA và session UI hiện có được giữ trong phạm vi auth.
 - **Xác minh tại thời điểm follow-up:** backend unit `15/15`; full auth/password/MFA/registration integration trên MySQL thật pass; cleanup integration pass; frontend lint/build pass; auth, MFA login, MFA management, sessions, password lifecycle và registration UI smoke đều pass. Follow-up đã được commit tại `55430bf`.
 
-### Hậu kiểm Phase 7 — xác thực Socket.IO Watch Party (2026-10-28)
+### Hậu kiểm Phase 7 — xác thực Socket.IO Watch Party (lịch sử 2026-10-28)
 
 - **Lý do:** namespace `/watch-party` trước đây không xác thực handshake; client tự gửi `userId`/`username` trong `join-party` và server tin dùng giá trị đó để broadcast, cho phép giả danh người khác.
 - **Backend:** thêm namespace middleware `authenticateSocket` xác thực access token JWT (allow-list `HS256`) và session trong `auth_sessions` (chưa revoke, chưa idle/absolute expiry, user `active`); lưu `sessionId`, `userId`, `username`, `avatarUrl` vào `socket.data`. `join-party` chỉ nhận `{ partyId }`; chat/sync/end dùng danh tính từ `socket.data`, bỏ qua field danh tính do client gửi.
@@ -218,7 +211,7 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 - **Xác minh thực chạy:** không token và token sai bị `connect_error` "Authentication required"; token hợp lệ kết nối, join và chat thành công; client gửi `username: "SPOOFED"` nhưng broadcast vẫn là username DB (`michael_brown`). Backend unit `32/32`; `my-parties` trả `200`; frontend lint 0 error, build pass.
 - **Giới hạn:** access token hết hạn hoặc session bị revoke giữa phiên socket không ngắt kết nối hiện có cho tới khi client disconnect/reconnect; chưa rate-limit sự kiện socket; `participant-action` chưa kiểm tra quyền host/co-host trước khi broadcast/kick — cần scope riêng.
 
-### Phase 8 — VIP entitlement và playback token (2026-10-28)
+### Phase 8 — VIP entitlement và playback token (lịch sử 2026-10-28)
 
 - **Lý do:** `productions.is_premium` trước đây chỉ là cờ hiển thị. Các endpoint đọc streaming trả `video_url` công khai, proxy `/api/v1/hls` không cần token, và object R2 công khai — guest/user thường vẫn xem được phim VIP.
 - **Entitlement:** thêm `core/security/entitlements.js` (`isVipActive`, `canAccessPremium` = role `admin`/`moderator` hoặc `vip_expires_at` còn hạn). `publicUser` trả thêm `vipExpiresAt`/`isVip`; login, refresh và MFA challenge SELECT đọc `vip_expires_at`.
@@ -274,59 +267,22 @@ Các checkpoint trên đều đã commit đến hết Phase 6; Phase 7 và follo
 - TOTP time step đã dùng không được chấp nhận lại; recovery code chỉ dùng một lần.
 - Socket namespace `/watch-party` xác thực access token và session DB ở handshake; danh tính lấy từ server, không tin payload client.
 
-## Real APIs hiện đang tồn tại
+## API và phạm vi authorization hiện tại
 
-Chỉ liệt kê route thực sự có trong source.
+Auth routes vẫn nằm dưới `/api/v1/auth`; ngoài đó, source hiện có API Community, profile/follow, posts, moderation, points, quests, Watch Party, streaming, shopping, VIP, Lensy và admin. Danh sách tuyến chính nằm trong [`HAI_API_REFERENCE.md`](HAI_API_REFERENCE.md); chi tiết role/ownership phải được đọc từ router và service cụ thể.
 
-### Node backend
+| Khu vực | Policy hiện tại cần lưu ý |
+|---|---|
+| Auth/session | `requireAuth` nạp user/session từ database; role claim trong JWT không quyết định quyền. MongoDB path chặn tài khoản disabled và moderation lock còn hạn. |
+| Community/profile | API phân biệt public/optional-auth với thao tác cần session. Owner, visibility và membership được kiểm ở route/service. Một số chức năng chỉ hỗ trợ MongoDB. |
+| Points/quests | Route admin chỉ dành cho admin; các thao tác thưởng/thu hồi ghi cùng ledger/transaction trong các luồng MongoDB liên quan. |
+| Moderation | Gửi report yêu cầu auth; report/flag management là admin-only. Hành động kiểm duyệt có audit và có thể ảnh hưởng points/quests. |
+| VIP | User thao tác đơn của mình; staff xét duyệt; chỉ admin sửa gói. QR DEMO không xác nhận thanh toán. |
+| Admin content | Quyền staff hoặc admin phụ thuộc route; không suy từ việc route nằm dưới `/api/v1/admin`. |
+| Watch Party | REST và Socket.IO có kiểm tra session/danh tính. Host/participant policy nằm ở party record, không dùng global user role `host`. |
+| Lensy/visual shopping | Một số endpoint public, một số thao tác catalog cần staff. Đọc `visual-shopping.routes.js` và `scan.routes.js` trước khi mở quyền. |
 
-| Method | Route | Policy hiện tại |
-|---|---|---|
-| GET | `/` | Public health |
-| POST | `/api/v1/auth/register` | Public; Origin, validation, rate limit, cố định local/active/user, không cấp credential |
-| POST | `/api/v1/auth/login` | Public; validation, rate limit, local/active policy, lock tracking |
-| POST | `/api/v1/auth/mfa/setup` | `requireAuth`; Origin; current-password reauthentication; trả enrollment secret/URI một lần |
-| GET | `/api/v1/auth/mfa/status` | `requireAuth`; chỉ trả enabled, enabledAt và số recovery code còn lại |
-| POST | `/api/v1/auth/mfa/enable` | `requireAuth`; Origin; xác minh TOTP; tạo recovery codes; revoke sessions |
-| POST | `/api/v1/auth/mfa/verify` | Origin; rate limit; challenge one-time; chỉ endpoint này hoàn tất MFA login và cấp session |
-| POST | `/api/v1/auth/mfa/disable` | `requireAuth`; Origin; current password + TOTP/recovery; revoke sessions |
-| POST | `/api/v1/auth/mfa/recovery-codes/regenerate` | `requireAuth`; Origin; rate limit; current password + TOTP; thay toàn bộ recovery codes |
-| POST | `/api/v1/auth/refresh-token` | Cookie endpoint; Origin, rate limit, session/status/expiry checks |
-| POST | `/api/v1/auth/change-password` | `requireAuth`; user lấy từ `req.user.id`; Origin check |
-| POST | `/api/v1/auth/forgot-password` | Public; generic response, validation, rate limit |
-| POST | `/api/v1/auth/reset-password` | Public; generic invalid-token response, validation, rate limit |
-| POST | `/api/v1/auth/logout` | Origin check; revoke matching session và clear cookie |
-| GET | `/api/v1/auth/sessions` | `requireAuth`; active-only safe projection của `req.user.id`; current theo `req.auth.sessionId` |
-| DELETE | `/api/v1/auth/sessions/:sessionId` | `requireAuth`; Origin; atomic ownership constraint; current revoke clear cookie |
-| POST | `/api/v1/auth/logout-others` | `requireAuth`; Origin; revoke mọi session khác của current user |
-| POST | `/api/v1/auth/logout-all` | `requireAuth`; revoke session của `req.user.id`; Origin check |
-| GET | `/api/v1/auth/me` | `requireAuth`; safe user projection |
-| GET | `/api/v1/admin/check` | `requireAuth` + `requireRole("admin")` |
-
-### Python services
-
-| Service | Method | Route | Policy |
-|---|---|---|---|
-| AI chatbot | GET | `/` | Public health |
-| Video processor | GET | `/` | Public health |
-
-Python services hiện không expose user resource, premium, subscription, moderation hay admin CRUD API.
-
-## Modules chưa triển khai
-
-Các khái niệm có thể xuất hiện trong schema/frontend nhưng chưa có backend API thật:
-
-- Profile update/delete
-- Favorites/bookmarks
-- Watch history
-- Comments/comment likes
-- Ratings/reviews
-- Watching party, participant, chat, host management
-- Premium entitlement hoặc premium enforcement backend
-- Subscription/transaction
-- Admin user/content/community CRUD và moderation
-
-Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm ownership, IDOR/BOLA, mass-assignment hoặc premium test khi resource API tương ứng thực sự được triển khai.
+Đây là tổng quan, không phải ma trận quyền đầy đủ. Không dùng lại nhận định Phase 7 cũ rằng backend chỉ có auth/admin-check: các API nghiệp vụ đã được tích hợp sau thời điểm audit đó. Cần review lại route theo source và regression test hiện tại.
 
 ## Các quyết định bảo mật quan trọng
 
@@ -362,7 +318,7 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - Disabled-user login/access/refresh/logout-all/protected-route rejection.
 - Origin protection, JWT algorithm allow-list và production-secret validation.
 - JWT ký hợp lệ có `role=admin` nhưng DB role=user nhận `403`.
-- Admin coverage: guest `401`, user `403`, admin success trên mọi `/api/v1/admin/*` thật (hiện chỉ có `GET /api/v1/admin/check`).
+- Admin coverage: test guest/user/admin theo policy từng endpoint. Backend có nhiều route admin; không xem kết quả test route `/api/v1/admin/check` là bao phủ toàn bộ admin surface.
 - Change password, wrong/same password, revoke session và old/new password login.
 - Forgot generic equality, unknown/non-local account và không expose token trong production response.
 - Reset token hash, TTL, invalidate token cũ, valid/reuse/expired/random/malformed và concurrent one-time.
@@ -381,13 +337,13 @@ Không tạo các endpoint này chỉ để làm authorization test. Chỉ thêm
 - Centralized SIEM/log transport, alerting và chính sách archive/audit bất biến
 - Deployed cleanup scheduler cho `npm run cleanup:auth`
 - Multi-tab auth state sync
-- IDOR/BOLA, ownership, mass-assignment khi các resource API thật xuất hiện
+- Review lại owner, visibility, membership và allow-list field khi API nghiệp vụ thay đổi; dùng integration test theo từng resource/role, không suy coverage từ `ProtectedRoute`.
 - Private R2 bucket, presigned URL hoặc Cloudflare Worker cho playback (hiện bucket public nên URL trực tiếp vẫn bypass proxy/token)
-- Admin CRUD và community/content moderation authorization khi có API tương ứng
+- Kiểm thử authorization end-to-end trên toàn bộ admin/community/points/quests/VIP/Watch Party APIs sau các thay đổi lớn.
 - Email verification, OAuth, passkeys/WebAuthn và recovery nâng cao
 - Rate limiting sự kiện Socket.IO và buộc ngắt khi access token hết hạn giữa phiên; quyền host của `participant-action` đã được kiểm tra trong đường MongoDB cơ bản, còn cần rà các vai trò và tình huống đồng thời.
 
-## Trạng thái sau Phase 7
+## Trạng thái sau Phase 7 (kết luận lịch sử)
 
 Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạng mục **Deferred / Future hardening** không được triển khai trong audit này và vẫn cần scope riêng. Khi backend thêm business API thật, phải mở lại authorization review cho API đó; kết luận hiện tại không xác nhận an toàn cho API chưa tồn tại hoặc production deployment chưa kiểm thử.
 
@@ -507,11 +463,8 @@ Phase 7 đã hoàn tất trong phạm vi auth/security API hiện có. Các hạ
 - Admin fraud confirmation and clearance require a reason and are audited. Reward approval rechecks current account status and fraud confirmation even after a month snapshot. Test DB smoke verified a confirmed account cannot be granted a pending badge and remains pending for review; after clearance, the admin can approve. Failed grant attempts are logged without marking the reward granted.
 - Existing MongoDB admin moderation deletion of a movie comment now reverses its comment and received-upvote points in the same transaction. This closes the alternate deletion path outside the user's own comment route.
 - Local run for manual QA (2026-11-21): the month-close timer can be disabled with `POINTS_MONTH_CLOSE_ENABLED=false` while keeping the normal default enabled. Docker daemon was unavailable, so Node was started from source on port 3001 with that flag and Vite on port 5174, pointing at port 3001. HTTP checks returned 200 for `/leaderboard` frontend, points configuration with the 5174 Origin, and existing filters. Frontend production build passed. No monthly close or reward-grant job was run on the main database.
-- Demo follow-up (2026-11-21): the user requested twenty `test1@gmail.com` through `test20@gmail.com` accounts and changed the password from `123123` to `123456788` while seeding. The first seed process was stopped, all 20 tagged accounts in `community_test_schema_20261101` were updated to the new bcrypt password, and all 20 were authenticated through the Mongo auth service. Read-only verification found 20/20 new passwords valid and 0/20 old passwords valid. `scripts/seed-points-demo.js` is guarded to that test DB and is rerunnable; it created one active Community post and API-based votes/comments. The monthly leaderboard returned 20 ranked users, with test1 at 68 points. No synthetic point transaction was inserted directly.
-- Docker Compose built all four app images and was started with `MONGODB_DB_NAME=community_test_schema_20261101` and `POINTS_MONTH_CLOSE_ENABLED=false` supplied for this run. Backend container env confirmed both values; frontend `/leaderboard`, API leaderboard and filters returned 200, and live API login for `test1@gmail.com` succeeded. Backend/frontend/video containers were checked against newly built images; the AI image was cache-identical. Main database `Zflix` was not used for this demo seed or job.
-
-- Correction and final local state (2026-11-21): The user explicitly chose the real `Zflix` database and required ordinary accounts with no demo marking. Twenty `test1@gmail.com` through `test20@gmail.com` accounts were created there with password `123456788`, plus one Community post, 19 comments, and normal API-based interactions. Their points remain regular points; the leaderboard has 20 ranked accounts, test1 at 68 points. The temporary `demo_tag` fields were removed from all 20 accounts; reward eligibility uses the same status and fraud checks as other users. The post and comments contain ordinary movie discussion text, and the tagged copy created in `community_test_schema_20261101` was removed. One-time seed and cleanup scripts were deleted. The earlier demo entries above describe intermediate states and are superseded by this correction.
-- Backend and frontend images were rebuilt and Compose backend, frontend, and AI services were recreated with `MONGODB_DB_NAME=Zflix` and `POINTS_MONTH_CLOSE_ENABLED=false`. Container env confirmed these values, `/api/v1/points/leaderboard` and `/leaderboard` returned HTTP 200, and real API login for `test1@gmail.com` succeeded. No month-close or VIP grant job was run against `Zflix`.
+- Development seed follow-up (2026-11-21): an earlier version of this note recorded test-account credentials and activity in clear text. Those values have been removed from this file. Removal from the current document does not erase prior Git history; if the associated database is still in use, its owner should review the affected accounts and rotate credentials. Do not reuse the old seed instructions or assume those accounts remain active.
+- A local leaderboard/UI check was recorded for 2026-11-21 with `POINTS_MONTH_CLOSE_ENABLED=false`. It is a historical local smoke, not evidence that a monthly close, reward approval, or production deployment was run successfully on the current environment.
 
 ## Community moderation - 2026-11-21
 
