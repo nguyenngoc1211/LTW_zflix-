@@ -32,11 +32,11 @@ const ProductPlacements = ({ productionId }) => {
       </h3>
       <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
         {items.map((item) => {
-          const keyword = item.shopeeKeyword || item.productName || "";
+          const keyword = item.searchKeyword || item.productName || "";
           return (
             <a
               key={item.id}
-              href={`https://shopee.vn/search?keyword=${encodeURIComponent(keyword)}`}
+              href={`https://tiki.vn/search?q=${encodeURIComponent(keyword)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="w-44 shrink-0 rounded-xl border border-gray-800 bg-[#18181b] overflow-hidden hover:border-[#ffdd95]/60 transition-colors"

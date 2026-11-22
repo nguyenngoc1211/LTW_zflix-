@@ -106,7 +106,7 @@ export const rankProductsV2 = (
 };
 
 // Chặn open redirect: chỉ cho redirect tới các sàn trong whitelist
-const DEFAULT_ALLOWED = ["shopee.vn", "lazada.vn", "tiki.vn", "www.amazon.com"];
+const DEFAULT_ALLOWED = ["tiki.vn", "lazada.vn", "www.amazon.com"];
 
 export const allowedAffiliateDomains = () =>
   (process.env.AFFILIATE_ALLOWED_DOMAINS || DEFAULT_ALLOWED.join(","))

@@ -44,7 +44,7 @@ export const parseDeepseekResponse = (json) => {
 const PROMPT =
   'Bạn là trợ lý mua sắm. Nhìn vào ảnh món đồ này (được chụp/crop từ một video phim) và trả về ' +
   'DUY NHẤT một JSON (không thêm chữ nào khác) với dạng: ' +
-  '{"keyword": "từ khóa ngắn gọn tiếng Việt có dấu để tìm món đồ này trên Shopee", "category": "danh mục ngắn như Thời trang/Phụ kiện/Đồ gia dụng/Điện tử...", "color": "màu chính hoặc null"} ' +
+  '{"keyword": "từ khóa ngắn gọn tiếng Việt có dấu để tìm món đồ này trên Tiki", "category": "danh mục ngắn như Thời trang/Phụ kiện/Đồ gia dụng/Điện tử...", "color": "màu chính hoặc null"} ' +
   'Nếu ảnh không có món đồ rõ ràng (mờ, chỉ là nền/da/người), trả {"keyword": "", "category": "", "color": null}. ' +
   'Ví dụ: {"keyword": "đồng hồ đeo tay nam dây thép", "category": "Phụ kiện", "color": "bạc"}';
 

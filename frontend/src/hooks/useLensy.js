@@ -64,8 +64,8 @@ export const useLensy = ({ videoRef, stageRef, productionId, positionRef }) => {
     [result],
   );
 
-  const findOnShopee = useCallback((name) => {
-    window.open(`https://shopee.vn/search?keyword=${encodeURIComponent(name)}`, "_blank", "noopener");
+  const findOnTiki = useCallback((name) => {
+    window.open(`https://tiki.vn/search?q=${encodeURIComponent(name)}`, "_blank", "noopener");
   }, []);
 
   return {
@@ -77,7 +77,7 @@ export const useLensy = ({ videoRef, stageRef, productionId, positionRef }) => {
     sleep,
     scan,
     buy,
-    findOnShopee,
+    findOnTiki,
     setError,
     isOpen: state !== "SLEEPING",
   };

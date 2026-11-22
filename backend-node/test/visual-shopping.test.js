@@ -81,10 +81,11 @@ test("buildQueryVariants creates original, tight and padded views", async () => 
 });
 
 test("validateAffiliateTarget: chặn open redirect và domain lạ", () => {
-  assert.equal(validateAffiliateTarget("https://shopee.vn/search?keyword=ao").ok, true);
+  assert.equal(validateAffiliateTarget("https://tiki.vn/search?q=ao").ok, true);
+  assert.equal(validateAffiliateTarget("https://shopee.vn/search?keyword=ao").ok, false);
   assert.equal(validateAffiliateTarget("https://evil.example.com/phish").ok, false);
   assert.equal(validateAffiliateTarget("javascript:alert(1)").ok, false);
-  assert.equal(validateAffiliateTarget("https://shopee.vn.evil.com/").ok, false);
+  assert.equal(validateAffiliateTarget("https://tiki.vn.evil.com/").ok, false);
   assert.equal(validateAffiliateTarget("không phải url").ok, false);
   assert.equal(validateAffiliateTarget("https://lazada.vn/products/1").ok, true);
 });

@@ -29,7 +29,7 @@ export default function ProductPanel({ result, photo, onClose, onBuy, onFind }) 
 
       {result.suggestedKeyword && (
         <button type="button" className="cinelens-ai-search" onClick={() => onFind(result.suggestedKeyword)}>
-          Tìm “{result.suggestedKeyword}” trên Shopee
+          Tìm “{result.suggestedKeyword}” trên Tiki
         </button>
       )}
 
@@ -59,7 +59,7 @@ export default function ProductPanel({ result, photo, onClose, onBuy, onFind }) 
                 ? "Mua ngay"
                 : product.platform?.toLowerCase().includes("tiki")
                   ? "Xem trên Tiki"
-                  : "Tìm trên Shopee"}
+                  : "Tìm trên Tiki"}
             </button>
           </article>
         ))}

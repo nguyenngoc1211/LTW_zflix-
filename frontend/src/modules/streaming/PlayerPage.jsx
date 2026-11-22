@@ -132,9 +132,9 @@ const PlayerPage = () => {
       "noopener",
     );
   };
-  // Chưa gắn affiliate: mở Shopee search theo tên (URL-encoded, tab mới)
-  const findOnShopee = (name) => {
-    window.open(`https://shopee.vn/search?keyword=${encodeURIComponent(name)}`, "_blank", "noopener");
+  // Chưa có link sản phẩm: mở Tiki search theo tên (URL-encoded, tab mới)
+  const findOnTiki = (name) => {
+    window.open(`https://tiki.vn/search?q=${encodeURIComponent(name)}`, "_blank", "noopener");
   };
 
 
@@ -193,7 +193,7 @@ const PlayerPage = () => {
           photo={lensyPhoto}
           onClose={() => sleepLensy()}
           onBuy={buyProduct}
-          onFind={findOnShopee}
+          onFind={findOnTiki}
         />
       )}
       <LensyMascot state={lensyState} onClick={() => (lensyState === "SLEEPING" ? wakeLensy() : sleepLensy())} />

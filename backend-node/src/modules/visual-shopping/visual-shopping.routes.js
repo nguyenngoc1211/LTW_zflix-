@@ -154,7 +154,7 @@ visualShoppingRouter.post(
       searchId = searchResult?.insertId ?? null;
     }
 
-    const ocrQuickSearch = ocr?.text ? { keyword: ocr.text, shopeeUrl: `https://shopee.vn/search?keyword=${encodeURIComponent(ocr.text)}` } : null;
+    const ocrQuickSearch = ocr?.text ? { keyword: ocr.text, searchUrl: `https://tiki.vn/search?q=${encodeURIComponent(ocr.text)}` } : null;
     res.json({
       searchId,
       ocrText: ocr?.text ?? null,

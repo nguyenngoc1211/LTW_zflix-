@@ -102,7 +102,7 @@ const searchCatalog = async (imageBuffer, timings, ocrPromise = null) => {
     similarity: item.score,
     availability: Boolean(item.availability),
     hasAffiliate: Boolean(item.affiliate_url),
-    searchUrl: item.product_url || `https://shopee.vn/search?keyword=${encodeURIComponent(item.name)}`,
+    searchUrl: item.product_url || `https://tiki.vn/search?q=${encodeURIComponent(item.name)}`,
   }));
 };
 
@@ -225,7 +225,7 @@ scanRouter.post(
         message: products.length
           ? null
           : ai?.keyword
-            ? "Sàn chưa trả về sản phẩm khớp — thử khoanh vùng rõ hơn hoặc bấm tìm trên Shopee nhé!"
+            ? "Sàn chưa trả về sản phẩm khớp — thử khoanh vùng rõ hơn hoặc bấm tìm trên Tiki nhé!"
             : aiEnabled
               ? "Lensy chưa nhận diện được món đồ trong vùng này — thử khoanh sát món đồ hơn nhé!"
               : "Lensy không tìm thấy sản phẩm phù hợp với vùng này — thử khoanh vùng khác nhé!",
