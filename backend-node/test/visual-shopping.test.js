@@ -4,7 +4,40 @@ import assert from "node:assert/strict";
 process.env.NODE_ENV = "test";
 
 const { rankProducts, validateAffiliateTarget } = await import("../src/modules/visual-shopping/ranking.js");
+const { productEmbeddings, collapseProductHits } = await import("../src/modules/visual-shopping/vector.index.js");
+const { imageUrlsFor } = await import("../src/modules/visual-shopping/catalog-import.js");
 const { mapRegionToVideoPixels } = await import("../../frontend/src/utils/cropMath.js");
+
+test("imageUrlsFor accepts multiple pipe-separated catalog images", () => {
+  assert.deepEqual(imageUrlsFor({ image_urls: " first.jpg | second.jpg | first.jpg " }), [
+    "first.jpg",
+    "second.jpg",
+  ]);
+  assert.deepEqual(imageUrlsFor({ image_url: "legacy.jpg" }), ["legacy.jpg"]);
+});
+
+test("productEmbeddings reads the primary vector and additional catalog views", () => {
+  const vectors = productEmbeddings({
+    embedding: JSON.stringify([1, 0, 0]),
+    embedding_variants: [
+      { image_url: "side.jpg", embedding: [0, 1, 0] },
+      { image_url: "broken.jpg", embedding: "not-json" },
+    ],
+  });
+  assert.deepEqual(vectors, [[1, 0, 0], [0, 1, 0]]);
+});
+
+test("collapseProductHits keeps the best image-view score per product", () => {
+  assert.deepEqual(collapseProductHits([
+    { productId: 8, similarity: 0.72 },
+    { productId: 8, similarity: 0.91 },
+    { productId: 3, similarity: 0.84 },
+    { productId: 4, similarity: Number.NaN },
+  ]), [
+    { productId: 8, similarity: 0.91 },
+    { productId: 3, similarity: 0.84 },
+  ]);
+});
 
 test("rankProducts: sắp xếp theo similarity và lọc sản phẩm hết hàng", () => {
   process.env.VISUAL_SIM_THRESHOLD = "0.4";
