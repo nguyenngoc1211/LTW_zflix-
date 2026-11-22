@@ -78,6 +78,8 @@ const buildIndex = async () => {
     index = new hnswlib.HierarchicalNSW("cosine", items[0]?.embedding.length || 512);
     index.initIndex({ maxElements: Math.max(1000, items.length * 2) });
     items.forEach((item, pointId) => index.addPoint(item.embedding, pointId));
+    const ef = Number(process.env.VISUAL_HNSW_EF) || 100;
+    if (ef > 0 && typeof index.setEf === "function") index.setEf(ef);
   } catch (error) {
     console.warn(`[VectorIndex] HNSW không khả dụng, dùng cosine JS: ${error.message.split("\n")[0]}`);
   }
@@ -109,8 +111,11 @@ export const indexStats = async () => {
   return { catalogSize, vectorCount, lastBuildMs };
 };
 
-// Tìm top-K vector gần nhất
-export const searchByVector = async (embedding, k = 20) => {
+// Tìm top-K sản phẩm gần nhất cho một hoặc nhiều query embedding.
+// preferExactMaxVectors: nếu được truyền, dùng cosine exact khi vectorCount <= ngưỡng.
+// Không truyền thì giữ hành vi cũ (HNSW nếu có).
+export const searchByVectors = async (embeddings, k = 20, options = {}) => {
+  const queries = (Array.isArray(embeddings) ? embeddings : [embeddings]).filter(Boolean);
   let index = await getIndex();
   // Auto-heal: index trống nhưng DB có embedding (boot lúc DB trống / import sau boot)
   if (catalogSize === 0) {
@@ -123,28 +128,36 @@ export const searchByVector = async (embedding, k = 20) => {
       index = await rebuildIndex();
     }
   }
-  if (catalogSize === 0) return { items: [], searchMs: 0 };
+  if (catalogSize === 0 || queries.length === 0) return { items: [], searchMs: 0, mode: "empty" };
+
+  const exactMax = Number(options.preferExactMaxVectors);
+  const useExact = Number.isFinite(exactMax) ? vectorCount <= exactMax : !index;
   const t0 = Date.now();
   const hits = [];
-  if (!index) {
+
+  if (useExact) {
     for (const item of exactItems) {
-      if (item.embedding.length !== embedding.length) continue;
-      const similarity = cosine(embedding, item.embedding);
-      hits.push({ productId: item.id, similarity });
+      for (const query of queries) {
+        if (item.embedding.length !== query.length) continue;
+        hits.push({ productId: item.id, similarity: cosine(query, item.embedding) });
+      }
     }
   } else {
     // A product can contribute up to five vectors (primary + four views).
     // Over-fetch enough neighbors so collapsing views is less likely to leave
     // the requested product result count short.
     const variantHits = Math.min(vectorCount, Math.max(k * 5, 50));
-    const results = await index.searchKnn(embedding, variantHits);
-    for (let position = 0; position < results.neighbors.length; position += 1) {
-      const productId = productIdByPoint[results.neighbors[position]];
-      if (productId === undefined) continue;
-      const similarity = 1 - results.distances[position];
-      hits.push({ productId, similarity });
+    for (const query of queries) {
+      const results = await index.searchKnn(query, variantHits);
+      for (let position = 0; position < results.neighbors.length; position += 1) {
+        const productId = productIdByPoint[results.neighbors[position]];
+        if (productId === undefined) continue;
+        const similarity = 1 - results.distances[position];
+        hits.push({ productId, similarity });
+      }
     }
   }
+
   const bestPerProduct = collapseProductHits(hits);
   const searchMs = Date.now() - t0;
   return {
@@ -152,5 +165,8 @@ export const searchByVector = async (embedding, k = 20) => {
       .map((item) => ({ ...item, similarity: Number(item.similarity.toFixed(4)) }))
       .slice(0, k),
     searchMs,
+    mode: useExact ? "exact" : "hnsw",
   };
 };
+
+

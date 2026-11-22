@@ -1,5 +1,9 @@
 # CLIP visual search benchmark (historical run)
 
+> Kết quả dưới đây là lần đo V1 cũ, dùng chính ảnh catalog làm query. Code hiện tại
+> đã chuyển sang CLIP V2; xem [`LENSY_CATALOG_V2.md`](LENSY_CATALOG_V2.md) để biết
+> cấu hình và benchmark hiện hành. Số liệu trong file này chỉ mang tính lịch sử.
+
 | Thuộc tính | Giá trị |
 |---|---|
 | Ngày đo | 26/10/2026 |

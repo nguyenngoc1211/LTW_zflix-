@@ -1,4 +1,4 @@
-// Tra sản phẩm thật trên sàn theo từ khoá do AI nhận diện (DeepSeek/Gemini).
+// Tra sản phẩm thật trên sàn theo từ khoá do AI nhận diện (DeepSeek).
 // Tiki có API tìm kiếm công khai, không cần đăng ký KOL/đối tác như Shopee.
 // Kết quả được cache ngắn để nhiều người quét cùng món đồ không gọi sàn liên tục.
 const TIKI_SEARCH_URL = "https://tiki.vn/api/v2/products";

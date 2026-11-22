@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 
 process.env.NODE_ENV = "test";
 
-const { rankProducts, validateAffiliateTarget } = await import("../src/modules/visual-shopping/ranking.js");
+const { rankProductsV2, normalizeText, tokenize, validateAffiliateTarget } = await import("../src/modules/visual-shopping/ranking.js");
 const { productEmbeddings, collapseProductHits } = await import("../src/modules/visual-shopping/vector.index.js");
 const { imageUrlsFor } = await import("../src/modules/visual-shopping/catalog-import.js");
+const { buildQueryVariants } = await import("../src/modules/visual-shopping/query-variants.js");
 const { mapRegionToVideoPixels } = await import("../../frontend/src/utils/cropMath.js");
+const sharp = (await import("sharp")).default;
 
 test("imageUrlsFor accepts multiple pipe-separated catalog images", () => {
   assert.deepEqual(imageUrlsFor({ image_urls: " first.jpg | second.jpg | first.jpg " }), [
@@ -39,30 +41,43 @@ test("collapseProductHits keeps the best image-view score per product", () => {
   ]);
 });
 
-test("rankProducts: sắp xếp theo similarity và lọc sản phẩm hết hàng", () => {
-  process.env.VISUAL_SIM_THRESHOLD = "0.4";
-  const candidates = [
-    { id: 1, similarity: 0.7, availability: 1 },
-    { id: 2, similarity: 0.9, availability: 0 },
-    { id: 3, similarity: 0.8, availability: 1 },
-  ];
-  const ranked = rankProducts(candidates, {}, 10);
-  assert.equal(ranked.length, 2);
-  assert.equal(ranked[0].id, 3);
-  assert.equal(ranked[1].id, 1);
+test("normalizeText and tokenize support Vietnamese text matching", () => {
+  assert.equal(normalizeText("Cốc sứ cà phê đỏ"), "coc su ca phe do");
+  assert.deepEqual(tokenize("Cốc sứ cà phê"), ["coc", "phe"]);
 });
 
-test("rankProducts: category/color match được boost nhẹ, giới hạn limit", () => {
-  process.env.VISUAL_SIM_THRESHOLD = "0.4";
-  const candidates = Array.from({ length: 25 }, (_, i) => ({
-    id: i + 1, similarity: 0.5 + (i % 10) / 100, availability: 1,
-    category: i === 4 ? "fashion" : "other",
-    color: i === 4 ? "beige" : "black",
-  }));
-  const ranked = rankProducts(candidates, { category: "fashion", color: "beige" }, 10);
-  assert.equal(ranked.length, 10);
-  assert.equal(ranked[0].id, 5); // boost 0.1 đưa lên đầu
-  assert.ok(ranked[0].boosts.includes("category") && ranked[0].boosts.includes("color"));
+test("rankProductsV2 returns empty when top-1 and top-2 are too close", () => {
+  const base = { availability: 1, category: "Đồ gia dụng", color: "đỏ", description: "" };
+  const ranked = rankProductsV2([
+    { ...base, id: 1, name: "Cốc sứ đỏ", similarity: 0.72 },
+    { ...base, id: 2, name: "Cốc sứ xanh", similarity: 0.71 },
+  ], { minScore: 0.6, margin: 0.02 });
+  assert.deepEqual(ranked, []);
+});
+
+test("rankProductsV2 boosts a close visual hit only when text matches clearly", () => {
+  const base = { availability: 1, category: "Đồ gia dụng", color: "đỏ", description: "" };
+  const ranked = rankProductsV2([
+    { ...base, id: 1, name: "Cốc sứ cà phê", similarity: 0.58 },
+    { ...base, id: 2, name: "Bàn gỗ", similarity: 0.57 },
+  ], { ocrText: "cốc cà phê", minScore: 0.6, margin: 0 });
+  assert.equal(ranked.length, 1);
+  assert.equal(ranked[0].id, 1);
+  assert.ok(ranked[0].boosts.includes("text:coc"));
+});
+
+test("buildQueryVariants creates original, tight and padded views", async () => {
+  const input = await sharp({
+    create: {
+      width: 200,
+      height: 160,
+      channels: 3,
+      background: { r: 120, g: 80, b: 40 },
+    },
+  }).jpeg().toBuffer();
+  const variants = await buildQueryVariants(input);
+  assert.deepEqual(variants.map((variant) => variant.label), ["original", "tight", "padded"]);
+  assert.ok(variants.every((variant) => variant.buffer.length > 0));
 });
 
 test("validateAffiliateTarget: chặn open redirect và domain lạ", () => {

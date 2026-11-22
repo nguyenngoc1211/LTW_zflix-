@@ -117,7 +117,7 @@ shoppingRouter.post(
       fs.promises.writeFile(path.join(UPLOAD_DIR, imagePath), Buffer.from(base64, "base64")).catch(() => {});
     }
 
-    // AI nhận diện món đồ (Gemini/SerpAPI nếu cấu hình) — từ khoá tiếng Việt
+    // AI nhận diện món đồ (DeepSeek nếu cấu hình) — từ khoá tiếng Việt
     const ai = photo && visionConfigured() ? await identifyProduct(imageBase64, imagePath) : null;
 
     // Match sản phẩm theo mốc thời gian của tập đang xem
