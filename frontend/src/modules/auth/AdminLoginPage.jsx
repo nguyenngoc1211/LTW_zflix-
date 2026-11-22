@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 
-// Trang đăng nhập riêng cho quản trị viên — KHÔNG được liên kết từ bất kỳ menu
+// Trang đăng nhập riêng cho Admin/Moderator — KHÔNG được liên kết từ bất kỳ menu
 // công khai nào; chỉ truy cập bằng URL trực tiếp /admin-login.
 const AdminLoginPage = () => {
   const { user, loading, adminLogin } = useAuth();
@@ -17,7 +17,7 @@ const AdminLoginPage = () => {
   }
 
   if (user) {
-    return <Navigate to={["admin", "moderator"].includes(user.role) ? "/admin" : "/"} replace />;
+    return <Navigate to={["admin", "moderator"].includes(user.role) ? "/admin/community-hub" : "/"} replace />;
   }
 
   const submit = async (event) => {
@@ -34,7 +34,7 @@ const AdminLoginPage = () => {
         setError("Tài khoản này không có quyền quản trị.");
         return;
       }
-      navigate("/admin", { replace: true });
+      navigate("/admin/community-hub", { replace: true });
     } catch (requestError) {
       setError(requestError.message || "Không thể đăng nhập");
     } finally {

@@ -27,7 +27,6 @@ adminModerationRouter.get('/content/comments', asyncHandler(async (req, res) => 
   if (!useMongo()) return res.status(503).json({ message: 'MongoDB required' });
   const source = req.query.source;
   if (!['post', 'movie'].includes(source)) return res.status(400).json({ message: 'Invalid source' });
-  if (source === 'post' && req.user.role !== 'admin') return res.status(403).json({ message: 'Admin required' });
   const sourceId = parsePositiveInt(req.query.sourceId, 'source id');
   const page = parsePositiveInt(req.query.page || 1, 'page');
   if (page > 1000) return res.status(400).json({ message: 'Pagination exceeds limit' });
@@ -211,6 +210,7 @@ adminModerationRouter.delete(
 // ---------------------------------------------------------------------------
 adminModerationRouter.post(
   "/notifications/broadcast",
+  (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ message: 'Admin required' }),
   asyncHandler(async (req, res) => {
     const body = req.body || {};
     const title = typeof body.title === "string" ? body.title.trim().slice(0, 255) : "";
@@ -243,6 +243,7 @@ adminModerationRouter.post(
 // ---------------------------------------------------------------------------
 adminModerationRouter.post(
   "/search/reindex",
+  (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ message: 'Admin required' }),
   asyncHandler(async (req, res) => {
     const count = await syncProductionIndex();
     res.json({ reindexed: count });

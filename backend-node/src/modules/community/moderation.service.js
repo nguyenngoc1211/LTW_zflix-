@@ -77,13 +77,17 @@ async function moderateContent(report, action, session, now) {
   return { userId: report.review_author_id, targetStatus: action === 'delete' ? 'deleted' : 'hidden' };
 }
 
-export async function resolveModerationReport(reportId, adminId, { action, reason, durationHours } = {}) {
+export async function resolveModerationReport(reportId, adminId, { action, reason, durationHours } = {}, actorRole = 'admin') {
   if (!ACTIONS.includes(action) || typeof reason !== 'string' || reason.trim().length < 10 || reason.length > 500 || (action === 'lock' && (!Number.isSafeInteger(durationHours) || durationHours < 1 || durationHours > 720))) throw fail('Action and reason are required');
   await ensurePointIndexes(); await ensureNotificationIndexes();
   const result = await withMongoTransaction(async (session) => {
     const reports = await mongoCollection('community_reports');
     const report = await reports.findOne({ _id: reportId, status: 'open' }, { session });
     if (!report) return null;
+    if (actorRole === 'moderator' && report.target_type === 'user' && action !== 'dismiss') {
+      const target = await (await mongoCollection('users')).findOne({ id: report.target_id }, { session, projection: { role: 1 } });
+      if (target?.role !== 'user') throw fail('Moderator cannot moderate staff accounts', 403);
+    }
     const now = new Date();
     let targetUserId = report.target_type === 'user' ? report.target_id : null;
     let targetStatus = null;

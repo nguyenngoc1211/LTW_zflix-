@@ -9,8 +9,9 @@ export const questsRouter = Router();
 export const questsAdminRouter = Router();
 const mongoOnly = (_req, res, next) => process.env.DATA_STORE === 'mongodb' ? next() : res.status(503).json({ message: 'Quests require MongoDB' });
 const adminOnly = (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ message: 'Admin required' });
+const contentStaff = (req, res, next) => ['admin', 'moderator'].includes(req.user?.role) ? next() : res.status(403).json({ message: 'Staff required' });
 questsRouter.use(mongoOnly);
-questsAdminRouter.use(mongoOnly, requireAuth, adminOnly);
+questsAdminRouter.use(mongoOnly, requireAuth);
 const claimLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false });
 
 questsRouter.get('/me', requireAuth, asyncHandler(async (req, res) => {
@@ -31,7 +32,7 @@ questsRouter.get('/achievements/:userId', asyncHandler(async (req, res) => {
   res.json({ items: (await achievementStatus(userId)).filter((item) => item.earned) });
 }));
 
-questsAdminRouter.get('/definitions', asyncHandler(async (_req, res) => {
+questsAdminRouter.get('/definitions', adminOnly, asyncHandler(async (_req, res) => {
   const [questChanges, achievementChanges] = await Promise.all([
     (await mongoCollection('quest_definitions')).find({}, { projection: { _id: 0 } }).toArray(),
     (await mongoCollection('achievement_definitions')).find({}, { projection: { _id: 0 } }).toArray(),
@@ -44,7 +45,7 @@ questsAdminRouter.get('/definitions', asyncHandler(async (_req, res) => {
   res.json({ quests: merge(DEFAULT_QUESTS, questChanges), achievements: merge(DEFAULT_ACHIEVEMENTS, achievementChanges) });
 }));
 
-questsAdminRouter.put('/definitions/:kind/:id', asyncHandler(async (req, res) => {
+questsAdminRouter.put('/definitions/:kind/:id', adminOnly, asyncHandler(async (req, res) => {
   const kind = req.params.kind, id = req.params.id, body = req.body || {};
   const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
   const candidate = { ...body, id };
@@ -69,7 +70,7 @@ questsAdminRouter.put('/definitions/:kind/:id', asyncHandler(async (req, res) =>
 }));
 
 // Existing Community DELETE route performs point and quest reversal in its source transaction.
-questsAdminRouter.get('/community-posts', asyncHandler(async (req, res) => {
+questsAdminRouter.get('/community-posts', contentStaff, asyncHandler(async (req, res) => {
   const page = Math.min(parsePositiveInt(req.query.page || 1), 1000), limit = 20;
   const posts = await mongoCollection('community_posts');
   const filter = { status: 'active' };

@@ -1,5 +1,21 @@
 # Tiến độ bảo mật Authentication & Authorization
 
+## Phân quyền Moderator theo Use Case — 2026-11-22
+
+- Mở quyền staff riêng cho danh sách bài Cộng đồng (endpoint hiện có trong router Quests), bài/luồng bình luận riêng tư, tìm bình luận trong bài và danh sách/xử lý report. Các thao tác xử lý report tiếp tục dùng transaction, thu hồi Points/Quests, lý do, thông báo và `moderation_audit` hiện có. Moderator không được xử lý tài khoản Admin/Moderator qua report; cờ gian lận Points vẫn chỉ Admin.
+- Giao diện Moderator có Bài viết, Phim, Kiểm duyệt và Duyệt thanh toán VIP; ẩn nút thông báo hệ thống, doanh thu, tài khoản mới và thao tác cờ Points. Login thường và login quản trị đưa Admin/Moderator tới `/admin/community-hub`; thanh điều hướng frontend có nút Admin cho cả hai vai trò.
+- API chặn Moderator ở quản lý user/role, Points, định nghĩa Quests, broadcast/reindex và chỉnh sửa gói VIP; thống kê không trả doanh thu hoặc danh sách tài khoản mới cho Moderator. Duyệt/từ chối đơn VIP và xem lịch sử giữ quyền staff, transaction, audit lịch sử và chặn duyệt trùng hiện có.
+- `integration/moderator-usecase-smoke.js` đạt trên `community_test_schema_20261101`: danh sách/chi tiết bài riêng tư, bình luận/reply, report chấp nhận/từ chối, review phim, audit, thu hồi Points, quyền Admin/Moderator và các đường 403. `integration/vip-payment-smoke.js` đạt trên `zflix_vip_payment_test_20261114`: Moderator duyệt/từ chối, xem lịch sử, không sửa giá, duyệt lặp trả 409. Fixture được dọn; không ghi thử vào `Zflix`.
+- Backend unit 86/86, frontend lint 0 lỗi (1 warning cũ ở LibraryPage), frontend production compile và `git diff --check` đạt. Chưa build lại Docker container theo yêu cầu hỏi trước của người dùng.
+- Sau khi người dùng xác nhận, đã chạy `docker compose up -d --build --no-deps backend-node frontend`. Hai image build thành công, hai container được tạo lại và đang chạy; `GET http://localhost:5173/admin/community-hub` và `GET http://localhost:3000/api/v1/filters` đều trả 200. Đây là kiểm tra khởi động/HTTP, không phải xác nhận thao tác đăng nhập thủ công trên trình duyệt.
+
+## Cấp và thu hồi vai trò Moderator — 2026-11-22
+
+- Nguyên nhân: dropdown quản lý người dùng vô hiệu hóa tùy chọn Moderator; `PATCH /api/v1/admin/users/:id` chỉ nhận `user` và `admin`. MongoDB `Zflix.users` không có collection validator chặn role `moderator`; đường cập nhật MongoDB đã ghi `users.role` trong transaction.
+- Đã bật tùy chọn Moderator và cho API nhận `user`, `moderator`, `admin`. Endpoint vẫn chỉ cho Admin dùng; `requireAuth` đọc role từ MongoDB ở mỗi request, nên cấp/thu hồi có hiệu lực với phiên đang tồn tại.
+- Smoke API trên database riêng `community_test_schema_20261101` đạt: user không tự cấp quyền, Admin cấp Moderator và thu hồi về user, role lưu đúng trong MongoDB, Moderator xóa được bài cộng đồng của tài khoản khác nhưng không gọi được API quản lý người dùng hoặc đổi role; Admin không thể tự hạ quyền. Fixture đã dọn. Không ghi thử vào `Zflix`.
+- Frontend production build đạt; `git diff --check` đạt. Build còn cảnh báo chia chunk và dynamic import đã có ngoài phạm vi thay đổi.
+
 ## Ảnh trong bình luận phim và Cộng đồng — 2026-11-21
 
 - Upload ảnh bình luận dùng `requireAuth`, bộ lọc PNG/JPEG/WebP, tối đa 5 MB và xác minh nội dung ảnh bằng bộ lưu trữ hiện có. Phim và bài Cộng đồng vẫn dùng collection/API riêng; reply phim bị từ chối nếu khai báo tập khác với comment cha.

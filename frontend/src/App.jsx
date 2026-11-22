@@ -29,7 +29,7 @@ const App = () => {
           <NavLink to="/watch-party">Watch Party</NavLink>
           <NavLink to="/community">Cộng đồng</NavLink>
           <NavLink to="/vip">VIP</NavLink>
-          {user?.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
+          {["admin", "moderator"].includes(user?.role) && <NavLink to="/admin/community-hub">Admin</NavLink>}
         </nav>
         <div className="auth-nav">
           <NotificationBell />

@@ -50,9 +50,9 @@ adminRouter.get(
         (await mongoCollection("comments")).countDocuments(),
         sumField("daily_stats", "total_views"),
         sumField("daily_stats", "total_watch_time"),
-        sumField("daily_stats", "total_revenue"),
-        (await mongoCollection("users")).find({}, { projection: { id: 1, username: 1,
-          email: 1, role: 1, status: 1, created_at: 1 } }).sort({ created_at: -1 }).limit(5).toArray(),
+        req.user.role === 'admin' ? sumField("daily_stats", "total_revenue") : null,
+        req.user.role === 'admin' ? (await mongoCollection("users")).find({}, { projection: { id: 1, username: 1,
+          email: 1, role: 1, status: 1, created_at: 1 } }).sort({ created_at: -1 }).limit(5).toArray() : null,
         (await mongoCollection("ratings")).aggregate([
           { $group: { _id: null, avg: { $avg: "$rating" } } },
         ]).next(),
@@ -60,9 +60,9 @@ adminRouter.get(
       return res.json({ totalUsers: users, totalProductions: productions,
         totalEpisodes: episodes, totalViews, totalRatings: ratings,
         avgRating: Number(number(ratingSummary?.avg).toFixed(2)), totalComments: comments,
-        totalWatchTime, totalRevenue, recentUsers: recentUsers.map(fromMongo) });
+        totalWatchTime, ...(req.user.role === 'admin' && { totalRevenue, recentUsers: recentUsers.map(fromMongo) }) });
     }
-    const [[users], [productions], [episodes], [views], [ratings], [comments], [watchTime], [revenue], [recentUsers]] =
+    const [[users], [productions], [episodes], [views], [ratings], [comments], [watchTime], revenue, recentUsers] =
       await Promise.all([
         pool.execute("SELECT COUNT(*) AS total FROM users"),
         pool.execute("SELECT COUNT(*) AS total FROM productions"),
@@ -71,10 +71,10 @@ adminRouter.get(
         pool.execute("SELECT COUNT(*) AS total, COALESCE(AVG(rating), 0) AS avg FROM ratings"),
         pool.execute("SELECT COUNT(*) AS total FROM comments"),
         pool.execute("SELECT COALESCE(SUM(total_watch_time), 0) AS total FROM daily_stats"),
-        pool.execute("SELECT COALESCE(SUM(total_revenue), 0) AS total FROM daily_stats"),
-        pool.execute(
+        req.user.role === 'admin' ? pool.execute("SELECT COALESCE(SUM(total_revenue), 0) AS total FROM daily_stats") : null,
+        req.user.role === 'admin' ? pool.execute(
           "SELECT id, username, email, role, status, created_at FROM users ORDER BY created_at DESC LIMIT 5",
-        ),
+        ) : null,
       ]);
     res.json({
       totalUsers: users[0].total,
@@ -85,8 +85,7 @@ adminRouter.get(
       avgRating: Number(Number(ratings[0].avg).toFixed(2)),
       totalComments: comments[0].total,
       totalWatchTime: Number(watchTime[0].total),
-      totalRevenue: Number(revenue[0].total),
-      recentUsers,
+      ...(req.user.role === 'admin' && { totalRevenue: Number(revenue[0][0].total), recentUsers: recentUsers[0] }),
     });
   }),
 );
@@ -151,8 +150,8 @@ adminRouter.patch(
     const userId = parsePositiveInt(req.params.id, "user id");
     const { role, status, reason } = req.body || {};
 
-    if (role !== undefined && !["user", "admin"].includes(role)) {
-      return res.status(400).json({ message: "role must be 'user' or 'admin'" });
+    if (role !== undefined && !["user", "moderator", "admin"].includes(role)) {
+      return res.status(400).json({ message: "role must be 'user', 'moderator' or 'admin'" });
     }
     if (status !== undefined && !["active", "disabled"].includes(status)) {
       return res.status(400).json({ message: "status must be 'active' or 'disabled'" });
@@ -357,11 +356,11 @@ adminRouter.get(
       return res.json({ daily: daily.map((row) => ({ stat_date: row.stat_date,
         total_views: number(row.total_views), new_users: row.new_users,
         active_users: row.active_users, total_watch_time: number(row.total_watch_time),
-        new_subscriptions: row.new_subscriptions, total_revenue: number(row.total_revenue) })),
+        ...(req.user.role === 'admin' && { new_subscriptions: row.new_subscriptions, total_revenue: number(row.total_revenue) }) })),
       topProductions, byGenre });
     }
     const [daily] = await pool.execute(
-      `SELECT stat_date, total_views, new_users, active_users, total_watch_time, new_subscriptions, total_revenue
+      `SELECT stat_date, total_views, new_users, active_users, total_watch_time${req.user.role === 'admin' ? ', new_subscriptions, total_revenue' : ''}
        FROM daily_stats ORDER BY stat_date ASC LIMIT 30`,
     );
     const [topReal] = await pool.execute(
@@ -381,7 +380,7 @@ adminRouter.get(
        GROUP BY g.id ORDER BY view_count DESC LIMIT 8`,
     );
     res.json({
-      daily: daily.map((row) => ({ ...row, total_views: Number(row.total_views), total_revenue: Number(row.total_revenue) })),
+      daily: daily.map((row) => ({ ...row, total_views: Number(row.total_views), ...(req.user.role === 'admin' && { total_revenue: Number(row.total_revenue) }) })),
       topProductions: topReal.map((row) => ({ ...row, view_count: Number(row.view_count), avg_completion: Number(Number(row.avg_completion).toFixed(1)) })),
       byGenre: byGenre.map((row) => ({ ...row, view_count: Number(row.view_count) })),
     });

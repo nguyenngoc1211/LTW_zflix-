@@ -139,7 +139,7 @@ const UsersAdminPage = () => {
                       onChange={(event) => setPending({ kind: 'role', target: item, value: event.target.value })}
                     >
                       <option value="user">Người dùng</option>
-                      <option value="moderator" disabled>Moderator</option>
+                      <option value="moderator">Moderator</option>
                       <option value="admin">Admin</option>
                     </select>
                   </td>

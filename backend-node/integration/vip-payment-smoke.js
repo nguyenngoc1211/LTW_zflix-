@@ -44,6 +44,8 @@ try {
     { _id: 9502, id: 9502, name: 'VIP test năm', duration_days: 365, price: 990000, discount_price: 690000, is_active: 1, display_order: 2 },
   ]);
   const user = auth(userId, sessionIds[0]), admin = auth(adminId, sessionIds[1]), mod = auth(modId, sessionIds[2]);
+  assert.equal((await request(app).put('/api/v1/admin/vip-payments/plans/9501').set('Authorization', mod)
+    .send({ months: 1, price: 109000, discountPrice: 79000 })).status, 403);
   const api = (token) => request(app).post('/api/v1/vip/orders').set('Authorization', token).set('Origin', 'http://localhost:5173');
   const plans = await request(app).get('/api/v1/vip/plans').set('Authorization', user);
   assert.equal(plans.status, 200, JSON.stringify(plans.body));
@@ -78,11 +80,21 @@ try {
   const second = await api(user).send({ planId: 9502 });
   assert.equal(second.status, 201, JSON.stringify(second.body));
   await request(app).post(`/api/v1/vip/orders/${second.body.order.id}/submit`).set('Authorization', user);
-  const reject = await request(app).post(`/api/v1/admin/vip-payments/orders/${second.body.order.id}/review`).set('Authorization', admin)
+  const reject = await request(app).post(`/api/v1/admin/vip-payments/orders/${second.body.order.id}/review`).set('Authorization', mod)
     .send({ decision: 'reject', reason: 'Không tìm thấy khoản chuyển tương ứng' });
   assert.equal(reject.status, 200, JSON.stringify(reject.body));
+  const reviewedOrders = await request(app).get('/api/v1/admin/vip-payments/orders?status=REJECTED').set('Authorization', mod);
+  assert.equal(reviewedOrders.status, 200);
+  assert.ok(reviewedOrders.body.orders.some((order) => order.id === second.body.order.id && order.history.some((entry) => entry.action === 'REJECTED' && entry.actor_id === modId)));
   assert.equal((await db.collection('users').findOne({ id: userId })).vip_expires_at.getTime(), firstExpiry.getTime());
   assert.equal(await db.collection('notifications').countDocuments({ user_id: userId, type: 'vip' }), 2);
+  const third = await api(user).send({ planId: 9501 });
+  assert.equal(third.status, 201, JSON.stringify(third.body));
+  assert.equal((await request(app).post(`/api/v1/vip/orders/${third.body.order.id}/submit`).set('Authorization', user)).status, 200);
+  const modApproval = await request(app).post(`/api/v1/admin/vip-payments/orders/${third.body.order.id}/review`).set('Authorization', mod).send({ decision: 'approve' });
+  assert.equal(modApproval.status, 200, JSON.stringify(modApproval.body));
+  assert.equal((await request(app).post(`/api/v1/admin/vip-payments/orders/${third.body.order.id}/review`).set('Authorization', admin).send({ decision: 'approve' })).status, 409);
+  assert.equal(await db.collection('user_subscriptions').countDocuments({ transaction_id: third.body.order.id }), 1);
   assert.equal((await request(app).post(`/api/v1/admin/users/${userId}/vip`).set('Authorization', mod).send({ days: 30, reason: 'Thử nghiệm' })).status, 403);
   assert.equal((await request(app).post(`/api/v1/admin/users/${userId}/vip`).set('Authorization', admin).send({ days: 30 })).status, 400);
   const grant = await request(app).post(`/api/v1/admin/users/${userId}/vip`).set('Authorization', admin)

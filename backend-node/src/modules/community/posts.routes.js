@@ -102,7 +102,7 @@ const requireMembership = async (communityId, userId) => {
 };
 export const visibleTo = async (user) => {
   if (!user) return { visibility: 'public' };
-  if (user.role === 'admin') return {};
+  if (['admin', 'moderator'].includes(user.role)) return {};
   const memberships = await (await mongoCollection('community_members')).find({ user_id: user.id, status: 'active' }, { projection: { community_id: 1 } }).toArray();
   const groups = await (await mongoCollection('community_groups')).find({ _id: { $in: memberships.map((item) => item.community_id) }, status: 'active' }, { projection: { _id: 1 } }).toArray();
   return { $or: [{ visibility: 'public' }, { visibility: 'members', community_id: { $in: groups.map((group) => group._id) } }] };

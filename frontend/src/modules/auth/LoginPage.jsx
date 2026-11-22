@@ -18,7 +18,7 @@ const LoginPage = () => {
   }
 
   if (!loading && user) {
-    return <Navigate to={user.role === "admin" ? "/admin" : "/"} replace />;
+    return <Navigate to={["admin", "moderator"].includes(user.role) ? "/admin/community-hub" : "/"} replace />;
   }
 
   const handleSubmit = async (event) => {
@@ -39,8 +39,8 @@ const LoginPage = () => {
       const destination =
         requestedPath?.startsWith("/admin") && loggedInUser.role === "admin"
           ? requestedPath
-          : loggedInUser.role === "admin"
-            ? "/admin"
+          : ["admin", "moderator"].includes(loggedInUser.role)
+            ? "/admin/community-hub"
             : "/";
       navigate(destination, { replace: true });
     } catch (requestError) {

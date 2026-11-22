@@ -73,7 +73,7 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
         }
       },
-      // Dùng cho trang /admin-login: chỉ nhận phiên khi tài khoản có role admin.
+      // Dùng cho trang /admin-login: chỉ nhận phiên của nhân sự quản trị.
       // Tránh việc login() set user rồi component redirect trước khi kịp kiểm tra role.
       async adminLogin(email, password) {
         const data = await apiRequest(
@@ -82,7 +82,7 @@ export const AuthProvider = ({ children }) => {
           false,
         );
         if (data.mfaRequired) return { mfaRequired: true };
-        if (data.user?.role !== "admin") {
+        if (!["admin", "moderator"].includes(data.user?.role)) {
           // Phiên không đủ quyền: thu hồi refresh cookie ngay để không để lại phiên admin sai
           try {
             setAccessToken(data.accessToken);

@@ -119,13 +119,14 @@ export const router = createBrowserRouter([
           { path: "/admin/shopping", element: <ShoppingAdminPage /> },
           { path: "/admin/views", element: <ViewsPage /> },
           { path: "/admin/vip-payments", element: <Navigate to="/admin/community-hub/vip?view=payments" replace /> },
+          { path: "/admin/moderation", element: <Navigate to="/admin/community-hub/moderation" replace /> },
           { path: "/admin/community-hub", element: <CommunityHubLayout />, children: [
             { index: true, element: <DashboardPage /> },
             { path: "content", element: <CommunityContentPage /> },
+            { path: "moderation", element: <ModerationAdminPage /> },
             { path: "vip", element: <VipHubPage /> },
             { element: <ProtectedRoute allowedRoles={["admin"]} />, children: [
               { path: "users", element: <UsersAdminPage /> },
-              { path: "moderation", element: <ModerationAdminPage /> },
               { path: "points", element: <PointsAdminPage /> },
               { path: "quests", element: <QuestsAdminPage /> },
             ] },
@@ -139,7 +140,6 @@ export const router = createBrowserRouter([
               { path: "/admin/settings", element: <SettingsAdminPage /> },
               { path: "/admin/points", element: <Navigate to="/admin/community-hub/points" replace /> },
               { path: "/admin/quests", element: <Navigate to="/admin/community-hub/quests" replace /> },
-              { path: "/admin/moderation", element: <Navigate to="/admin/community-hub/moderation" replace /> },
             ],
           },
         ],
