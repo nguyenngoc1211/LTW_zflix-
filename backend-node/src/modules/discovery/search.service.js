@@ -2,7 +2,7 @@ import { pool } from "../../core/database/pool.js";
 import { Decimal128 } from "mongodb";
 import { fromMongo, mongoCollection } from "../../core/database/mongo.js";
 
-const ES_URL = (process.env.ELASTICSEARCH_URL || "http://elasticsearch:9200").replace(/\/$/, "");
+const ES_URL = (process.env.ELASTICSEARCH_URL || "http://localhost:9200").replace(/\/$/, "");
 const INDEX = process.env.ELASTICSEARCH_INDEX || "productions";
 
 const requestElastic = async (path, options = {}) => {
@@ -60,7 +60,7 @@ export const buildElasticQuery = ({ search, genre, country, year, minRating, sor
   };
 };
 
-const productionRows = async () => {
+const mysqlProductionRows = async () => {
   const [rows] = await pool.execute(`
     SELECT p.id, p.type, p.title, p.slug, p.description, p.poster_url, p.banner_url,
       p.status, p.release_year, p.is_premium, p.country, p.rating_avg, p.rating_count,
@@ -80,39 +80,120 @@ const productionRows = async () => {
   }));
 };
 
-export const syncProductionIndex = async () => {
-  if (process.env.DATA_STORE === "mongodb") {
-    return (await mongoCollection("productions")).countDocuments({ type: { $in: ["movie", "series"] } });
+const mongoProductionRows = async () => {
+  const [productions, genreLinks, genres] = await Promise.all([
+    (await mongoCollection("productions"))
+      .find({ type: { $in: ["movie", "series"] } }).toArray(),
+    (await mongoCollection("production_genres"))
+      .find({}, { projection: { production_id: 1, genre_id: 1 } }).toArray(),
+    (await mongoCollection("genres"))
+      .find({}, { projection: { id: 1, name: 1 } }).toArray(),
+  ]);
+  const genreNames = new Map(genres.map((genre) => [genre.id, genre.name]));
+  const genresByProduction = new Map();
+  for (const link of genreLinks) {
+    const name = genreNames.get(link.genre_id);
+    if (!name) continue;
+    const current = genresByProduction.get(link.production_id) || [];
+    current.push(name);
+    genresByProduction.set(link.production_id, current);
   }
-  try {
-    const exists = await fetch(`${ES_URL}/${INDEX}`, { method: "HEAD", signal: AbortSignal.timeout(5000) });
-    if (exists.status === 404) {
-      await requestElastic(`/${INDEX}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          mappings: {
-            properties: {
-              title: { type: "text", fields: { keyword: { type: "keyword" } } },
-              description: { type: "text" },
-              genres: { type: "text", fields: { keyword: { type: "keyword" } } },
-              country: { type: "text", fields: { keyword: { type: "keyword" } } },
-              release_year: { type: "integer" },
-              rating_avg: { type: "float" },
-            },
+  return productions.map((row) => {
+    const production = fromMongo(row);
+    return {
+      id: Number(production.id),
+      type: production.type,
+      title: production.title,
+      slug: production.slug,
+      description: production.description,
+      poster_url: production.poster_url,
+      banner_url: production.banner_url,
+      status: production.status,
+      release_year: production.release_year ? Number(production.release_year) : null,
+      is_premium: Boolean(Number(production.is_premium || 0)),
+      country: production.country,
+      rating_avg: Number(production.rating_avg || 0),
+      rating_count: Number(production.rating_count || 0),
+      language: production.language,
+      genres: (genresByProduction.get(production.id) || []).sort(),
+    };
+  });
+};
+
+const productionRows = async () =>
+  process.env.DATA_STORE === "mongodb" ? mongoProductionRows() : mysqlProductionRows();
+
+const ensureProductionIndex = async () => {
+  const exists = await fetch(`${ES_URL}/${INDEX}`, {
+    method: "HEAD",
+    signal: AbortSignal.timeout(5000),
+  });
+  if (exists.status === 404) {
+    await requestElastic(`/${INDEX}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        mappings: {
+          properties: {
+            title: { type: "text", fields: { keyword: { type: "keyword" } } },
+            description: { type: "text" },
+            genres: { type: "text", fields: { keyword: { type: "keyword" } } },
+            country: { type: "text", fields: { keyword: { type: "keyword" } } },
+            release_year: { type: "integer" },
+            rating_avg: { type: "float" },
           },
-        }),
-      });
-    }
-    const rows = await productionRows();
-    if (rows.length) {
-      const body = rows.flatMap((row) => [JSON.stringify({ index: { _index: INDEX, _id: row.id } }), JSON.stringify(row)]).join("\n") + "\n";
-      await requestElastic("/_bulk?refresh=true", { method: "POST", headers: { "content-type": "application/x-ndjson" }, body });
-    }
-    return rows.length;
-  } catch (error) {
-    console.warn("Production index sync skipped:", error.message);
-    return 0;
+        },
+      }),
+    });
+    return;
   }
+  if (!exists.ok) {
+    throw new Error(`Elasticsearch index check failed: ${exists.status}`);
+  }
+};
+
+export const syncProductionIndex = async () => {
+  await ensureProductionIndex();
+  const rows = await productionRows();
+  if (rows.length) {
+    const body = rows.flatMap((row) => [
+      JSON.stringify({ index: { _index: INDEX, _id: row.id } }),
+      JSON.stringify(row),
+    ]).join("\n") + "\n";
+    const result = await requestElastic("/_bulk?refresh=true", {
+      method: "POST",
+      headers: { "content-type": "application/x-ndjson" },
+      body,
+    });
+    const failed = result.items?.find((item) => item.index?.error);
+    if (failed) throw new Error(`Elasticsearch bulk index failed: ${failed.index.error.reason}`);
+  }
+  return rows.length;
+};
+
+const mongoFallback = async (filters, offset, limit) => {
+  const productions = await mongoCollection("productions");
+  const query = { type: { $in: ["movie", "series"] } };
+  if (filters.search) {
+    const escaped = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    query.$or = ["title", "description"].map((field) => ({ [field]: { $regex: escaped, $options: "i" } }));
+  }
+  if (filters.country) query.country = filters.country;
+  if (filters.year) query.release_year = Number(filters.year);
+  if (filters.minRating) query.rating_avg = { $gte: Decimal128.fromString(String(filters.minRating)) };
+  if (filters.genre) {
+    const genres = await mongoCollection("genres");
+    const genre = await genres.findOne({ name: filters.genre });
+    if (!genre) return { total: 0, items: [] };
+    const links = await (await mongoCollection("production_genres"))
+      .find({ genre_id: genre.id }, { projection: { production_id: 1 } }).toArray();
+    query.id = { $in: links.map((link) => link.production_id) };
+  }
+  const [total, rows] = await Promise.all([
+    productions.countDocuments(query),
+    productions.find(query).sort({ release_year: filters.sortYear === "asc" ? 1 : -1 })
+      .skip(offset).limit(limit).toArray(),
+  ]);
+  return { total, items: rows.map(fromMongo) };
 };
 
 const mysqlFallback = async (filters, offset, limit) => {
@@ -133,37 +214,96 @@ const mysqlFallback = async (filters, offset, limit) => {
   return { total: Number(countRows[0].total), items: rows.map((row) => ({ ...row, genres: row.genres ? row.genres.split("||") : [] })) };
 };
 
-export const searchProductions = async (filters, offset, limit) => {
-  if (process.env.DATA_STORE === "mongodb") {
-    const productions = await mongoCollection("productions");
-    const query = { type: { $in: ["movie", "series"] } };
-    if (filters.search) {
-      const escaped = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      query.$or = ["title", "description"].map((field) => ({ [field]: { $regex: escaped, $options: "i" } }));
-    }
-    if (filters.country) query.country = filters.country;
-    if (filters.year) query.release_year = Number(filters.year);
-    if (filters.minRating) query.rating_avg = { $gte: Decimal128.fromString(String(filters.minRating)) };
-    if (filters.genre) {
-      const genres = await mongoCollection("genres");
-      const genre = await genres.findOne({ name: filters.genre });
-      if (!genre) return { total: 0, items: [] };
-      const links = await (await mongoCollection("production_genres"))
-        .find({ genre_id: genre.id }, { projection: { production_id: 1 } }).toArray();
-      query.id = { $in: links.map((link) => link.production_id) };
-    }
-    const [total, rows] = await Promise.all([
-      productions.countDocuments(query),
-      productions.find(query).sort({ release_year: filters.sortYear === "asc" ? 1 : -1 })
-        .skip(offset).limit(limit).toArray(),
-    ]);
-    return { total, items: rows.map(fromMongo) };
-  }
+export const runWithFallback = async (primary, fallback, onPrimaryError = () => {}) => {
   try {
-    const result = await requestElastic(`/${INDEX}/_search`, { method: "POST", body: JSON.stringify(buildElasticQuery(filters, offset, limit)) });
-    return { total: typeof result.hits.total === "number" ? result.hits.total : result.hits.total.value, items: result.hits.hits.map((hit) => hit._source) };
+    return await primary();
   } catch (error) {
-    console.warn("Elasticsearch unavailable; using MySQL fallback:", error.message);
-    return mysqlFallback(filters, offset, limit);
+    onPrimaryError(error);
+    return fallback();
   }
+};
+
+const elasticSearch = async (filters, offset, limit) => {
+  const result = await requestElastic(`/${INDEX}/_search`, {
+    method: "POST",
+    body: JSON.stringify(buildElasticQuery(filters, offset, limit)),
+  });
+  return {
+    total: typeof result.hits.total === "number" ? result.hits.total : result.hits.total.value,
+    items: result.hits.hits.map((hit) => hit._source),
+  };
+};
+
+export const searchProductions = async (filters, offset, limit) => {
+  const fallback = process.env.DATA_STORE === "mongodb" ? mongoFallback : mysqlFallback;
+  return runWithFallback(
+    () => elasticSearch(filters, offset, limit),
+    () => fallback(filters, offset, limit),
+    (error) => console.warn(
+      `Elasticsearch unavailable; using ${process.env.DATA_STORE === "mongodb" ? "MongoDB" : "MySQL"} fallback:`,
+      error.message,
+    ),
+  );
+};
+
+const escapeWildcard = (value) => value.replace(/[\\*?]/g, "\\$&");
+
+const elasticSuggestions = async (query, limit) => {
+  const result = await requestElastic(`/${INDEX}/_search`, {
+    method: "POST",
+    body: JSON.stringify({
+      size: Math.max(limit * 4, 24),
+      _source: ["id", "title", "poster_url", "release_year", "rating_avg"],
+      query: {
+        bool: {
+          filter: [{ terms: { type: ["movie", "series"] } }],
+          must: [{
+            wildcard: {
+              "title.keyword": {
+                value: `*${escapeWildcard(query)}*`,
+                case_insensitive: true,
+              },
+            },
+          }],
+        },
+      },
+    }),
+  });
+  return rankTitleSuggestions(
+    result.hits.hits.map((hit) => hit._source),
+    query,
+    limit,
+  );
+};
+
+const mongoSuggestions = async (query, limit) => {
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rows = await (await mongoCollection("productions")).find({
+    title: { $regex: escaped, $options: "i" },
+    type: { $in: ["movie", "series"] },
+  }, { projection: { _id: 0, id: 1, title: 1, poster_url: 1, release_year: 1, rating_avg: 1 } })
+    .sort({ rating_avg: -1, rating_count: -1 }).limit(100).toArray();
+  return rankTitleSuggestions(rows.map(fromMongo), query, limit);
+};
+
+const mysqlSuggestions = async (query, limit) => {
+  const [rows] = await pool.execute(
+    `SELECT id, title, poster_url, release_year, rating_avg FROM productions
+     WHERE title LIKE ? AND type IN ('movie', 'series')
+     ORDER BY rating_avg DESC, rating_count DESC LIMIT 100`,
+    [`%${query}%`],
+  );
+  return rankTitleSuggestions(rows, query, limit);
+};
+
+export const suggestProductions = async (query, limit = 8) => {
+  const fallback = process.env.DATA_STORE === "mongodb" ? mongoSuggestions : mysqlSuggestions;
+  return runWithFallback(
+    () => elasticSuggestions(query, limit),
+    () => fallback(query, limit),
+    (error) => console.warn(
+      `Elasticsearch suggestions unavailable; using ${process.env.DATA_STORE === "mongodb" ? "MongoDB" : "MySQL"} fallback:`,
+      error.message,
+    ),
+  );
 };

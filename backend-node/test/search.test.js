@@ -6,7 +6,12 @@ process.env.NODE_ENV = "test";
 
 process.env.DATABASE_URL ||= "mysql://root:rootpassword@localhost:3306/movie_streaming_db";
 
-const { buildElasticQuery, rankTitleSuggestions } = await import("../src/modules/discovery/search.service.js");
+const {
+  buildElasticQuery,
+  rankTitleSuggestions,
+  runWithFallback,
+  searchProductions,
+} = await import("../src/modules/discovery/search.service.js");
 const { clampPagination, parsePositiveInt } = await import("../src/core/utils/http.js");
 
 test("search uses Elasticsearch full-text matching (case-insensitive analyzer)", () => {
@@ -51,4 +56,47 @@ test("title suggestions match substrings and prioritize the start of a word", ()
   assert.deepEqual(rankTitleSuggestions(rows, "future").map((item) => item.id), [2]);
   assert.equal(rankTitleSuggestions(rows, "f")[0].id, 1);
   assert.ok(rankTitleSuggestions(rows, "f").some((item) => item.id === 2));
+});
+
+test("search prefers Elasticsearch even when MongoDB is the primary store", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalDataStore = process.env.DATA_STORE;
+  const calls = [];
+  process.env.DATA_STORE = "mongodb";
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    return new Response(JSON.stringify({
+      hits: {
+        total: { value: 1 },
+        hits: [{ _source: { id: 7, title: "Elastic Movie", type: "movie" } }],
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (originalDataStore === undefined) delete process.env.DATA_STORE;
+    else process.env.DATA_STORE = originalDataStore;
+  });
+
+  const result = await searchProductions({ search: "movie", sortYear: "desc" }, 0, 12);
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/productions\/_search$/);
+  assert.equal(result.total, 1);
+  assert.equal(result.items[0].id, 7);
+});
+
+test("search uses the database fallback when Elasticsearch fails", async () => {
+  const warning = new Error("Elasticsearch offline");
+  let fallbackCalled = false;
+  const result = await runWithFallback(
+    async () => { throw warning; },
+    async () => {
+      fallbackCalled = true;
+      return { total: 2, items: [{ id: 1 }, { id: 2 }] };
+    },
+  );
+
+  assert.equal(fallbackCalled, true);
+  assert.deepEqual(result, { total: 2, items: [{ id: 1 }, { id: 2 }] });
 });
