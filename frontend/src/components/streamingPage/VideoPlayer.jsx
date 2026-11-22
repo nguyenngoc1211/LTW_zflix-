@@ -188,7 +188,7 @@ const VideoPlayer = ({
           photo={lensy.photo}
           onClose={lensy.sleep}
           onBuy={lensy.buy}
-          onFind={lensy.findOnShopee}
+          onFind={lensy.findOnTiki}
         />
       )}
       {/* Mascot được render trong thanh điều khiển bên dưới (cạnh nút đèn),

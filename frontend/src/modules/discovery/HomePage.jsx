@@ -22,6 +22,7 @@ const HomePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [continueWatching, setContinueWatching] = useState([]);
+  const [searchVersion, setSearchVersion] = useState(0);
 
   useEffect(() => { apiRequest("/api/v1/filters").then(setOptions).catch((e) => setError(e.message)); }, []);
   useEffect(() => {
@@ -50,8 +51,25 @@ const HomePage = () => {
   useEffect(() => {
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
     query.set("limit", "50");
-    apiRequest(`/api/v1/productions?${query}`).then(setResult).catch((e) => setError(e.message)).finally(() => setLoading(false));
-  }, [filters]);
+    let active = true;
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    apiRequest(`/api/v1/productions?${query}`, { signal: controller.signal })
+      .then((data) => {
+        if (active) setResult(data);
+      })
+      .catch((cause) => {
+        if (active && cause.name !== "AbortError") setError(cause.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [filters, searchVersion]);
 
   const update = (key) => (event) => setDraft((current) => ({ ...current, [key]: event.target.value }));
 
@@ -71,10 +89,17 @@ const HomePage = () => {
     setShowSuggest(false);
     navigate(`/movies/${item.id}`);
   };
+  const applyFilters = (nextFilters) => {
+    clearTimeout(suggestTimer.current);
+    setShowSuggest(false);
+    setSuggestions([]);
+    setFilters(nextFilters);
+    setSearchVersion((value) => value + 1);
+  };
   return <>
     <HeroBanner movies={hotMovies} />
     <main className="page-shell">
-      <form className="filter-panel" onSubmit={(event) => { event.preventDefault(); setLoading(true); setError(""); setFilters(draft); }}>
+      <form className="filter-panel" onSubmit={(event) => { event.preventDefault(); applyFilters(draft); }}>
         <div className="search-row" style={{ position: "relative" }}>
           <input aria-label="Tên phim" value={draft.search} onChange={onSearchInput} placeholder="Nhập tên phim..." autoComplete="off" />
           {showSuggest && suggestions.length > 0 && (
@@ -97,7 +122,7 @@ const HomePage = () => {
           <select value={draft.year} onChange={update("year")}><option value="">Mọi năm</option>{options.years.map((item) => <option key={item}>{item}</option>)}</select>
           <select value={draft.minRating} onChange={update("minRating")}><option value="">Mọi điểm số</option><option value="4">Từ 4 sao</option><option value="3">Từ 3 sao</option></select>
           <select value={draft.sortYear} onChange={update("sortYear")}><option value="desc">Năm mới nhất</option><option value="asc">Năm cũ nhất</option></select>
-          <button type="button" className="secondary" onClick={() => { setDraft(initialFilters); setLoading(true); setError(""); setFilters(initialFilters); }}>Xóa lọc</button>
+          <button type="button" className="secondary" onClick={() => { setDraft(initialFilters); applyFilters(initialFilters); }}>Xóa lọc</button>
         </div>
       </form>
       <ContinueWatchingRail items={user ? continueWatching : []} />

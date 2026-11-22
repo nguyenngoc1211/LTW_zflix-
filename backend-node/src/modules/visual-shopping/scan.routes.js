@@ -6,11 +6,12 @@ import { Router } from "express";
 import { pool } from "../../core/database/pool.js";
 import { fromMongo, mongoCollection, nextNumericId } from "../../core/database/mongo.js";
 import { embedImage, clipReady } from "./clip.service.js";
-import { searchByVector } from "./vector.index.js";
-import { rankProducts, similarityThreshold } from "./ranking.js";
+import { searchCatalogVectors } from "./catalog-search.js";
+import { rankProductsV2 } from "./ranking.js";
 import { readText } from "./ocr.service.js";
 import { searchMarketplace } from "./marketplace.js";
 import { visionConfigured, visionProviderName, identifyProduct } from "../shopping/vision.js";
+import { buildQueryVariants } from "./query-variants.js";
 
 export const scanRouter = Router();
 const useMongo = () => process.env.DATA_STORE === "mongodb";
@@ -49,12 +50,20 @@ function rateLimitSafe() {
 
 // Chế độ phản ánh NGUỒN SẢN PHẨM đang dùng (theo spec CineLens):
 // "real" = sản phẩm tra trực tiếp từ sàn theo từ khoá AI; "demo" = Local Catalog mẫu.
-const searchCatalog = async (imageBuffer, timings) => {
+const searchCatalog = async (imageBuffer, timings, ocrPromise = null) => {
   await clipReady();
-  const { embedding, embedMs } = await embedImage(imageBuffer);
+  const variants = await buildQueryVariants(imageBuffer);
+
+  const embeddings = [];
+  let embedMs = 0;
+  for (const variant of variants) {
+    const result = await embedImage(variant.buffer);
+    embeddings.push(result.embedding);
+    embedMs += result.embedMs;
+  }
   timings.embedMs = embedMs;
 
-  const { items: hits, searchMs } = await searchByVector(embedding, 20);
+  const { hits, searchMs } = await searchCatalogVectors(embeddings);
   timings.searchMs = searchMs;
 
   const ids = hits.map((hit) => hit.productId);
@@ -75,8 +84,9 @@ const searchCatalog = async (imageBuffer, timings) => {
     })
     .filter(Boolean);
 
+  const ocr = ocrPromise ? await ocrPromise.catch(() => null) : null;
   const t0 = Date.now();
-  const ranked = rankProducts(catalog, {}, 15);
+  const ranked = rankProductsV2(catalog, { ocrText: ocr?.text }, 15);
   timings.rankMs = Date.now() - t0;
 
   return ranked.map((item) => ({
@@ -92,7 +102,7 @@ const searchCatalog = async (imageBuffer, timings) => {
     similarity: item.score,
     availability: Boolean(item.availability),
     hasAffiliate: Boolean(item.affiliate_url),
-    searchUrl: item.product_url || `https://shopee.vn/search?keyword=${encodeURIComponent(item.name)}`,
+    searchUrl: item.product_url || `https://tiki.vn/search?q=${encodeURIComponent(item.name)}`,
   }));
 };
 
@@ -159,7 +169,7 @@ scanRouter.post(
           timings.marketplaceMs = Date.now() - start;
         }
       } else if (!aiEnabled) {
-        products = await searchCatalog(imageBuffer, timings);
+        products = await searchCatalog(imageBuffer, timings, ocrPromise);
       }
 
       const ocr = await ocrPromise;
@@ -215,7 +225,7 @@ scanRouter.post(
         message: products.length
           ? null
           : ai?.keyword
-            ? "Sàn chưa trả về sản phẩm khớp — thử khoanh vùng rõ hơn hoặc bấm tìm trên Shopee nhé!"
+            ? "Sàn chưa trả về sản phẩm khớp — thử khoanh vùng rõ hơn hoặc bấm tìm trên Tiki nhé!"
             : aiEnabled
               ? "Lensy chưa nhận diện được món đồ trong vùng này — thử khoanh sát món đồ hơn nhé!"
               : "Lensy không tìm thấy sản phẩm phù hợp với vùng này — thử khoanh vùng khác nhé!",

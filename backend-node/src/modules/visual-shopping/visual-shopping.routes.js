@@ -8,9 +8,11 @@ import { fromMongo, mongoCollection, nextNumericId } from "../../core/database/m
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
 import { asyncHandler } from "../../core/utils/http.js";
 import { embedImage, clipStats } from "./clip.service.js";
-import { searchByVector, rebuildIndex, indexStats } from "./vector.index.js";
+import { rebuildIndex, indexStats } from "./vector.index.js";
+import { searchCatalogVectors } from "./catalog-search.js";
 import { readText } from "./ocr.service.js";
-import { rankProducts, validateAffiliateTarget } from "./ranking.js";
+import { rankProductsV2, validateAffiliateTarget } from "./ranking.js";
+import { buildQueryVariants } from "./query-variants.js";
 
 export const visualShoppingRouter = Router();
 const useMongo = () => process.env.DATA_STORE === "mongodb";
@@ -82,12 +84,21 @@ visualShoppingRouter.post(
         message: "image phải là dataURL ảnh JPEG/PNG/WebP, dung lượng 2KB–3MB",
       });
     }
+    const startedAt = Date.now();
     const timings = { cropMs: Number(body.cropMs) || null, embedMs: 0, searchMs: 0, rankMs: 0 };
+    const ocrPromise = readText(image.buffer).catch(() => null);
 
-    const { embedding, embedMs } = await embedImage(image.buffer);
+    const variants = await buildQueryVariants(image.buffer);
+    const embeddings = [];
+    let embedMs = 0;
+    for (const variant of variants) {
+      const result = await embedImage(variant.buffer);
+      embeddings.push(result.embedding);
+      embedMs += result.embedMs;
+    }
     timings.embedMs = embedMs;
 
-    const { items: vectorHits, searchMs } = await searchByVector(embedding, 20);
+    const { hits: vectorHits, searchMs } = await searchCatalogVectors(embeddings);
     timings.searchMs = searchMs;
 
     // Lấy chi tiết catalog cho các id tìm được
@@ -110,17 +121,15 @@ visualShoppingRouter.post(
         .filter(Boolean);
     }
 
+    const ocr = await ocrPromise;
     const t0 = Date.now();
-    const products = rankProducts(catalog, body.aiFilters || {}, 15);
+    const products = rankProductsV2(catalog, {
+      ...(body.aiFilters || {}),
+      ocrText: ocr?.text,
+    }, 15);
+    if (ocr?.text) timings.ocrMs = ocr.ocrMs;
     timings.rankMs = Date.now() - t0;
-
-    // OCR đọc chữ/logo trong ảnh — bổ sung từ khóa (như TikTok). Không chặn luồng chính khi lỗi.
-    let ocr = null;
-    if (image) {
-      ocr = await readText(image.buffer);
-      if (ocr?.text) timings.ocrMs = ocr.ocrMs;
-    }
-    timings.totalMs = timings.embedMs + timings.searchMs + timings.rankMs + (timings.cropMs || 0) + (timings.ocrMs || 0);
+    timings.totalMs = Date.now() - startedAt;
 
     // Lưu lịch sử tìm kiếm (không lưu ảnh)
     let searchId = null;
@@ -145,7 +154,7 @@ visualShoppingRouter.post(
       searchId = searchResult?.insertId ?? null;
     }
 
-    const ocrQuickSearch = ocr?.text ? { keyword: ocr.text, shopeeUrl: `https://shopee.vn/search?keyword=${encodeURIComponent(ocr.text)}` } : null;
+    const ocrQuickSearch = ocr?.text ? { keyword: ocr.text, searchUrl: `https://tiki.vn/search?q=${encodeURIComponent(ocr.text)}` } : null;
     res.json({
       searchId,
       ocrText: ocr?.text ?? null,
@@ -258,7 +267,7 @@ visualShoppingRouter.post(
     const image = parseDataUrlImage(body.image);
     if (!image) return res.status(400).json({ message: "image dataURL không hợp lệ" });
 
-    // Lưu ảnh vào uploads (public khi deploy — SerpAPI/có thể dùng lại)
+    // Lưu ảnh vào uploads (public khi deploy — có thể dùng lại)
     const fileName = `catalog-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     fs.writeFileSync(path.join(UPLOAD_DIR, fileName), image.buffer);
 

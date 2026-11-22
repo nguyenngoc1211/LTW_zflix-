@@ -8,14 +8,43 @@ import { mongoCollection } from "../../core/database/mongo.js";
 
 let indexPromise = null;
 let catalogSize = 0;
+let vectorCount = 0;
 let lastBuildMs = null;
 let exactItems = null;
+let productIdByPoint = [];
 
 const parseEmbedding = (value) => {
   try {
     const parsed = typeof value === "string" ? JSON.parse(value) : value;
     return Array.isArray(parsed) && parsed.every(Number.isFinite) ? parsed : null;
   } catch { return null; }
+};
+
+export const productEmbeddings = (row) => {
+  const primary = parseEmbedding(row.embedding);
+  const variants = Array.isArray(row.embedding_variants)
+    ? row.embedding_variants.map((item) => parseEmbedding(item?.embedding)).filter(Boolean)
+    : [];
+  const seen = new Set();
+  return [primary, ...variants].filter((embedding) => {
+    if (!embedding) return false;
+    const key = embedding.join(",");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+export const collapseProductHits = (hits) => {
+  const bestPerProduct = new Map();
+  for (const hit of hits) {
+    if (!Number.isFinite(hit?.similarity) || hit.productId === undefined || hit.productId === null) continue;
+    const previous = bestPerProduct.get(hit.productId);
+    if (!previous || hit.similarity > previous.similarity) {
+      bestPerProduct.set(hit.productId, { productId: hit.productId, similarity: hit.similarity });
+    }
+  }
+  return [...bestPerProduct.values()].sort((a, b) => b.similarity - a.similarity);
 };
 
 const cosine = (a, b) => {
@@ -34,29 +63,30 @@ const buildIndex = async () => {
   const t0 = Date.now();
   const rows = process.env.DATA_STORE === "mongodb"
     ? await (await mongoCollection("visual_products")).find({ availability: 1,
-      embedding: { $ne: null } }, { projection: { id: 1, embedding: 1 } }).toArray()
+      $or: [{ embedding: { $ne: null } }, { "embedding_variants.0": { $exists: true } }] },
+    { projection: { id: 1, embedding: 1, embedding_variants: 1 } }).toArray()
     : (await pool.query(
       "SELECT id, embedding FROM visual_products WHERE availability = 1 AND embedding IS NOT NULL",
     ))[0];
-  const items = rows
-    .map((row) => {
-      const embedding = parseEmbedding(row.embedding);
-      return embedding ? { id: row.id, embedding } : null;
-    })
-    .filter(Boolean);
+  const items = rows.flatMap((row) => productEmbeddings(row)
+    .map((embedding, viewIndex) => ({ id: row.id, embedding, viewIndex })));
   exactItems = items;
+  productIdByPoint = items.map((item) => item.id);
   let index = null;
   try {
     const { default: hnswlib } = await import("hnswlib-node");
     index = new hnswlib.HierarchicalNSW("cosine", items[0]?.embedding.length || 512);
     index.initIndex({ maxElements: Math.max(1000, items.length * 2) });
-    for (const item of items) index.addPoint(item.embedding, item.id);
+    items.forEach((item, pointId) => index.addPoint(item.embedding, pointId));
+    const ef = Number(process.env.VISUAL_HNSW_EF) || 100;
+    if (ef > 0 && typeof index.setEf === "function") index.setEf(ef);
   } catch (error) {
     console.warn(`[VectorIndex] HNSW không khả dụng, dùng cosine JS: ${error.message.split("\n")[0]}`);
   }
-  catalogSize = items.length;
+  catalogSize = new Set(items.map((item) => item.id)).size;
+  vectorCount = items.length;
   lastBuildMs = Date.now() - t0;
-  console.log(`[VectorIndex] dựng lại ${items.length} sản phẩm trong ${lastBuildMs}ms`);
+  console.log(`[VectorIndex] dựng lại ${catalogSize} sản phẩm / ${vectorCount} ảnh trong ${lastBuildMs}ms`);
   return index;
 };
 
@@ -78,39 +108,65 @@ export const rebuildIndex = async () => {
 
 export const indexStats = async () => {
   await getIndex();
-  return { catalogSize, lastBuildMs };
+  return { catalogSize, vectorCount, lastBuildMs };
 };
 
-// Tìm top-K vector gần nhất
-export const searchByVector = async (embedding, k = 20) => {
+// Tìm top-K sản phẩm gần nhất cho một hoặc nhiều query embedding.
+// preferExactMaxVectors: nếu được truyền, dùng cosine exact khi vectorCount <= ngưỡng.
+// Không truyền thì giữ hành vi cũ (HNSW nếu có).
+export const searchByVectors = async (embeddings, k = 20, options = {}) => {
+  const queries = (Array.isArray(embeddings) ? embeddings : [embeddings]).filter(Boolean);
   let index = await getIndex();
   // Auto-heal: index trống nhưng DB có embedding (boot lúc DB trống / import sau boot)
   if (catalogSize === 0) {
     const count = process.env.DATA_STORE === "mongodb"
       ? await (await mongoCollection("visual_products")).countDocuments({ availability: 1,
-        embedding: { $ne: null } })
+        $or: [{ embedding: { $ne: null } }, { "embedding_variants.0": { $exists: true } }] })
       : (await pool.query("SELECT COUNT(*) AS n FROM visual_products WHERE availability = 1 AND embedding IS NOT NULL"))[0][0].n;
     if (count > 0) {
       console.log(`[VectorIndex] index trống nhưng DB có ${count} sản phẩm — rebuild tự động`);
       index = await rebuildIndex();
     }
   }
-  if (catalogSize === 0) return { items: [], searchMs: 0 };
+  if (catalogSize === 0 || queries.length === 0) return { items: [], searchMs: 0, mode: "empty" };
+
+  const exactMax = Number(options.preferExactMaxVectors);
+  const useExact = Number.isFinite(exactMax) ? vectorCount <= exactMax : !index;
   const t0 = Date.now();
-  if (!index) {
-    const items = exactItems.filter((item) => item.embedding.length === embedding.length)
-      .map((item) => ({ productId: item.id, similarity: Number(cosine(embedding, item.embedding).toFixed(4)) }))
-      .sort((a, b) => b.similarity - a.similarity).slice(0, k);
-    return { items, searchMs: Date.now() - t0 };
+  const hits = [];
+
+  if (useExact) {
+    for (const item of exactItems) {
+      for (const query of queries) {
+        if (item.embedding.length !== query.length) continue;
+        hits.push({ productId: item.id, similarity: cosine(query, item.embedding) });
+      }
+    }
+  } else {
+    // A product can contribute up to five vectors (primary + four views).
+    // Over-fetch enough neighbors so collapsing views is less likely to leave
+    // the requested product result count short.
+    const variantHits = Math.min(vectorCount, Math.max(k * 5, 50));
+    for (const query of queries) {
+      const results = await index.searchKnn(query, variantHits);
+      for (let position = 0; position < results.neighbors.length; position += 1) {
+        const productId = productIdByPoint[results.neighbors[position]];
+        if (productId === undefined) continue;
+        const similarity = 1 - results.distances[position];
+        hits.push({ productId, similarity });
+      }
+    }
   }
-  const results = await index.searchKnn(embedding, Math.min(k, catalogSize));
+
+  const bestPerProduct = collapseProductHits(hits);
   const searchMs = Date.now() - t0;
-  // hnswlib cosine distance = 1 - cosine similarity
   return {
-    items: results.neighbors.map((id, position) => ({
-      productId: id,
-      similarity: Number((1 - results.distances[position]).toFixed(4)),
-    })),
+    items: bestPerProduct
+      .map((item) => ({ ...item, similarity: Number(item.similarity.toFixed(4)) }))
+      .slice(0, k),
     searchMs,
+    mode: useExact ? "exact" : "hnsw",
   };
 };
+
+

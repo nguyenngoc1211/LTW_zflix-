@@ -4,7 +4,6 @@ import HomePage from "../modules/discovery/HomePage";
 import AdminPage from "../admin/AdminPage";
 import DashboardPage from "../admin/analytics/DashboardPage.jsx";
 import UsersAdminPage from "../admin/users/UsersAdminPage.jsx";
-import MoviesAdminPage from "../admin/content/MoviesAdminPage.jsx";
 import ContentTable from "../admin/content/ContentTable.jsx";
 import ViewsPage from "../admin/analytics/ViewsPage.jsx";
 import PointsAdminPage from "../admin/community/PointsAdminPage.jsx";
@@ -12,7 +11,6 @@ import PartiesAdminPage from "../admin/community/PartiesAdminPage.jsx";
 import VipPage from "../modules/vip/VipPage.jsx";
 import SecurityAdminPage from "../admin/security/SecurityAdminPage.jsx";
 import SettingsAdminPage from "../admin/settings/SettingsAdminPage.jsx";
-import ShoppingAdminPage from "../admin/shopping/ShoppingAdminPage.jsx";
 import AdminLoginPage from "../modules/auth/AdminLoginPage.jsx";
 import LoginPage from "../modules/auth/LoginPage";
 import SettingsPage from "../modules/auth/SettingsPage.jsx";
@@ -112,11 +110,11 @@ export const router = createBrowserRouter([
             index: true,
             element: <Navigate to="/admin/community-hub" replace />,
           },
-          { path: "/admin/movies", element: <MoviesAdminPage /> },
+          { path: "/admin/movies", element: <Navigate to="/admin/content" replace /> },
           { path: "/admin/content", element: <ContentTable /> },
           { path: "/admin/community", element: <Navigate to="/admin/community-hub/content?view=movies" replace /> },
           { path: "/admin/parties", element: <PartiesAdminPage /> },
-          { path: "/admin/shopping", element: <ShoppingAdminPage /> },
+          { path: "/admin/shopping", element: <Navigate to="/admin/community-hub" replace /> },
           { path: "/admin/views", element: <ViewsPage /> },
           { path: "/admin/vip-payments", element: <Navigate to="/admin/community-hub/vip?view=payments" replace /> },
           { path: "/admin/moderation", element: <Navigate to="/admin/community-hub/moderation" replace /> },

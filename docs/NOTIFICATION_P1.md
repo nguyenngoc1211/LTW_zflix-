@@ -1,11 +1,11 @@
-# Báo cáo phiên triển khai và kiểm chứng Notification P0–P1
+# Báo cáo triển khai và kiểm thử Notification P0–P1 (lưu trữ)
 
-Ngày tổng hợp: 2026-11-08. Dự án: `D:\LTW` (frontend React/Vite, backend Express/Node.js, MongoDB, Socket.IO). Báo cáo này gom công việc P0 đã có trong workspace và phần P1 được triển khai, kiểm chứng trong phiên. Mã nguồn hiện tại là căn cứ khi tài liệu cũ khác với code. Chưa commit hoặc push.
+Ngày tổng hợp ban đầu: 2026-11-08. Các nội dung ở đây là kết quả của lượt triển khai/kiểm thử theo ngày đó, không phải trạng thái hiện tại hay chứng nhận production. Source mới hơn có thêm Points, Quests, reports, kiểm duyệt và thay đổi luồng community. Xem `AUTH_SECURITY_PROGRESS.md` và code hiện tại trước khi dùng chi tiết endpoint.
 
 ## 1. Phạm vi và trạng thái ban đầu
 
 - Hệ thống đã có collection `notifications`, route danh sách/đánh dấu đã đọc và các luồng nội dung, tài khoản, VIP. P0 sử dụng lại các phần này, thêm `NotificationService`, job và giao diện; P1 tiếp tục mở rộng cùng hệ thống, không tạo collection notification thứ hai.
-- Trước khi làm P1, workspace đã có nhiều thay đổi P0 chưa commit. Các thay đổi đó được giữ lại; trạng thái Git cuối phiên vẫn là các file modified/untracked, không có commit mới.
+- Khi viết bản gốc, workspace còn các thay đổi P0 chưa commit. Đây là ghi chép lịch sử; không phản ánh Git status hiện tại.
 - Đã đọc `docs/AUTH_SECURITY_PROGRESS.md`, kiểm tra Git status/log và source trước các thay đổi liên quan xác thực/quyền. Tài liệu tiến độ bảo mật được cập nhật sau phần quyền truy cập preferences/mention.
 
 ## 2. P0 — các phần đã triển khai và kiểm chứng
@@ -117,7 +117,7 @@ Các lỗi kiểm thử trung gian đã được sửa trước vòng cuối: fi
 
 ## 7. Trạng thái bàn giao
 
-P0 và năm module P1 đã được thực hiện bằng code, kiểm thử unit/integration/browser trên môi trường test riêng, lint/build/syntax/diff đều đạt theo phạm vi bảng trên. Các giới hạn ở mục 6 cần giải quyết hoặc xác nhận trước production. Không commit, không push, không chạy test ghi dữ liệu trên database chính.
+Ở lần kiểm tra gốc, các mục P0/P1 trong phạm vi bảng trên có kết quả như đã ghi. Điều đó chỉ áp dụng cho source, fixture và môi trường của lần chạy đó. Các giới hạn ở mục 6 vẫn cần được xem xét riêng trước production.
 
 ## 8. Bổ sung ngày 2026-11-09: sửa deep link reply, autoplay và dropdown trên bản local
 

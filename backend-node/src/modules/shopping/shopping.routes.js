@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { pool } from "../../core/database/pool.js";
 import { fromMongo, mongoCollection, nextNumericId } from "../../core/database/mongo.js";
 import { requireAuth } from "../../core/middleware/auth.middleware.js";
-import { shopeeAffiliateConfigured, generateShortLink, searchProducts } from "./shopee.affiliate.js";
+import { searchMarketplace } from "../visual-shopping/marketplace.js";
 import { visionConfigured, identifyProduct } from "./vision.js";
 import { asyncHandler, clampPagination, parsePositiveInt } from "../../core/utils/http.js";
 
@@ -16,42 +16,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = path.join(__dirname, "../../../uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// Affiliate: mô hình như các tool "hoàn tiền Shopee" (tiencuatui.site...):
-// đăng ký ACCESSTRADE -> wrap link Shopee bằng track link của campaign.
-// .env: SHOPEE_AFFILIATE_TRACK_BASE=https://track.accesstrade.vn/v1/tracking/<campaign_id>/click
-//       SHOPEE_AFFILIATE_SUB_ID=<định danh nguồn (tùy chọn)>
-// Không cấu hình thì trả link Shopee search thường — ứng dụng vẫn chạy đầy đủ.
-const AFFILIATE_TRACK_BASE = (process.env.SHOPEE_AFFILIATE_TRACK_BASE || "").trim().replace(/\/$/u, "");
-const AFFILIATE_PREFIX = (process.env.SHOPEE_AFFILIATE_PREFIX || "").trim(); // kiểu wrapper tùy chỉnh (giữ tương thích cũ)
-const AFFILIATE_SUB_ID = (process.env.SHOPEE_AFFILIATE_SUB_ID || "zflix").trim();
+export const buildTikiLink = (keyword) =>
+  `https://tiki.vn/search?q=${encodeURIComponent(keyword || "")}`;
 
-export const buildShopeeLink = (keyword) => `https://shopee.vn/search?keyword=${encodeURIComponent(keyword)}`;
-
-// Tạo link affiliate tại thời điểm người dùng bấm mua (không tạo sẵn trong danh sách).
-// Thứ tự ưu tiên: Shopee Affiliate Open API (s.shopee.vn) -> ACCESSTRADE track -> prefix tùy chỉnh -> link thường.
-export const buildAffiliateLink = (shopeeUrl) => {
-  if (AFFILIATE_TRACK_BASE) {
-    const params = new URLSearchParams({ url: shopeeUrl, utm_source: "zflix", utm_medium: "aff", sub_id: AFFILIATE_SUB_ID });
-    return `${AFFILIATE_TRACK_BASE}?${params.toString()}`;
-  }
-  if (AFFILIATE_PREFIX) return `${AFFILIATE_PREFIX}${encodeURIComponent(shopeeUrl)}`;
-  return shopeeUrl;
-};
-
-// Resolve link mua cuối cùng: dùng Shopee Open API nếu cấu hình (bất đồng bộ)
-export const resolveBuyUrl = async (shopeeUrl) => {
-  if (shopeeAffiliateConfigured()) {
-    try {
-      const shortLink = await generateShortLink(shopeeUrl);
-      return { buyUrl: shortLink, affiliate: "shopee-open-api" };
-    } catch (error) {
-      console.warn("Shopee generate_short_link thất bại, dùng fallback:", error.message);
-    }
-  }
-  return { buyUrl: buildAffiliateLink(shopeeUrl), affiliate: affiliateConfigured() ? "fallback" : "none" };
-};
-
-export const affiliateConfigured = () => Boolean(AFFILIATE_TRACK_BASE || AFFILIATE_PREFIX || shopeeAffiliateConfigured());
+const rowKeyword = (row) => row.search_keyword || row.shopee_keyword || "";
 
 const toProductView = (row) => ({
   id: row.id,
@@ -62,10 +30,9 @@ const toProductView = (row) => ({
   productName: row.product_name,
   category: row.category,
   imageUrl: row.image_url,
-  shopeeKeyword: row.shopee_keyword,
+  searchKeyword: rowKeyword(row),
   note: row.note,
   clickCount: row.click_count,
-  shopeeKeyword: row.shopee_keyword,
 });
 
 // ---------------------------------------------------------------------------
@@ -78,13 +45,13 @@ shoppingRouter.get(
     if (useMongo()) {
       const rows = await (await mongoCollection("production_products"))
         .find({ production_id: productionId }).sort({ timestamp_start: 1 }).toArray();
-      return res.json({ items: rows.map(toProductView), affiliateEnabled: Boolean(AFFILIATE_PREFIX) });
+      return res.json({ items: rows.map(toProductView) });
     }
     const [rows] = await pool.execute(
       "SELECT * FROM production_products WHERE production_id = ? ORDER BY timestamp_start ASC",
       [productionId],
     );
-    res.json({ items: rows.map(toProductView), affiliateEnabled: Boolean(AFFILIATE_PREFIX) });
+    res.json({ items: rows.map(toProductView) });
   }),
 );
 
@@ -117,7 +84,7 @@ shoppingRouter.post(
       fs.promises.writeFile(path.join(UPLOAD_DIR, imagePath), Buffer.from(base64, "base64")).catch(() => {});
     }
 
-    // AI nhận diện món đồ (Gemini/SerpAPI nếu cấu hình) — từ khoá tiếng Việt
+    // AI nhận diện món đồ (DeepSeek nếu cấu hình) — từ khoá tiếng Việt
     const ai = photo && visionConfigured() ? await identifyProduct(imageBase64, imagePath) : null;
 
     // Match sản phẩm theo mốc thời gian của tập đang xem
@@ -149,47 +116,38 @@ shoppingRouter.post(
       ).catch(() => {});
     }
 
-    // Có từ khoá thủ công thì trả luôn link Shopee tìm với từ khoá đó
-    const quickSearch = usedKeyword ? { keyword: usedKeyword, shopeeUrl: buildShopeeLink(usedKeyword) } : null;
+    // Có từ khoá thủ công thì trả luôn link Tiki tìm với từ khoá đó
+    const quickSearch = usedKeyword ? { keyword: usedKeyword, searchUrl: buildTikiLink(usedKeyword) } : null;
 
-    // Có Shopee Open API: tìm sản phẩm SHOPEE THẬT — ưu tiên keyword AI, fallback từ sản phẩm khớp mốc
-    let shopeeItems = [];
-    if (shopeeAffiliateConfigured()) {
+    // Có từ khoá AI: tìm sản phẩm Tiki thật để hiển thị bên cạnh timeline
+    let marketplaceItems = [];
+    if (ai?.keyword) {
       try {
-        const searchLists = [];
-        if (ai?.keyword) searchLists.push(searchProducts(ai.keyword, 4).catch(() => []));
-        if (matches.length) {
-          searchLists.push(
-            ...matches.slice(0, 3).map((match) => searchProducts(match.shopee_keyword, 3).catch(() => [])),
-          );
-        }
-        const all = (await Promise.all(searchLists)).flat();
-        shopeeItems = [...new Map(all.map((item) => [item.itemId, item])).values()].slice(0, 6);
+        marketplaceItems = await searchMarketplace(ai.keyword, 6);
       } catch (error) {
-        console.warn("Shopee search_product thất bại:", error.message);
+        console.warn("Tiki search_product thất bại:", error.message);
       }
     }
 
     res.json({
       position,
       items: matches.map(toProductView),
-      shopeeItems,
+      marketplaceItems,
       aiKeyword: ai?.keyword || null,
       aiCategory: ai?.category || null,
       quickSearch,
-      affiliateEnabled: affiliateConfigured(),
       note: matches.length
         ? null
         : ai?.keyword
-          ? `AI nhận diện: "${ai.keyword}" — bấm tìm nhanh để xem trên Shopee.`
+          ? `AI nhận diện: "${ai.keyword}" — bấm tìm nhanh để xem trên Tiki.`
           : "Chưa có sản phẩm nào được gắn ở thời điểm này — dùng tìm nhanh theo từ khoá hoặc quay lại sau.",
     });
   }),
 );
 
 // ---------------------------------------------------------------------------
-// POST /shopping/products/:id/buy — người dùng bấm mua: tạo link affiliate lúc này
-// và ghi nhận lượt click + người mua (dữ liệu hoa hồng/thống kê)
+// POST /shopping/products/:id/buy - người dùng bấm mua: tạo link Tiki lúc này
+// và ghi nhận lượt click + người mua (dữ liệu thống kê)
 // ---------------------------------------------------------------------------
 shoppingRouter.post(
   "/shopping/products/:id/buy",
@@ -200,46 +158,29 @@ shoppingRouter.post(
       const row = await products.findOneAndUpdate({ id: productId },
         { $inc: { click_count: 1 } }, { returnDocument: "after" });
       if (!row) return res.status(404).json({ message: "Product not found" });
-      const shopeeUrl = buildShopeeLink(row.shopee_keyword);
-      const resolved = await resolveBuyUrl(shopeeUrl);
-      return res.json({ id: productId, shopeeUrl, ...resolved, clickCount: row.click_count });
+      const searchUrl = buildTikiLink(rowKeyword(row));
+      return res.json({ id: productId, searchUrl, buyUrl: searchUrl, clickCount: row.click_count });
     }
     const [rows] = await pool.execute("SELECT id, shopee_keyword, click_count FROM production_products WHERE id = ?", [productId]);
     if (!rows.length) return res.status(404).json({ message: "Product not found" });
     await pool.execute("UPDATE production_products SET click_count = click_count + 1 WHERE id = ?", [productId]);
-    const shopeeUrl = buildShopeeLink(rows[0].shopee_keyword);
-    const resolved = await resolveBuyUrl(shopeeUrl);
+    const searchUrl = buildTikiLink(rowKeyword(rows[0]));
     res.json({
       id: productId,
-      shopeeUrl,
-      ...resolved,
+      searchUrl,
+      buyUrl: searchUrl,
       clickCount: rows[0].click_count + 1,
     });
   }),
 );
 
-// Mua một sản phẩm Shopee thật (itemUrl từ search): tạo short link lúc click
+// Tạo link tìm kiếm Tiki cho từ khoá tự do (quick search)
 shoppingRouter.post(
-  "/shopping/shopee/buy-link",
-  asyncHandler(async (req, res) => {
-    const itemUrl = typeof req.body?.itemUrl === "string" ? req.body.itemUrl.trim() : "";
-    if (!/^https:\/\/shopee\.vn\//.test(itemUrl)) {
-      return res.status(400).json({ message: "itemUrl phải là link shopee.vn" });
-    }
-    const resolved = await resolveBuyUrl(itemUrl);
-    res.json({ itemUrl, ...resolved });
-  }),
-);
-
-// Tạo link affiliate cho từ khoá tự do (quick search)
-shoppingRouter.post(
-  "/shopping/affiliate-link",
+  "/shopping/search-link",
   asyncHandler(async (req, res) => {
     const keyword = typeof req.body?.keyword === "string" ? req.body.keyword.trim().slice(0, 255) : "";
     if (!keyword) return res.status(400).json({ message: "keyword là bắt buộc" });
-    const shopeeUrl = buildShopeeLink(keyword);
-    const resolved = await resolveBuyUrl(shopeeUrl);
-    res.json({ keyword, shopeeUrl, ...resolved });
+    res.json({ keyword, searchUrl: buildTikiLink(keyword) });
   }),
 );
 
@@ -298,9 +239,11 @@ shoppingRouter.post(
     const timestampStart = Math.max(0, Number(body.timestampStart) || 0);
     const timestampEnd = Math.max(timestampStart, Number(body.timestampEnd) || timestampStart);
     const productName = typeof body.productName === "string" ? body.productName.trim() : "";
-    const shopeeKeyword = typeof body.shopeeKeyword === "string" ? body.shopeeKeyword.trim() : "";
-    if (!productName || !shopeeKeyword) {
-      return res.status(400).json({ message: "productName và shopeeKeyword là bắt buộc" });
+    const searchKeyword = typeof body.searchKeyword === "string"
+      ? body.searchKeyword.trim()
+      : typeof body.shopeeKeyword === "string" ? body.shopeeKeyword.trim() : "";
+    if (!productName || !searchKeyword) {
+      return res.status(400).json({ message: "productName và searchKeyword là bắt buộc" });
     }
     if (useMongo()) {
       const production = await (await mongoCollection("productions")).findOne({ id: productionId });
@@ -311,7 +254,7 @@ shoppingRouter.post(
         product_name: productName,
         category: typeof body.category === "string" ? body.category.trim().slice(0, 100) || null : null,
         image_url: typeof body.imageUrl === "string" ? body.imageUrl.trim().slice(0, 500) || null : null,
-        shopee_keyword: shopeeKeyword,
+        search_keyword: searchKeyword,
         note: typeof body.note === "string" ? body.note.trim().slice(0, 500) || null : null,
         created_by: req.user?.id ?? null, click_count: 0, created_at: new Date() };
       await (await mongoCollection("production_products")).insertOne(row);
@@ -331,7 +274,7 @@ shoppingRouter.post(
         productName,
         typeof body.category === "string" ? body.category.trim().slice(0, 100) || null : null,
         typeof body.imageUrl === "string" ? body.imageUrl.trim().slice(0, 500) || null : null,
-        shopeeKeyword,
+        searchKeyword,
         typeof body.note === "string" ? body.note.trim().slice(0, 500) || null : null,
         req.user?.id ?? null,
       ],

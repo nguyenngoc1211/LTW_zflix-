@@ -92,5 +92,7 @@ if (process.env.DATA_STORE === 'mongodb') {
 httpServer.listen(PORT, process.env.HOST || undefined, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Socket.IO ready for connections`);
-  syncProductionIndex().then((count) => console.log(`Search index ready (${count} productions)`));
+  syncProductionIndex()
+    .then((count) => console.log(`Search index ready (${count} productions)`))
+    .catch((error) => console.warn("Search index unavailable; database fallback is active:", error.message));
 });

@@ -35,7 +35,7 @@ export const createApp = () => {
   const app = express();
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-  // Ảnh người dùng chụp khi quét (cần public khi deploy để SerpAPI đọc)
+  // Ảnh người dùng chụp khi quét (cần public khi deploy nếu có dùng lại)
   app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
   app.use(

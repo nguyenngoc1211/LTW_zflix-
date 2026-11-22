@@ -3,17 +3,15 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ConfigProvider, theme } from 'antd';
 import { ProConfigProvider, viVNIntl } from '@ant-design/pro-components';
 import viVN from 'antd/locale/vi_VN';
-import { AppstoreOutlined, BarChartOutlined, ExceptionOutlined, LogoutOutlined, MenuOutlined, PlaySquareOutlined, SafetyOutlined, SettingOutlined, ShoppingOutlined, TeamOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, BarChartOutlined, ExceptionOutlined, LogoutOutlined, MenuOutlined, SafetyOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth.js';
 import './admin-shell.css';
 
-const sectionLabels = { movies: 'Quản lý phim', content: 'Kho phim & tập', parties: 'Watch Party', shopping: 'Mua sắm trong phim', views: 'Thống kê lượt xem', security: 'Nhật ký bảo mật', settings: 'Cài đặt hệ thống' };
+const sectionLabels = { content: 'Kho phim & tập', parties: 'Watch Party', views: 'Thống kê lượt xem', security: 'Nhật ký bảo mật', settings: 'Cài đặt hệ thống' };
 const links = [
   { to: '/admin/community-hub', label: 'Quản lý cộng đồng', icon: TeamOutlined, hub: true },
-  { to: '/admin/movies', label: 'Quản lý phim', icon: PlaySquareOutlined },
   { to: '/admin/content', label: 'Kho phim & tập', icon: AppstoreOutlined },
   { to: '/admin/parties', label: 'Watch Party', icon: ExceptionOutlined },
-  { to: '/admin/shopping', label: 'Mua sắm trong phim', icon: ShoppingOutlined },
   { to: '/admin/views', label: 'Thống kê lượt xem', icon: BarChartOutlined },
   { to: '/admin/security', label: 'Nhật ký bảo mật', icon: SafetyOutlined, adminOnly: true },
   { to: '/admin/settings', label: 'Cài đặt hệ thống', icon: SettingOutlined, adminOnly: true },

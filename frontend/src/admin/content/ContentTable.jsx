@@ -5,6 +5,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   SettingOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import { ProTable } from "@ant-design/pro-components";
 import { Button, Drawer, Popconfirm, message, Tooltip } from "antd";
@@ -23,8 +24,10 @@ import {
   getMovieBySlug,
   deleteProduction,
 } from "../../services/movieService";
+import { useAuth } from "../../hooks/useAuth.js";
 
 const ContentTable = () => {
+  const { apiRequest } = useAuth();
   const actionRef = useRef();
   const [modalCreateOpen, setModalCreateOpen] = useState(false);
   const [editingProduction, setEditingProduction] = useState(null);
@@ -32,6 +35,21 @@ const ContentTable = () => {
   const [currentManagerItem, setCurrentManagerItem] = useState(null);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [currentDetailItem, setCurrentDetailItem] = useState(null);
+  const [reindexing, setReindexing] = useState(false);
+
+  const handleReindex = async () => {
+    setReindexing(true);
+    try {
+      const result = await apiRequest("/api/v1/admin/search/reindex", {
+        method: "POST",
+      });
+      message.success(`Đã đồng bộ lại index tìm kiếm (${result.reindexed} phim).`);
+    } catch {
+      message.error("Lỗi khi đồng bộ index tìm kiếm!");
+    } finally {
+      setReindexing(false);
+    }
+  };
 
   const getMovieDetail = async (key, record) => {
     try {
@@ -191,6 +209,14 @@ const ContentTable = () => {
         }}
         headerTitle="QUẢN LÝ KHO PHIM"
         toolBarRender={() => [
+          <Button
+            key="reindex"
+            icon={<ReloadOutlined />}
+            loading={reindexing}
+            onClick={handleReindex}
+          >
+            Đồng bộ tìm kiếm
+          </Button>,
           <Button
             key="add"
             icon={<PlusOutlined />}

@@ -1,85 +1,36 @@
-# Hướng dẫn module của branch Hai
+# Hướng dẫn các module Discovery, Community và Streaming
 
-## Chức năng đã triển khai
+Tài liệu branch Hai cũ đã lỗi thời sau các lần tích hợp. Bản này mô tả module trong source hiện tại; xem [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) để hiểu toàn bộ ứng dụng và [`HAI_API_REFERENCE.md`](HAI_API_REFERENCE.md) để tra các route chính.
 
-- Tìm phim bằng Elasticsearch, không phân biệt chữ hoa/chữ thường.
-- Lọc kết hợp theo thể loại, quốc gia, năm phát hành và rating; sắp xếp theo năm.
-- Trang danh sách, chi tiết phim và danh sách tập.
-- Yêu thích và danh sách quan tâm độc lập.
-- Lưu/xóa lịch sử, phần trăm và vị trí xem tiếp.
-- Rating 1–5 sao, tự cập nhật điểm trung bình; bình luận công khai, ghi bình luận cần đăng nhập.
-- Tạo thông báo cho người quan tâm khi admin thêm tập mới.
-- Danh sách thông báo và trạng thái đã đọc.
+## Chạy phần web/API
 
-## Chạy branch Hai
+Thực hiện theo [`SETUP_TEAM.md`](SETUP_TEAM.md). Môi trường hiện tại dùng MongoDB theo cấu hình Compose; cần database có dữ liệu và `MONGODB_URI`, `MONGODB_DB_NAME`, `JWT_ACCESS_SECRET`. Không chạy lệnh Docker/MySQL trong hướng dẫn branch cũ.
 
-Yêu cầu: Docker Desktop đang chạy và có tối thiểu khoảng 2 GB RAM trống cho toàn bộ stack.
+## Discovery
 
-Khi chạy bằng Docker Compose, biến môi trường đã có trong `docker-compose.yml`.
-Nếu chạy service trực tiếp trên máy, sao chép `.env.example` thành `.env` trong
-`backend-node` và `frontend`, rồi điều chỉnh giá trị theo môi trường của bạn.
+Module ở `backend-node/src/modules/discovery/` cung cấp filters, danh sách production, gợi ý tiêu đề, top phim và chi tiết phim. MongoDB path truy vấn trực tiếp collection; nhánh MySQL có thể dùng Elasticsearch và fallback SQL. Cách tìm kiếm vì vậy phụ thuộc `DATA_STORE`.
 
-```powershell
-cd E:\LTW_BTL\zflix
-docker compose up -d --build
-docker compose ps
-docker compose logs -f backend-node
-```
+## Community
 
-Truy cập:
+Các route đang chia theo nghiệp vụ:
 
-- Web: <http://localhost:5173>
-- API: <http://localhost:3000>
-- Elasticsearch: <http://localhost:9200>
+- `community.routes.js`: favorites, interests, movie ratings/comments, notifications và preferences.
+- `posts.routes.js`: feed, bài thường/câu hỏi cảnh phim, hình ảnh, vote, lưu, comments, reports.
+- `profiles.routes.js`: profile công khai, cập nhật hồ sơ và follow.
+- `points.routes.js`, `quests.routes.js`: bảng điểm, lịch sử điểm, điểm thưởng và nhiệm vụ.
+- `moderation.routes.js`: gửi/xử lý reports và review flags.
 
-Backend tự tạo/cập nhật index `productions` khi khởi động. Nếu đây là database mới, `database/init.sql` tự tạo toàn bộ schema.
+Các route mới về Points, Quests và một số route Moderation yêu cầu MongoDB. Transaction và index liên quan phải được kiểm tra trên database test riêng trước khi thay đổi schema.
 
-Nếu volume MySQL đã tồn tại từ trước khi có bảng `production_interests`, chạy migration một lần:
+## Streaming và video
+
+`streaming.routes.js` xử lý truy cập episode, history và quyền phát. `/api/v1/hls/*` proxy media từ R2. Route nội dung cũ nằm dưới `/api/streaming`; upload cần R2, ffmpeg, video-processor và `VIDEO_WEBHOOK_SECRET`. Không dựa vào route/UI frontend để kiểm soát quyền nội dung.
+
+## Kiểm thử
 
 ```powershell
-Get-Content -Raw .\database\migrate-hai.sql | docker exec -i movie_db mysql -uroot -prootpassword movie_streaming_db
-docker compose restart backend-node
-```
-
-Dừng hệ thống (không xóa dữ liệu):
-
-```powershell
-docker compose down
-```
-
-## Kiểm tra nhanh
-
-```powershell
-Invoke-RestMethod 'http://localhost:3000/api/v1/productions?search=DaRk%20KnIgHt'
-Invoke-RestMethod 'http://localhost:3000/api/v1/productions?country=USA&minRating=4&year=2019&sortYear=desc'
-Invoke-RestMethod 'http://localhost:3000/api/v1/productions/1'
-
-cd .\backend-node
-npm ci
+cd backend-node
 npm test
-
-cd ..\frontend
-npm ci
-npm run lint
-npm run build
 ```
 
-## Ghép với branch Du
-
-Branch Hai không chứa commit của Du. Hiện các API công khai chạy độc lập; API cá nhân trả `503 AUTH_MODULE_NOT_INTEGRATED` để bảo đảm fail-closed. Sau khi merge Du, bridge tại `business-auth.bridge.js` tự sử dụng `requireAuth` và `requireRole` thật của Du.
-
-Khi xử lý xung đột tích hợp:
-
-1. Trong backend `app.js`, giữ cấu hình `helmet`, CORS, cookie parser, `authRouter` và admin route của Du; đồng thời giữ ba lệnh mount `discoveryRouter`, `communityRouter`, `streamingRouter` của Hai.
-2. Trong backend `server.js`, giữ server của Du và thêm lệnh `syncProductionIndex()` sau khi listen.
-3. `frontend/src/services/api.js` của Hai dùng cùng contract với Du: token chỉ nằm trong bộ nhớ, refresh token qua cookie. Ưu tiên bản mới nhất của Du nếu file có xung đột.
-4. Trong frontend, giữ `AuthProvider`, các trang đăng nhập và `ProtectedRoute` của Du; thêm các route `/movies/:id`, `/library`, `/history`, `/notifications`, `/watch/:episodeId` của Hai. Bọc ba trang cá nhân bằng `ProtectedRoute`.
-5. Không gửi `userId` từ frontend. Backend của Hai luôn lấy chủ sở hữu từ `req.user.id`.
-
-## API chính
-
-Public: `GET /api/v1/filters`, `GET /api/v1/productions`, `GET /api/v1/productions/:id`, `GET /api/v1/episodes/:id`, ratings và comments dạng GET.
-
-Authenticated: `/favorites`, `/interests`, `/history`, `/notifications`, ghi rating và ghi/sửa/xóa comment.
-
-Admin: `POST /api/v1/search/reindex`, `POST /api/v1/productions/:id/episodes`.
+Các `integration/*-smoke.js` là script riêng, không chạy chung với `npm test`. Đọc guard của script, xác nhận database test và tránh dùng URI database production.
